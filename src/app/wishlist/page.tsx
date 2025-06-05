@@ -17,6 +17,7 @@ import { Label } from '@/components/ui/label';
 import { Progress } from '@/components/ui/progress';
 import { SIMULATED_APY } from '@/lib/constants';
 import { cn } from '@/lib/utils';
+import { translateText, containsChineseCharacters } from '@/lib/translationUtils';
 
 // Helper function to format time remaining
 const formatTimeRemaining = (maturityDateISO: string): string => {
@@ -50,6 +51,7 @@ export default function WishlistPage() {
 
   const [newGoalName, setNewGoalName] = useState('');
   const [newGoalPrincipal, setNewGoalPrincipal] = useState<number | string>('');
+  const [processedWishlistItems, setProcessedWishlistItems] = useState<WishlistItem[]>([]);
 
   // For time remaining display update
   const [, setTick] = useState(0);
@@ -60,6 +62,40 @@ export default function WishlistPage() {
     }, 60000); // Update time remaining every minute
     return () => clearInterval(interval);
   }, []);
+
+  useEffect(() => {
+    const processItems = async () => {
+      if (wishlistItems && wishlistItems.length > 0) {
+        const processedItems = await Promise.all(
+          wishlistItems.map(async (item) => {
+            let nameToProcess = item.name;
+            const cjPrefix = "Imported from CJ: ";
+            const prefixIndex = nameToProcess.indexOf(cjPrefix);
+
+            if (prefixIndex !== -1) {
+              // If "Imported from CJ: " is present, take the part before it as the primary name.
+              // This handles cases like "Name Imported from CJ: Name" or "Name Imported from CJ: Description"
+              nameToProcess = nameToProcess.substring(0, prefixIndex).trim();
+            }
+            // If the name still seems to be a duplicate (e.g. Name Name after prefix removal), 
+            // and it's long, consider if it's structured like "ActualName Description"
+            // For now, we assume the text before "Imported from CJ:" (or the whole string if no prefix) is the target for translation.
+
+            let finalName = nameToProcess;
+            if (containsChineseCharacters(nameToProcess)) {
+              finalName = await translateText(nameToProcess);
+            }
+            return { ...item, name: finalName };
+          })
+        );
+        setProcessedWishlistItems(processedItems);
+      } else {
+        setProcessedWishlistItems([]);
+      }
+    };
+
+    processItems();
+  }, [wishlistItems]);
 
   const handleClearWishlist = () => {
     if (getWishlistItemCount() > 0) {
@@ -133,7 +169,7 @@ export default function WishlistPage() {
     setNewGoalPrincipal('');
   };
 
-  if (getWishlistItemCount() === 0 && !user?.stakedWishlistGoals?.length) {
+  if (processedWishlistItems.length === 0 && !user?.stakedWishlistGoals?.length) {
     return (
       <div className="text-center py-20">
         <Heart className="mx-auto h-24 w-24 text-muted-foreground mb-6" />
@@ -148,6 +184,7 @@ export default function WishlistPage() {
 
   return (
     <div className="space-y-12">
+      {/* Header remains the same, uses getWishlistItemCount for original count if needed */}
       <header className="text-center space-y-2">
         <Heart className="mx-auto h-16 w-16 text-primary" />
         <h1 className="text-4xl font-headline font-bold tracking-tight sm:text-5xl">My Wishlist</h1>
@@ -164,7 +201,7 @@ export default function WishlistPage() {
       {getWishlistItemCount() > 0 && (
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 items-start">
             <div className="lg:col-span-2 space-y-6">
-            {wishlistItems.map((item: WishlistItem) => (
+            {processedWishlistItems.map((item: WishlistItem) => (
                 <div key={item.id} className="flex items-center gap-4 p-4 border rounded-lg shadow bg-card">
                 <Image 
                     src={item.imageUrl} 

@@ -50,7 +50,9 @@ export async function GET(request: NextRequest) {
         image_url,
         is_active,
         created_at,
-        updated_at
+        updated_at,
+        original_name,
+        original_description
       FROM cj_products
       ORDER BY created_at DESC
       LIMIT $1 OFFSET $2

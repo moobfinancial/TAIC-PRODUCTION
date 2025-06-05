@@ -35,7 +35,31 @@ const nextConfig = {
         port: '',
         pathname: '/**',
       },
+      {
+        protocol: 'https',
+        hostname: 'oss-cf.cjdropshipping.com',
+        port: '',
+        pathname: '/**',
+      },
+      {
+        protocol: 'https',
+        hostname: 'cbu01.alicdn.com',
+        port: '',
+        pathname: '/**',
+      },
+      {
+        protocol: 'https',
+        hostname: '**.alicdn.com',
+        port: '',
+        pathname: '/**',
+      },
     ],
+    // Enable modern image formats (WebP, AVIF)
+    formats: ['image/avif', 'image/webp'],
+    // Set device sizes for responsive images
+    deviceSizes: [640, 750, 828, 1080, 1200, 1920, 2048, 3840],
+    // Set image sizes for different breakpoints
+    imageSizes: [16, 32, 48, 64, 96, 128, 256, 384],
   },
   experimental: {
     // Add any other Next.js experimental options here if needed

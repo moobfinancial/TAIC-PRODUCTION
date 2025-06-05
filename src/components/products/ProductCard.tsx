@@ -11,6 +11,8 @@ import { useCart } from '@/hooks/useCart';
 import { useWishlist } from '@/hooks/useWishlist';
 import { useToast } from '@/hooks/use-toast';
 import { cn } from '@/lib/utils';
+import { useState, useEffect } from 'react';
+import { translateText, containsChineseCharacters } from '../../lib/translationUtils';
 
 interface ProductCardProps {
   product: Product;
@@ -22,6 +24,33 @@ export function ProductCard({ product, showVirtualTryOnButton = false, productCo
   const { addToCart } = useCart();
   const { addToWishlist, isInWishlist, removeFromWishlist } = useWishlist();
   const { toast } = useToast();
+  const [translatedName, setTranslatedName] = useState<string>('');
+  const [translatedDescription, setTranslatedDescription] = useState<string>('');
+
+
+  useEffect(() => {
+    if (product) {
+      // Translate name
+      if (product.name && containsChineseCharacters(product.name)) {
+        translateText(product.name).then(setTranslatedName);
+      } else {
+        setTranslatedName(product.name || '');
+      }
+
+      // Process and translate description
+      let descriptionToProcess = product.description || '';
+      const cjPrefix = "Imported from CJ: ";
+      if (descriptionToProcess.startsWith(cjPrefix)) {
+        descriptionToProcess = descriptionToProcess.substring(cjPrefix.length);
+      }
+
+      if (descriptionToProcess && containsChineseCharacters(descriptionToProcess)) {
+        translateText(descriptionToProcess).then(setTranslatedDescription);
+      } else {
+        setTranslatedDescription(descriptionToProcess);
+      }
+    }
+  }, [product]);
 
   const handleVirtualTryOn = () => {
     toast({
@@ -55,8 +84,10 @@ export function ProductCard({ product, showVirtualTryOnButton = false, productCo
           <Image
             src={product.imageUrl}
             alt={product.name}
-            layout="fill"
-            objectFit="cover"
+            fill
+            sizes="(max-width: 640px) 100vw, (max-width: 1024px) 50vw, 33vw"
+            className="object-cover"
+            priority={false}
             data-ai-hint={product.dataAiHint}
           />
         </div>
@@ -74,13 +105,36 @@ export function ProductCard({ product, showVirtualTryOnButton = false, productCo
         </Button>
       </CardHeader>
       <CardContent className="p-6 flex-grow">
-        <CardTitle className="text-xl font-headline mb-2">{product.name}</CardTitle>
+        <CardTitle className="text-xl font-headline mb-2">{translatedName || product.name}</CardTitle>
         <CardDescription className="text-sm text-muted-foreground mb-4 h-20 overflow-hidden text-ellipsis">
-          {product.description}
+          {translatedDescription || product.description}
         </CardDescription>
-        <p className="text-lg font-semibold text-primary flex items-center">
-          <Gem className="mr-2 h-5 w-5" /> {product.price.toLocaleString()} TAIC
-        </p>
+        
+        {/* Price Section */}
+        <div className="space-y-2">
+          {/* TAIC Price */}
+          <div className="flex items-center">
+            <Gem className="h-5 w-5 text-primary mr-2" />
+            <span className="text-lg font-semibold">
+              {product.price.toLocaleString()} TAIC
+            </span>
+          </div>
+          
+          {/* Cash Price */}
+          {product.base_price && (
+            <div className="flex items-center text-sm text-muted-foreground">
+              <span className="mr-1">Cash:</span>
+              <span className="font-medium">
+                ${parseFloat(product.base_price).toFixed(2)}
+              </span>
+              {product.cashbackPercentage > 0 && (
+                <span className="ml-2 px-2 py-0.5 bg-green-100 text-green-800 text-xs rounded-full">
+                  {product.cashbackPercentage}% Cashback
+                </span>
+              )}
+            </div>
+          )}
+        </div>
       </CardContent>
       <CardFooter className="p-6 pt-0 flex flex-col space-y-2">
         <Button className="w-full font-semibold" onClick={() => addToCart(product)}>

@@ -11,7 +11,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Switch } from '@/components/ui/switch'; // For is_active toggle
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { useToast } from '@/hooks/use-toast';
-import { ListChecks, Loader2, AlertCircle, Edit, Trash2, Search, Filter, XCircle, ChevronLeft, ChevronRight, Eye, EyeOff } from 'lucide-react';
+import { Eye, EyeOff, Edit, Trash2, Search, ListChecks, ChevronLeft, ChevronRight, Loader2, Globe, Check } from 'lucide-react';
 import Image from 'next/image';
 import {
   AlertDialog,
@@ -37,6 +37,7 @@ interface ImportedCjProduct {
   cj_product_id: string;
   display_name: string;
   selling_price: number;
+  cj_base_price: number; // Cost price from CJ
   image_url: string | null;
   is_active: boolean;
   platform_category_id: number;
@@ -44,6 +45,8 @@ interface ImportedCjProduct {
   cashback_percentage?: number | null;
   display_description?: string | null;
   shipping_rules_id?: string | null;
+  original_name?: string; // Original name before translation
+  original_description?: string; // Original description before translation
   // Add other fields from cj_products table as needed for display/edit
 }
 
@@ -104,6 +107,7 @@ export default function ManageImportedCjProductsPage() {
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [productToDelete, setProductToDelete] = useState<ImportedCjProduct | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
+  const [publishingProductId, setPublishingProductId] = useState<number | null>(null);
 
 
   const fetchPlatformCategories = useCallback(async () => {
@@ -423,6 +427,51 @@ export default function ManageImportedCjProductsPage() {
       setIsDeleting(false);
     }
   };
+  
+  const handleTogglePublish = async (product: ImportedCjProduct) => {
+    // Set the current product as publishing to show loading state
+    setPublishingProductId(product.platform_product_id);
+    
+    try {
+      // Toggle the is_active status
+      const newActiveStatus = !product.is_active;
+      
+      const response = await fetch(`/api/admin/cj/imported-products/${product.platform_product_id}`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-Admin-API-Key': ADMIN_API_KEY || ''
+        },
+        body: JSON.stringify({
+          is_active: newActiveStatus
+        }),
+      });
+      
+      if (!response.ok) {
+        const result = await response.json().catch(() => null);
+        throw new Error(result?.error || result?.details || `Failed to update product visibility: ${response.statusText}`);
+      }
+      
+      toast({ 
+        title: "Success", 
+        description: newActiveStatus 
+          ? "Product published to store successfully." 
+          : "Product unpublished from store successfully." 
+      });
+      
+      // Refresh the product list
+      fetchImportedProducts(currentPage);
+    } catch (error: any) {
+      toast({ 
+        title: "Update Failed", 
+        description: error.message, 
+        variant: "destructive" 
+      });
+    } finally {
+      // Clear the publishing state
+      setPublishingProductId(null);
+    }
+  };
 
   // Function to get category name from ID
   const getCategoryName = (id: number) => {
@@ -481,7 +530,9 @@ export default function ManageImportedCjProductsPage() {
                       <TableHead>Name (Platform ID)</TableHead>
                       <TableHead>CJ ID</TableHead>
                       <TableHead>Category</TableHead>
-                      <TableHead>Price</TableHead>
+                      <TableHead>Cost Price</TableHead>
+                      <TableHead>Selling Price</TableHead>
+                      <TableHead>Profit</TableHead>
                       <TableHead>Status</TableHead>
                       <TableHead>Actions</TableHead>
                     </TableRow>
@@ -513,11 +564,40 @@ export default function ManageImportedCjProductsPage() {
                         </TableCell>
                         <TableCell className="text-xs">{p.cj_product_id}</TableCell>
                         <TableCell className="text-xs">{getCategoryName(p.platform_category_id)}</TableCell>
-                        <TableCell>${Number(p.selling_price).toFixed(2)}</TableCell>
+                        <TableCell className="font-mono">${Number(p.cj_base_price).toFixed(2)}</TableCell>
+                        <TableCell className="font-mono">${Number(p.selling_price).toFixed(2)}</TableCell>
+                        <TableCell>
+                          {(() => {
+                            const profit = Number(p.selling_price) - Number(p.cj_base_price);
+                            const profitMargin = (profit / Number(p.selling_price)) * 100;
+                            const profitClass = profitMargin < 15 ? 'text-amber-600' : profitMargin < 30 ? 'text-green-600' : 'text-emerald-600 font-semibold';
+                            return (
+                              <div className={`font-mono ${profitClass}`}>
+                                ${profit.toFixed(2)}
+                                <span className="text-xs block">{profitMargin.toFixed(1)}%</span>
+                              </div>
+                            );
+                          })()}
+                        </TableCell>
                         <TableCell>{p.is_active ? <span className="text-green-600 flex items-center"><Eye className="h-4 w-4 mr-1"/>Active</span> : <span className="text-red-600 flex items-center"><EyeOff className="h-4 w-4 mr-1"/>Inactive</span>}</TableCell>
                         <TableCell className="space-x-1">
-                          <Button variant="outline" size="icon" onClick={() => openEditModal(p)}><Edit className="h-3.5 w-3.5"/></Button>
-                          <Button variant="destructive" size="icon" onClick={() => openDeleteConfirm(p)}><Trash2 className="h-3.5 w-3.5"/></Button>
+                          <Button variant="outline" size="icon" onClick={() => openEditModal(p)} title="Edit Product"><Edit className="h-3.5 w-3.5"/></Button>
+                          <Button 
+                            variant={p.is_active ? "default" : "outline"} 
+                            size="icon" 
+                            onClick={() => handleTogglePublish(p)}
+                            disabled={publishingProductId === p.platform_product_id}
+                            title={p.is_active ? "Unpublish from Store" : "Publish to Store"}
+                          >
+                            {publishingProductId === p.platform_product_id ? (
+                              <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                            ) : p.is_active ? (
+                              <Check className="h-3.5 w-3.5" />
+                            ) : (
+                              <Globe className="h-3.5 w-3.5" />
+                            )}
+                          </Button>
+                          <Button variant="destructive" size="icon" onClick={() => openDeleteConfirm(p)} title="Delete Product"><Trash2 className="h-3.5 w-3.5"/></Button>
                         </TableCell>
                       </TableRow>
                     ))}

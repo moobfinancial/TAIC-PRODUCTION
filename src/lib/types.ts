@@ -4,9 +4,20 @@ export interface Product {
   name: string;
   description: string;
   price: number; // Demo TAIC price
+  base_price?: number | string; // Original cash price
   imageUrl: string;
   category: string;
-  dataAiHint: string;
+  dataAiHint?: string;
+  additionalImages?: string[];
+  variants?: ProductVariant[];
+  cashbackPercentage?: number;
+}
+
+export interface ProductVariant {
+  id: string;
+  name: string;
+  price?: number;
+  options?: Record<string, string>;
 }
 
 export interface CartItem extends Product {

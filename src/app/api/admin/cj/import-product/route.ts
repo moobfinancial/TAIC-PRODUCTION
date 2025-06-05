@@ -3,6 +3,7 @@ import { Pool } from 'pg';
 import { z } from 'zod';
 import { validateAdminApiKey } from '../../../../../lib/adminAuth';
 import { getCjAccessToken } from '../../../../../lib/cjAuth';
+import { translateText } from '../../../../../lib/translationUtils';
 
 // Force this route to run in Node.js runtime instead of Edge Runtime
 export const runtime = 'nodejs';
@@ -168,10 +169,12 @@ export async function POST(request: NextRequest) {
           variants_json,
           is_active,
           cashback_percentage,
+          original_name,
+          original_description,
           created_at,
           updated_at
         ) VALUES (
-          $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, 0.00,
+          $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, 0.00, $13, $14,
           NOW(), NOW()
         )
         RETURNING platform_product_id, cj_product_id, platform_category_id, selling_price, display_name;`;
@@ -189,6 +192,36 @@ export async function POST(request: NextRequest) {
       // Prepare additional images (all except the first one)
       const additionalImages = productImages.length > 1 ? productImages.slice(1) : [];
       
+      // Determine product name and description, prioritizing English versions if available
+      const originalName = cjProduct.productName || 'Unnamed Product';
+      const originalDescription = cjProduct.productDescription || '';
+      
+      // Translate product name and description if they appear to be in Chinese
+      // We'll use a simple heuristic: if the text contains Chinese characters, translate it
+      const needsTranslation = (text: string) => /[\u4E00-\u9FFF]/.test(text);
+      
+      let displayName = inputDisplayName || cjProduct.productNameEn || originalName;
+      let displayDescription = inputDisplayDescription || cjProduct.productDescriptionEn || originalDescription;
+      
+      try {
+        // Translate name if needed and not already provided as input
+        if (!inputDisplayName && needsTranslation(displayName)) {
+          const translatedName = await translateText(displayName, 'en');
+          displayName = translatedName || displayName;
+          console.log(`[CJ Import] Translated product name from '${displayName}' to '${translatedName}'`);
+        }
+        
+        // Translate description if needed and not already provided as input
+        if (!inputDisplayDescription && needsTranslation(displayDescription)) {
+          const translatedDescription = await translateText(displayDescription, 'en');
+          displayDescription = translatedDescription || displayDescription;
+          console.log(`[CJ Import] Translated product description`);
+        }
+      } catch (translationError) {
+        console.error('[CJ Import] Translation error:', translationError);
+        // Continue with original text if translation fails
+      }
+      
       const insertResult = await client.query(insertProductQuery, [
         // $1: platform_product_id (manually generated)
         nextId,
@@ -197,7 +230,7 @@ export async function POST(request: NextRequest) {
         // $3: cj_product_data_json (store the complete product data)
         cjProduct,
         // $4: display_name
-        inputDisplayName || cjProduct.productName || cjProduct.productNameEn || 'Unnamed Product',
+        displayName,
         // $5: display_description
         inputDisplayDescription || cjProduct.description || cjProduct.productDesc || '',
         // $6: platform_category_id

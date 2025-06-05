@@ -17,7 +17,7 @@ TAIC is a global e-commerce platform powered by blockchain technology that:
 - Basic user authentication (currently simulated)
 - Product catalog browsing and filtering
 - Shopping cart functionality
-- CJ Dropshipping product import (recently fixed)
+- CJ Dropshipping product import (Import mechanism fixed; Frontend display and data processing for usability enhanced)
 - AI shopping assistant and product idea generator
 - Tokenomics and staking information pages
 - Wishlist functionality
@@ -27,8 +27,31 @@ TAIC is a global e-commerce platform powered by blockchain technology that:
 - Demo TAIC balances → Real TAIC cryptocurrency balances
 - Simulated checkout → Real cryptocurrency transactions
 - Mock product data → Real merchant-supplied product data
-- Demo crypto wallet connection → Real wallet integration (Fantom Wallet, etc.)
-- Simulated cashback → Real TAIC token rewards
+
+## Future Enhancements / Key Development Areas
+
+### Advanced Merchant Product Management
+To ensure high-quality product listings and empower merchants, the admin/merchant portal will include robust product management capabilities:
+- **Product Information Editing**:
+    - Ability to rename products.
+    - Comprehensive tools to update and format product descriptions (e.g., rich text editor).
+- **Image Management**:
+    - Replace or update existing product images.
+    - Upload and manage additional product images to provide multiple views or context.
+- **Categorization and Tagging**:
+    - Tools to refine product categorization and add relevant tags for improved searchability and filtering.
+- **Pricing and Inventory Control**:
+    - (Existing concept, but reinforce) Accurate control over pricing in TAIC and fiat equivalents.
+    - Real-time inventory management.
+- **Publishing Workflow**:
+    - Mechanism for admins/merchants to review and approve imported products before they go live on the platform.
+    - Ability to unpublish or temporarily disable listings.
+
+### Real Wallet Integration
+- Transition from demo crypto wallet connections to full integration with real-world wallets (e.g., Fantom Wallet, MetaMask, etc.) for seamless TAIC transactions.
+
+### Real TAIC Token Rewards
+- Implement the system for issuing actual TAIC token rewards for cashback and other incentive programs, replacing the current simulated rewards.
 
 ## Phase 1: Core Infrastructure & Authentication (2-3 Weeks)
 

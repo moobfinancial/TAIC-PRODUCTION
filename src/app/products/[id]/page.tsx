@@ -25,6 +25,7 @@ import {
   AlertDialogCancel,
 } from '@/components/ui/alert-dialog'; // Import AlertDialog components
 import type { VirtualTryOnOutput } from '@/ai/schemas/virtual-try-on.schema'; // Import types
+import { translateText, containsChineseCharacters } from '@/lib/translationUtils';
 
 export default function ProductDetailPage() {
   const params = useParams<{ id?: string }>();
@@ -37,6 +38,9 @@ export default function ProductDetailPage() {
   const [tryOnResult, setTryOnResult] = useState<VirtualTryOnOutput | null>(null);
   const [tryOnError, setTryOnError] = useState<string | null>(null);
   const [isTryOnModalOpen, setIsTryOnModalOpen] = useState(false);
+  const [selectedImage, setSelectedImage] = useState<string>('');
+  const [translatedName, setTranslatedName] = useState<string>('');
+  const [translatedDescription, setTranslatedDescription] = useState<string>('');
 
   const currentId = params?.id;
 
@@ -45,13 +49,93 @@ export default function ProductDetailPage() {
         setProduct(undefined);
         return;
     }
-    if (typeof currentId === 'string') {
-      const foundProduct = MOCK_PRODUCTS.find(p => p.id === currentId);
-      setProduct(foundProduct || null);
-    } else {
-      setProduct(null);
-    }
+    
+    const fetchProductDetails = async () => {
+      if (typeof currentId !== 'string') {
+        setProduct(null);
+        return;
+      }
+      
+      try {
+        // Fetch from the CJ products API
+        const response = await fetch(`/api/products/cj/${currentId}`);
+        
+        if (response.ok) {
+          const data = await response.json();
+          if (data.product) {
+            // Format the product data to match the expected Product type
+            const formattedProduct: Product = {
+              id: data.product.id,
+              name: data.product.name, // Name already cleaned in API
+              description: data.product.description || '',
+              price: data.product.price,
+              base_price: data.product.base_price || undefined,
+              imageUrl: data.product.imageUrl || '',
+              additionalImages: [
+                ...(data.product.imageUrls || []).filter((url: string) => url !== data.product.imageUrl),
+                ...(data.product.additionalImages || [])
+              ].filter(Boolean),
+              category: data.product.category,
+              variants: data.product.variants || [],
+              cashbackPercentage: data.product.cashbackPercentage || 0
+            };
+            setProduct(formattedProduct);
+            return;
+          }
+        }
+        
+        // If product not found, show error state
+        setProduct(null);
+        toast({
+          title: "Product not found",
+          description: "The requested product could not be found.",
+          variant: "destructive"
+        });
+        
+      } catch (error) {
+        console.error('Error fetching product details:', error);
+        setProduct(null);
+        toast({
+          title: "Error loading product",
+          description: "There was a problem loading the product details. Please try again later.",
+          variant: "destructive"
+        });
+      }
+    };
+    
+    fetchProductDetails();
   }, [currentId, params]);
+
+  // Set initial selected image when product loads
+  useEffect(() => {
+    if (product?.imageUrl) {
+      setSelectedImage(product.imageUrl);
+    }
+  }, [product?.imageUrl]);
+
+  useEffect(() => {
+    if (product) {
+      // Translate name
+      if (containsChineseCharacters(product.name)) {
+        translateText(product.name).then(setTranslatedName);
+      } else {
+        setTranslatedName(product.name);
+      }
+
+      // Process and translate description
+      let descriptionToProcess = product.description || '';
+      const cjPrefix = "Imported from CJ: ";
+      if (descriptionToProcess.startsWith(cjPrefix)) {
+        descriptionToProcess = descriptionToProcess.substring(cjPrefix.length);
+      }
+
+      if (containsChineseCharacters(descriptionToProcess)) {
+        translateText(descriptionToProcess).then(setTranslatedDescription);
+      } else {
+        setTranslatedDescription(descriptionToProcess);
+      }
+    }
+  }, [product]);
 
   if (product === undefined) {
     return (
@@ -132,6 +216,9 @@ export default function ProductDetailPage() {
     return tryOnCategories.includes(product.category);
   };
 
+  // Combine main image and additional images for the gallery
+  const allImages = product ? [product.imageUrl, ...(product.additionalImages || [])] : [];
+
   return (
     <div className="container mx-auto py-8 px-4">
       <div className="mb-8">
@@ -144,78 +231,133 @@ export default function ProductDetailPage() {
       </div>
 
       <div className="grid md:grid-cols-2 gap-8 lg:gap-12 items-start">
-        <div className="relative aspect-[4/3] bg-card rounded-lg shadow-xl overflow-hidden border">
-          <Image
-            src={product.imageUrl}
-            alt={product.name}
-            fill
-            className="object-cover"
-            sizes="(max-width: 768px) 100vw, (max-width: 1200px) 50vw, 33vw"
-            priority
-            data-ai-hint={product.dataAiHint || 'product image'}
-          />
+        {/* Main Product Image */}
+        <div className="space-y-4">
+          <div className="relative aspect-[4/3] bg-card rounded-lg shadow-xl overflow-hidden border">
+            {selectedImage ? (
+              <Image
+                src={selectedImage}
+                alt={product?.name || 'Product image'}
+                fill
+                sizes="(max-width: 640px) 100vw, (max-width: 1024px) 50vw, 33vw"
+                className="object-contain"
+                priority
+              />
+            ) : (
+              <div className="flex items-center justify-center h-full">
+                <AlertCircle className="h-12 w-12 text-muted-foreground" />
+                <p className="text-muted-foreground ml-2">Image not available</p>
+              </div>
+            )}
+          </div>
+          
+          {/* Thumbnail Gallery */}
+          {allImages.length > 1 && (
+            <div className="flex space-x-2 overflow-x-auto pb-2">
+              {allImages.map((img, index) => (
+                <div 
+                  key={index}
+                  className={cn(
+                    "relative h-20 w-20 rounded border cursor-pointer transition-all",
+                    selectedImage === img ? "border-primary border-2" : "border-gray-200 hover:border-gray-300"
+                  )}
+                  onClick={() => setSelectedImage(img)}
+                >
+                  <Image
+                    src={img}
+                    alt={`${product?.name || 'Product'} - view ${index + 1}`}
+                    fill
+                    sizes="80px"
+                    className="object-contain p-1"
+                  />
+                </div>
+              ))}
+            </div>
+          )}
         </div>
 
+        {/* Product Details */}
         <div className="space-y-6">
-          <h1 className="text-3xl lg:text-4xl font-headline font-bold">{product.name}</h1>
-          
-          <div className="flex items-center space-x-2 text-sm text-muted-foreground">
-            <Tag className="h-4 w-4" />
-            <span>Category: {product.category}</span>
+          <div>
+            <h1 className="text-3xl font-bold">{translatedName || product?.name}</h1>
+            <div className="flex items-center mt-2 space-x-2">
+              <Tag className="h-4 w-4 text-muted-foreground" />
+              <span className="text-muted-foreground">{product?.category}</span>
+            </div>
           </div>
 
-          <p className="text-3xl font-bold text-primary flex items-center">
-            <Gem className="mr-2 h-7 w-7" /> {product.price.toLocaleString()} TAIC
-          </p>
-          
-          <Card className="shadow-md bg-secondary/20 border">
-            <CardHeader>
-              <CardTitle className="text-xl font-headline flex items-center">
-                <Info className="mr-3 h-6 w-6 text-primary" />
-                Product Description
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              <p className="text-foreground/80 leading-relaxed text-base">{product.description}</p>
-            </CardContent>
-          </Card>
+          {/* Price Section */}
+          <div className="space-y-2">
+            <div className="flex items-center">
+              <Gem className="h-6 w-6 text-primary mr-2" />
+              <span className="text-2xl font-bold">
+                {product?.price?.toLocaleString()} TAIC
+              </span>
+              {product?.cashbackPercentage > 0 && (
+                <span className="ml-2 px-2 py-0.5 bg-green-100 text-green-800 text-xs rounded-full">
+                  {product.cashbackPercentage}% Cashback
+                </span>
+              )}
+            </div>
+            
+            {/* Cash price if available */}
+            {product?.base_price && (
+              <div className="text-muted-foreground">
+                <span className="mr-1">Cash price:</span>
+                <span className="font-medium">
+                  ${parseFloat(String(product.base_price)).toFixed(2)}
+                </span>
+              </div>
+            )}
+          </div>
 
-          <div className="mt-8 pt-6 border-t flex flex-col gap-3">
-             <Button 
-               size="lg" 
-               className="w-full font-semibold py-6 text-lg shadow-lg hover:shadow-xl transition-shadow" 
-               onClick={handleAddToCart}
-             >
-               <ShoppingCart className="mr-2 h-5 w-5" /> Add to Cart
-             </Button>
-             <Button
-                size="lg"
-                variant="outline"
-                className={cn(
-                    "w-full font-semibold py-6 text-lg shadow-lg hover:shadow-xl transition-shadow",
-                    isItemInWishlist && "border-destructive text-destructive hover:bg-destructive/5 hover:text-destructive"
-                )}
+          {/* Description */}
+          <div>
+            <h2 className="text-xl font-semibold mb-2">Description</h2>
+            <p className="text-muted-foreground">
+              {translatedDescription.trim() || 'No description available for this product.'}
+            </p>
+          </div>
+
+          {/* Action Buttons */}
+          <div className="pt-6 space-y-3">
+            <Button 
+              size="lg" 
+              className="w-full font-semibold" 
+              onClick={handleAddToCart}
+            >
+              <ShoppingCart className="mr-2 h-5 w-5" /> Add to Cart
+            </Button>
+            
+            <div className="flex gap-3">
+              <Button 
+                variant="outline" 
+                className="flex-1 font-semibold" 
                 onClick={handleWishlistToggle}
               >
-                <Heart className={cn("mr-2 h-5 w-5", isItemInWishlist && "fill-current")} />
-                {isItemInWishlist ? 'Remove from Wishlist' : 'Add to Wishlist'}
+                <Heart className={cn(
+                  "mr-2 h-5 w-5",
+                  isInWishlist(product?.id || '') ? "fill-red-500 text-red-500" : ""
+                )} />
+                {isInWishlist(product?.id || '') ? 'Saved' : 'Save'}
               </Button>
+              
               {canShowTryOnButton() && (
                 <Button 
-                  size="lg" 
                   variant="secondary" 
-                  className="w-full font-semibold py-6 text-lg shadow-lg hover:shadow-xl transition-shadow" 
+                  className="flex-1 font-semibold" 
                   onClick={handleVirtualTryOn}
-                  disabled={isTryingOn || !user?.profileImageUrl} // Disable if no profile pic
+                  disabled={isTryingOn || !user?.profileImageUrl}
                 >
                   {isTryingOn ? (
                     <Loader2 className="mr-2 h-5 w-5 animate-spin" />
                   ) : (
                     <Sparkles className="mr-2 h-5 w-5" />
                   )}
-                  Virtual Try-On {isTryingOn ? 'Loading...' : (!user?.profileImageUrl ? '(Needs Profile Pic)' : '')}
+                  {isTryingOn ? 'Loading...' : 'Try On'}
                 </Button>
               )}
+            </div>
           </div>
         </div>
       </div>
