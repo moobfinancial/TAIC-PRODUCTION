@@ -1,0 +1,102 @@
+
+'use client';
+
+import Image from 'next/image';
+import Link from 'next/link';
+import { Button } from '@/components/ui/button';
+import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
+import { PlusCircle, Gem, Eye, Sparkles, Heart } from 'lucide-react';
+import type { Product } from '@/lib/types';
+import { useCart } from '@/hooks/useCart';
+import { useWishlist } from '@/hooks/useWishlist';
+import { useToast } from '@/hooks/use-toast';
+import { cn } from '@/lib/utils';
+
+interface ProductCardProps {
+  product: Product;
+  showVirtualTryOnButton?: boolean;
+  productContext?: 'default' | 'giftIdea';
+}
+
+export function ProductCard({ product, showVirtualTryOnButton = false, productContext = 'default' }: ProductCardProps) {
+  const { addToCart } = useCart();
+  const { addToWishlist, isInWishlist, removeFromWishlist } = useWishlist();
+  const { toast } = useToast();
+
+  const handleVirtualTryOn = () => {
+    toast({
+      title: "Virtual Try-On (Demo)",
+      description: "This feature is coming soon! It will allow you to see this item on a model or in your space.",
+    });
+  };
+
+  const canShowTryOnButton = () => {
+    if (!showVirtualTryOnButton || productContext !== 'giftIdea') {
+      return false;
+    }
+    const tryOnCategories = ['Fashion', 'Gadgets & Toys', 'Novelty', 'Electronics', 'Office Tech', 'Home & Garden'];
+    return tryOnCategories.includes(product.category);
+  };
+
+  const isItemInWishlist = isInWishlist(product.id);
+
+  const handleWishlistToggle = () => {
+    if (isItemInWishlist) {
+      removeFromWishlist(product.id);
+    } else {
+      addToWishlist(product);
+    }
+  };
+
+  return (
+    <Card className="flex flex-col overflow-hidden shadow-lg hover:shadow-2xl transition-shadow duration-300 h-full group">
+      <CardHeader className="p-0 relative">
+        <div className="aspect-video relative w-full">
+          <Image
+            src={product.imageUrl}
+            alt={product.name}
+            layout="fill"
+            objectFit="cover"
+            data-ai-hint={product.dataAiHint}
+          />
+        </div>
+        <Button
+            variant="ghost"
+            size="icon"
+            className={cn(
+                "absolute top-2 right-2 z-10 bg-background/70 hover:bg-background text-primary rounded-full h-9 w-9",
+                isItemInWishlist ? "text-destructive hover:text-destructive/90" : "text-muted-foreground hover:text-primary"
+            )}
+            onClick={handleWishlistToggle}
+            aria-label={isItemInWishlist ? "Remove from wishlist" : "Add to wishlist"}
+        >
+            <Heart className={cn("h-5 w-5", isItemInWishlist && "fill-current text-destructive")} />
+        </Button>
+      </CardHeader>
+      <CardContent className="p-6 flex-grow">
+        <CardTitle className="text-xl font-headline mb-2">{product.name}</CardTitle>
+        <CardDescription className="text-sm text-muted-foreground mb-4 h-20 overflow-hidden text-ellipsis">
+          {product.description}
+        </CardDescription>
+        <p className="text-lg font-semibold text-primary flex items-center">
+          <Gem className="mr-2 h-5 w-5" /> {product.price.toLocaleString()} TAIC
+        </p>
+      </CardContent>
+      <CardFooter className="p-6 pt-0 flex flex-col space-y-2">
+        <Button className="w-full font-semibold" onClick={() => addToCart(product)}>
+          <PlusCircle className="mr-2 h-5 w-5" /> Add to Cart
+        </Button>
+        <Button asChild variant="outline" className="w-full font-semibold">
+          <Link href={`/products/${product.id}`}>
+            <Eye className="mr-2 h-5 w-5" /> View Details
+          </Link>
+        </Button>
+        {canShowTryOnButton() && (
+          <Button variant="secondary" className="w-full font-semibold" onClick={handleVirtualTryOn}>
+            <Sparkles className="mr-2 h-5 w-5" /> Virtual Try-On (Demo)
+          </Button>
+        )}
+      </CardFooter>
+    </Card>
+  );
+}
