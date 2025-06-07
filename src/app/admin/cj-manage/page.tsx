@@ -1,39 +1,45 @@
 'use client';
 
-import React, { useState, useEffect, FormEvent, useCallback } from 'react';
-import { AdminLayout } from '@/components/admin/AdminLayout';
+'use client';
+
+import * as React from 'react';
+import { useAdminAuth } from '@/contexts/AdminAuthContext';
+import { useState, useEffect, FormEvent, useCallback } from 'react';
+
+// UI Components
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription, CardFooter } from '@/components/ui/card';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Switch } from '@/components/ui/switch'; // For is_active toggle
+import { Switch } from '@/components/ui/switch';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import { 
+  AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
+  AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle 
+} from '@/components/ui/alert-dialog';
 import { useToast } from '@/hooks/use-toast';
-import { Eye, EyeOff, Edit, Trash2, Search, ListChecks, ChevronLeft, ChevronRight, Loader2, Globe, Check } from 'lucide-react';
-import Image from 'next/image';
+
+// Admin Components
+import ProtectedRoute from '@/components/admin/ProtectedRoute';
+
+// API Client
+import { adminApi } from '@/lib/api/adminClient';
+
+// Icons
 import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from "@/components/ui/alert-dialog"; // For delete confirmation
+  Eye, EyeOff, Edit, Trash2, Search, ListChecks, 
+  ChevronLeft, ChevronRight, Loader2, Globe, Check 
+} from 'lucide-react';
 
-// Admin API Key must be exposed to the client via NEXT_PUBLIC_ prefix
-const ADMIN_API_KEY = process.env.NEXT_PUBLIC_ADMIN_API_KEY;
+// Next.js
+import Image from 'next/image';
 
-if (!ADMIN_API_KEY && process.env.NODE_ENV === 'development') {
-  console.warn('WARNING: NEXT_PUBLIC_ADMIN_API_KEY is not set. Please ensure it is defined in your .env.local file for API authentication to work correctly. Falling back to a placeholder, which will likely fail.');
-}
-const EFFECTIVE_ADMIN_API_KEY = ADMIN_API_KEY || 'DEV_FALLBACK_KEY_EXPECTED_TO_FAIL';
+// We'll use the admin API client which handles authentication automatically
 
 interface ImportedCjProduct {
-  platform_product_id: number;
+  id: number; // Changed from platform_product_id to match API response
   cj_product_id: string;
   display_name: string;
   selling_price: number;
@@ -69,6 +75,7 @@ interface EditModalState {
 }
 
 export default function ManageImportedCjProductsPage() {
+  const { adminApiKey, loading: adminAuthLoading } = useAdminAuth();
   const { toast } = useToast();
 
   // List & Filter State
@@ -111,290 +118,286 @@ export default function ManageImportedCjProductsPage() {
 
 
   const fetchPlatformCategories = useCallback(async () => {
-    if (!EFFECTIVE_ADMIN_API_KEY || EFFECTIVE_ADMIN_API_KEY === 'DEV_FALLBACK_KEY_EXPECTED_TO_FAIL') {
-      console.error('EFFECTIVE_ADMIN_API_KEY is not set or is using fallback. Check NEXT_PUBLIC_ADMIN_API_KEY in .env.local');
-      setIsLoadingCategories(false);
-      toast({
-        title: 'Configuration Error',
-        description: 'Admin API key is not configured correctly. Please check environment variables.',
-        variant: 'destructive',
-      });
+    if (adminAuthLoading) {
+      console.log('Admin auth is loading, skipping category fetch.');
       return;
     }
-
+    if (!adminApiKey) {
+      toast({ title: "Authentication Error", description: "Admin API key is missing. Cannot fetch categories.", variant: "destructive" });
+      setIsLoadingCategories(false);
+      return;
+    }
     setIsLoadingCategories(true);
     try {
       console.log('Fetching categories from API...');
-      const response = await fetch('/api/admin/categories?hierarchical=false', {
-        headers: { 
-          'X-Admin-API-Key': EFFECTIVE_ADMIN_API_KEY,
-          'Content-Type': 'application/json',
-        },
-      });
+      const { data, error } = await adminApi.get(adminApiKey, '/categories?hierarchical=false');
       
-      console.log('Categories API response status:', response.status);
-      
-      if (!response.ok) {
-        const errorData = await response.json().catch(() => ({}));
-        console.error('Categories API error:', errorData);
-        throw new Error(
-          errorData.error || 
-          `Failed to fetch platform categories: ${response.status} ${response.statusText}`
-        );
+      if (error) {
+        throw new Error(error);
       }
-      
-      const data = await response.json();
-      console.log('Categories API response data:', data);
       
       // Ensure data is an array before setting state
       const categories = Array.isArray(data) ? data : [];
-      
-      console.log(`Setting ${categories.length} categories to state`);
+      console.log(`Fetched ${categories.length} categories`);
       setPlatformCategories(categories);
-      
-      // If we have categories, log the first few
-      if (categories.length > 0) {
-        console.log('First category in response:', categories[0]);
-      } else {
-        console.warn('No categories returned from API');
-      }
     } catch (error: any) {
-      console.error('Error in fetchPlatformCategories:', error);
-      toast({ 
-        title: 'Error Loading Categories', 
-        description: error.message || 'Could not load platform categories',
+      console.error('Error fetching categories:', error);
+      toast({
+        title: 'Error',
+        description: error.message || 'Failed to load product categories',
         variant: 'destructive',
       });
-      // Ensure we have an empty array on error
-      setPlatformCategories([]);
     } finally {
       setIsLoadingCategories(false);
     }
-  }, [toast]);
+  }, [toast, adminApiKey, adminAuthLoading]);
 
-  const fetchImportedProducts = useCallback(async (page = currentPage) => {
-    if (!EFFECTIVE_ADMIN_API_KEY || EFFECTIVE_ADMIN_API_KEY === 'DEV_FALLBACK_KEY_EXPECTED_TO_FAIL') {
-        toast({title: "Configuration Error", description: "Admin API Key not found.", variant: "destructive"});
-        return;
+  const fetchImportedProducts = useCallback(async (page: number = 1) => {
+    if (adminAuthLoading) {
+      console.log('Admin auth is loading, skipping product fetch.');
+      return;
+    }
+    if (!adminApiKey) {
+      toast({ title: "Authentication Error", description: "Admin API key is missing. Cannot fetch products.", variant: "destructive" });
+      setIsLoading(false);
+      setListError("Admin API key is missing.");
+      setProducts([]);
+      setTotalPages(0);
+      setTotalResults(0);
+      return;
     }
     setIsLoading(true);
     setListError(null);
-    setCurrentPage(page);
-
-    const params = new URLSearchParams({
-      page: String(page),
-      limit: String(limitPerPage),
-    });
-    if (searchTerm) params.append('searchTerm', searchTerm);
-    if (filterCategory) params.set('platform_category_id', filterCategory);
-    if (filterIsActive !== undefined) params.set('isActive', filterIsActive);
-
     try {
-      const response = await fetch(`/api/admin/cj/imported-products?${params.toString()}`, {
-        headers: { 'X-Admin-API-Key': ADMIN_API_KEY || '' },
+      const params = new URLSearchParams({
+        page: page.toString(),
+        limit: limitPerPage.toString(),
+        ...(searchTerm && { search: searchTerm }),
+        ...(filterCategory && filterCategory !== '__ALL_CATEGORIES__' && { category: filterCategory }),
+        ...(filterIsActive && filterIsActive !== '__ANY_STATUS__' && { isActive: filterIsActive })
       });
-      const result = await response.json();
-      if (!response.ok) {
-        throw new Error(result.error || result.details || `Failed to fetch products: ${response.statusText}`);
+
+      const { data, error } = await adminApi.get(adminApiKey, `/cj/imported-products?${params}`);
+      
+      if (error) {
+        throw new Error(error);
       }
-      setProducts(result.data || []);
-      setTotalResults(result.pagination?.totalCount || 0);
-      setTotalPages(result.pagination?.totalPages || 0);
-    } catch (err: any) {
-      setListError(err.message);
-      setProducts([]);
-      toast({ title: "Error Fetching Products", description: err.message, variant: "destructive" });
+      
+      // The API returns products in response.data and pagination in response.pagination
+      setProducts(data.data || []); 
+      setTotalPages(data.pagination?.totalPages || 0);
+      setTotalResults(data.pagination?.total || 0);
+      setCurrentPage(page);
+    } catch (error: any) {
+      console.error('Error fetching products:', error);
+      setListError(error.message || 'Failed to load products');
+      toast({
+        title: "Error",
+        description: error.message || 'Failed to load products',
+        variant: "destructive",
+      });
     } finally {
       setIsLoading(false);
     }
-  }, [EFFECTIVE_ADMIN_API_KEY, currentPage, limitPerPage, searchTerm, filterCategory, filterIsActive, toast]);
+  }, [toast, limitPerPage, searchTerm, filterCategory, filterIsActive, adminApiKey, adminAuthLoading]);
 
   // Effect to fetch platform categories on component mount
   useEffect(() => {
-    console.log('useEffect: Initial call to fetchPlatformCategories');
-    fetchPlatformCategories();
-  }, [fetchPlatformCategories]); // fetchPlatformCategories is memoized
+    if (!adminAuthLoading && adminApiKey) {
+      fetchPlatformCategories();
+    }
+  }, [fetchPlatformCategories, adminAuthLoading, adminApiKey]); // fetchPlatformCategories is memoized
 
   // Effect to fetch imported products once categories are loaded and not still loading
   useEffect(() => {
-    if (platformCategories.length > 0 && !isLoadingCategories) {
-      console.log('useEffect: Categories loaded, calling fetchImportedProducts');
-      fetchImportedProducts(currentPage); // Fetch for the current page
-    } else if (!isLoadingCategories && platformCategories.length === 0) {
-      console.log('useEffect: Categories loaded, but none available. Not fetching products.');
-      // Optionally clear products or set an appropriate message if no categories mean no products can be shown
+    if (!adminAuthLoading && adminApiKey) {
+      fetchImportedProducts(currentPage);
+    } else if (!adminAuthLoading && !adminApiKey) {
       setProducts([]);
-      setTotalResults(0);
       setTotalPages(0);
+      setTotalResults(0);
+      setListError("Admin authentication required to load products.");
+      toast({ title: "Authentication Required", description: "Please log in as admin to view products.", variant: "destructive" });
     }
-  }, [platformCategories, isLoadingCategories, fetchImportedProducts, currentPage]); // Add currentPage here
+  }, [fetchImportedProducts, currentPage, adminAuthLoading, adminApiKey, toast]); // Fetch for the current page
 
   const handleSearchSubmit = (e: FormEvent) => {
     e.preventDefault();
     fetchImportedProducts(1); // Reset to page 1 on new search
   };
 
-  const openEditModal = (product: ImportedCjProduct) => {
-    console.log('Opening edit modal for product:', product);
+  const openEditModal = (productToEdit: ImportedCjProduct) => {
+    console.log('--- openEditModal START ---');
     
-    // Check if we have categories available
+    if (!productToEdit) {
+      console.error('openEditModal ERROR: productToEdit is null or undefined.');
+      return;
+    }
+    
+    // Check for id, allowing 0 as a potentially valid ID
+    if (productToEdit.id === undefined && productToEdit.id !== 0) {
+      console.error('openEditModal ERROR: product.id is missing or invalid. Value:', productToEdit.id);
+      toast({ title: 'Error Opening Modal', description: 'Product ID is missing or invalid (Code: OEM_P04).', variant: 'destructive' });
+      return;
+    }
+
+    console.log('openEditModal: product passed initial validation. Product ID:', productToEdit.id);
+
     if (platformCategories.length === 0) {
-      console.error('Cannot open edit modal: No categories available');
-      toast({
-        title: 'Cannot Edit Product',
-        description: 'No product categories are available. Please create categories first.',
-        variant: 'destructive',
+      console.error('openEditModal ERROR: No platform categories available to populate dropdown.');
+      toast({ 
+        title: 'Error', 
+        description: 'Categories not loaded. Please wait and try again.', 
+        variant: 'destructive' 
       });
       return;
     }
+
+    // Convert cashback percentage from decimal to percentage (e.g., 0.05 -> 5)
+    const cashbackValue = typeof productToEdit.cashback_percentage === 'number' 
+      ? productToEdit.cashback_percentage 
+      : typeof productToEdit.cashback_percentage === 'string'
+        ? parseFloat(productToEdit.cashback_percentage) || 0
+        : 0;
     
-    // Ensure we have a valid category ID
-    let categoryId: string;
+    // Convert to whole number percentage (e.g., 0.05 -> 5)
+    const cashbackPercent = cashbackValue !== 0 ? (cashbackValue * 100).toString() : '';
+
+    // Set the selected category ID for the dropdown
+    const categoryId = productToEdit.platform_category_id?.toString() || '';
     
-    // If product has a valid category ID, use it
-    if (product.platform_category_id) {
-      const productCategoryId = String(product.platform_category_id);
-      
-      // Verify the category exists in our list
-      const categoryExists = platformCategories.some(
-        cat => String(cat.id) === productCategoryId
-      );
-      
-      if (categoryExists) {
-        categoryId = productCategoryId;
-      } else {
-        console.warn(`Product category ID ${productCategoryId} not found in available categories`);
-        // Only default to first category if we have categories
-        categoryId = platformCategories.length > 0 ? String(platformCategories[0].id) : '';
-      }
-    } else {
-      // Default to first category if product has no category, but only if we have categories
-      categoryId = platformCategories.length > 0 ? String(platformCategories[0].id) : '';
-    }
-    
-    // If we still don't have a valid category ID, show an error
-    if (!categoryId) {
-      console.error('No valid category ID could be determined');
-      toast({
-        title: 'Error',
-        description: 'Could not determine a valid category for this product.',
-        variant: 'destructive',
-      });
-      return;
-    }
-    
-    console.log('Setting category ID in edit modal:', categoryId);
-    
-    setEditModal({
+    const newModalState = {
       isOpen: true,
-      product,
-      displayName: product.display_name,
-      displayDescription: product.display_description || '',
+      product: { ...productToEdit },
+      displayName: productToEdit.display_name || '',
+      displayDescription: productToEdit.display_description || '',
       platformCategoryId: categoryId,
-      sellingPrice: String(product.selling_price),
-      isActive: product.is_active,
-      cashbackPercentage: String(product.cashback_percentage || '0.00'),
-      shippingRulesId: product.shipping_rules_id || '',
-    });
+      sellingPrice: productToEdit.selling_price != null ? String(productToEdit.selling_price) : '',
+      isActive: productToEdit.is_active != null ? productToEdit.is_active : true,
+      cashbackPercentage: cashbackPercent,
+      shippingRulesId: productToEdit.shipping_rules_id || '',
+    };
+
+    console.log('openEditModal: Setting new modal state with category:', categoryId, 'and cashback:', cashbackPercent);
+    setEditModal(newModalState);
   };
 
-  const handleUpdateProduct = async (e: FormEvent) => {
+
+  const handleUpdateProduct = async (e: React.FormEvent) => {
     e.preventDefault();
-    
-    console.log('Submitting product update with data:', {
-      platformCategoryId: editModal.platformCategoryId,
-      platformCategories: platformCategories.map(c => ({ id: c.id, name: c.name })),
-      formData: {
-        displayName: editModal.displayName,
-        sellingPrice: editModal.sellingPrice,
-      },
-    });
-    
-    if (!editModal.product) {
-      console.error('No product selected for update');
+
+    // Capture a snapshot of the editModal state at the moment of submission
+    const { 
+      product: productSnapshot,
+      displayName: displayNameSnapshot,
+      displayDescription: displayDescriptionSnapshot,
+      platformCategoryId: platformCategoryIdSnapshot,
+      sellingPrice: sellingPriceSnapshot,
+      isActive: isActiveSnapshot,
+      cashbackPercentage: cashbackPercentageSnapshot,
+      shippingRulesId: shippingRulesIdSnapshot
+    } = editModal;
+
+    if (isUpdating) {
+      console.log('Update already in progress, aborting.');
+      return;
+    }
+
+    // Validate the product and its ID
+    if (!productSnapshot?.id && productSnapshot?.id !== 0) {
+      console.error('Product ID is missing or invalid:', productSnapshot);
       toast({
-        title: 'Error',
-        description: 'No product selected for update',
+        title: 'Error Updating Product',
+        description: 'Product information is missing or invalid. Please try again.',
         variant: 'destructive',
       });
       return;
     }
     
-    // Validate form
-    if (!editModal.platformCategoryId) {
-      console.error('No category selected');
-      toast({
-        title: 'Validation Error',
-        description: 'Please select a valid category.',
-        variant: 'destructive',
-      });
+    const productId = productSnapshot.id;
+    console.log('Using Product ID for update:', productId);
+
+    // Validate required fields
+    if (!platformCategoryIdSnapshot) {
+      toast({ title: 'Validation Error', description: 'Please select a valid category.', variant: 'destructive' });
       return;
     }
     
-    // Verify the selected category exists
-    const categoryExists = platformCategories.some(
-      cat => String(cat.id) === editModal.platformCategoryId
-    );
-    
-    if (!categoryExists) {
-      console.error('Selected category does not exist:', editModal.platformCategoryId);
-      toast({
-        title: 'Validation Error',
-        description: 'The selected category is no longer available. Please select another category.',
-        variant: 'destructive',
-      });
-      return;
-    }
-    
-    if (!editModal.sellingPrice) {
-      console.error('No selling price provided');
-      toast({
-        title: 'Validation Error',
-        description: 'Please enter a selling price.',
-        variant: 'destructive',
-      });
-      return;
-    }
-    
-    const sellingPrice = parseFloat(editModal.sellingPrice);
+    const sellingPrice = parseFloat(sellingPriceSnapshot);
     if (isNaN(sellingPrice) || sellingPrice <= 0) {
-      console.error('Invalid selling price:', editModal.sellingPrice);
-      toast({
-        title: 'Validation Error',
-        description: 'Please enter a valid selling price greater than 0.',
-        variant: 'destructive',
-      });
+      toast({ title: 'Validation Error', description: 'Please enter a valid selling price greater than 0.', variant: 'destructive' });
       return;
     }
+    
+    if (!displayNameSnapshot?.trim()) {
+      toast({ title: 'Validation Error', description: 'Display Name cannot be empty.', variant: 'destructive' });
+      return;
+    }
+    
+    // Parse and validate cashback percentage
+    let cashbackDecimal = 0;
+    if (cashbackPercentageSnapshot) {
+      const cashbackValue = parseFloat(cashbackPercentageSnapshot);
+      if (isNaN(cashbackValue) || cashbackValue < 0 || cashbackValue > 100) {
+        toast({ title: 'Validation Error', description: 'Cashback percentage must be between 0 and 100.', variant: 'destructive' });
+        return;
+      }
+      cashbackDecimal = cashbackValue / 100; // Convert percentage to decimal (5 -> 0.05)
+    }
+    
     setIsUpdating(true);
+    
     try {
-      const payload: Partial<ImportedCjProduct> = { // Use partial for updates
-        display_name: editModal.displayName,
-        display_description: editModal.displayDescription,
-        platform_category_id: parseInt(editModal.platformCategoryId, 10),
-        selling_price: parseFloat(editModal.sellingPrice),
-        is_active: editModal.isActive,
-        cashback_percentage: parseFloat(editModal.cashbackPercentage) || 0.00,
-        shipping_rules_id: editModal.shippingRulesId || null,
+      const payload = {
+        display_name: displayNameSnapshot.trim(),
+        display_description: displayDescriptionSnapshot?.trim() || null,
+        platform_category_id: Number(platformCategoryIdSnapshot),
+        selling_price: sellingPrice,
+        is_active: isActiveSnapshot,
+        cashback_percentage: cashbackDecimal,
+        shipping_rules_id: shippingRulesIdSnapshot?.trim() || null,
       };
 
-      const response = await fetch(`/api/admin/cj/imported-products/${editModal.product.platform_product_id}`, {
-        method: 'PUT',
-        headers: {
-          'Content-Type': 'application/json',
-          'X-Admin-API-Key': ADMIN_API_KEY || ''
-        },
-        body: JSON.stringify(payload),
+      console.log('Update payload:', {
+        productId,
+        payload,
+        cashback: {
+          input: cashbackPercentageSnapshot,
+          parsed: cashbackDecimal,
+        }
       });
-      const result = await response.json();
-      if (!response.ok) {
-        throw new Error(result.error || result.details || 'Failed to update product');
+
+      if (!adminApiKey) {
+        throw new Error('Admin API key is missing. Please log in again.');
       }
-      toast({ title: "Success", description: "Product updated successfully." });
+
+      const { data, error } = await adminApi.put(
+        adminApiKey,
+        `/cj/imported-products/${productId}`,
+        payload
+      ) as { data: ImportedCjProduct; error: string | null };
+
+      if (error) {
+        throw new Error(error);
+      }
+
+      toast({ 
+        title: 'Success', 
+        description: 'Product updated successfully.',
+        variant: 'default'
+      });
+      
+      // Close modal and refresh product list
       setEditModal(prev => ({ ...prev, isOpen: false }));
-      fetchImportedProducts(currentPage); // Refresh current page
+      fetchImportedProducts(currentPage);
+      
     } catch (error: any) {
-      toast({ title: "Update Failed", description: error.message, variant: "destructive" });
+      console.error('Update failed:', error);
+      toast({ 
+        title: 'Update Failed', 
+        description: error.message || 'Failed to update product', 
+        variant: 'destructive' 
+      });
     } finally {
       setIsUpdating(false);
     }
@@ -406,81 +409,83 @@ export default function ManageImportedCjProductsPage() {
   };
 
   const handleDeleteProduct = async () => {
+    if (adminAuthLoading || !adminApiKey) {
+      toast({ title: "Authentication Error", description: "Admin API key is missing. Cannot delete product.", variant: "destructive" });
+      setIsDeleting(false);
+      return;
+    }
     if (!productToDelete) return;
+    
     setIsDeleting(true);
     try {
-      const response = await fetch(`/api/admin/cj/imported-products/${productToDelete.platform_product_id}`, {
-        method: 'DELETE',
-        headers: { 'X-Admin-API-Key': ADMIN_API_KEY || '' },
-      });
-      if (!response.ok) {
-        const result = await response.json().catch(() => null); // Try to parse error, but might not be JSON
-        throw new Error(result?.error || result?.details || `Failed to delete product: ${response.statusText}`);
+      const { error } = await adminApi.delete(
+        adminApiKey,
+        `/cj/imported-products/${productToDelete.id}`
+      );
+      
+      if (error) {
+        throw new Error(error);
       }
+      
       toast({ title: "Success", description: "Product deleted successfully." });
       setShowDeleteConfirm(false);
       setProductToDelete(null);
-      fetchImportedProducts(currentPage); // Refresh
+      fetchImportedProducts(currentPage);
     } catch (error: any) {
-      toast({ title: "Delete Failed", description: error.message, variant: "destructive" });
+      toast({ title: "Delete Failed", description: error.message || 'Failed to delete product', variant: "destructive" });
     } finally {
       setIsDeleting(false);
     }
   };
   
   const handleTogglePublish = async (product: ImportedCjProduct) => {
+    if (adminAuthLoading || !adminApiKey) {
+      toast({ title: "Authentication Error", description: "Admin API key is missing. Cannot update product status.", variant: "destructive" });
+      setPublishingProductId(null);
+      return;
+    }
     // Set the current product as publishing to show loading state
-    setPublishingProductId(product.platform_product_id);
+    setPublishingProductId(product.id);
     
     try {
       // Toggle the is_active status
       const newActiveStatus = !product.is_active;
       
-      const response = await fetch(`/api/admin/cj/imported-products/${product.platform_product_id}`, {
-        method: 'PUT',
-        headers: {
-          'Content-Type': 'application/json',
-          'X-Admin-API-Key': ADMIN_API_KEY || ''
-        },
-        body: JSON.stringify({
-          is_active: newActiveStatus
-        }),
-      });
+      const { error } = await adminApi.put(
+        adminApiKey,
+        `/cj/imported-products/${product.id}`,
+        { is_active: newActiveStatus }
+      );
       
-      if (!response.ok) {
-        const result = await response.json().catch(() => null);
-        throw new Error(result?.error || result?.details || `Failed to update product visibility: ${response.statusText}`);
+      if (error) {
+        throw new Error(error);
       }
-      
-      toast({ 
-        title: "Success", 
-        description: newActiveStatus 
-          ? "Product published to store successfully." 
-          : "Product unpublished from store successfully." 
-      });
       
       // Refresh the product list
       fetchImportedProducts(currentPage);
+      
+      toast({
+        title: "Success",
+        description: `Product ${newActiveStatus ? 'published' : 'unpublished'} successfully.`,
+      });
     } catch (error: any) {
-      toast({ 
-        title: "Update Failed", 
-        description: error.message, 
-        variant: "destructive" 
+      toast({
+        title: "Update Failed",
+        description: error.message || 'Failed to update product status',
+        variant: "destructive",
       });
     } finally {
-      // Clear the publishing state
+      // Clear the loading state
       setPublishingProductId(null);
     }
   };
-
-  // Function to get category name from ID
   const getCategoryName = (id: number) => {
     if (!id) return 'N/A';
     return platformCategories.find(c => c.id === id)?.name || 'N/A';
   };
 
   return (
-    <AdminLayout>
+    <ProtectedRoute>
       <div className="space-y-6">
         <Card>
           <CardHeader>
@@ -505,7 +510,7 @@ export default function ManageImportedCjProductsPage() {
                   <SelectItem value="false">Inactive</SelectItem>
                 </SelectContent>
               </Select>
-              <Button type="submit" disabled={isLoading || !ADMIN_API_KEY}>
+              <Button type="submit" disabled={isLoading}>
                 <Search className="mr-2 h-4 w-4" /> Filter Products
               </Button>
             </form>
@@ -538,8 +543,8 @@ export default function ManageImportedCjProductsPage() {
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {products.map(p => (
-                      <TableRow key={p.platform_product_id}>
+                    {products.map((p, index) => (
+                      <TableRow key={`product-${p.id || 'unknown'}-${p.cj_product_id || index}`}>
                         <TableCell>
                           {(() => {
                             let imageUrlToDisplay: string | null = null;
@@ -560,7 +565,7 @@ export default function ManageImportedCjProductsPage() {
                         </TableCell>
                         <TableCell>
                           {p.display_name}
-                          <p className="text-xs text-muted-foreground">ID: {p.platform_product_id}</p>
+                          <p className="text-xs text-muted-foreground">ID: {p.id}</p>
                         </TableCell>
                         <TableCell className="text-xs">{p.cj_product_id}</TableCell>
                         <TableCell className="text-xs">{getCategoryName(p.platform_category_id)}</TableCell>
@@ -586,10 +591,10 @@ export default function ManageImportedCjProductsPage() {
                             variant={p.is_active ? "default" : "outline"} 
                             size="icon" 
                             onClick={() => handleTogglePublish(p)}
-                            disabled={publishingProductId === p.platform_product_id}
+                            disabled={publishingProductId === p.id}
                             title={p.is_active ? "Unpublish from Store" : "Publish to Store"}
                           >
-                            {publishingProductId === p.platform_product_id ? (
+                            {publishingProductId === p.id ? (
                               <Loader2 className="h-3.5 w-3.5 animate-spin" />
                             ) : p.is_active ? (
                               <Check className="h-3.5 w-3.5" />
@@ -629,7 +634,11 @@ export default function ManageImportedCjProductsPage() {
                 <CardDescription>Update details for &quot;{editModal.product.display_name}&quot;.</CardDescription>
               </CardHeader>
               <CardContent className="flex-grow overflow-y-auto pr-2 space-y-3">
-                <form id="edit-product-form" onSubmit={handleUpdateProduct} className="space-y-3">
+                <form 
+                  id="edit-product-form" 
+                  onSubmit={handleUpdateProduct} 
+                  className="space-y-3"
+                >
                   <div>
                     <Label htmlFor="editDisplayName">Display Name</Label>
                     <Input id="editDisplayName" value={editModal.displayName} onChange={(e) => setEditModal(s => ({...s, displayName: e.target.value}))} />
@@ -673,8 +682,36 @@ export default function ManageImportedCjProductsPage() {
                     <Input id="editSellingPrice" type="number" step="0.01" value={editModal.sellingPrice} onChange={(e) => setEditModal(s => ({...s, sellingPrice: e.target.value}))} />
                   </div>
                    <div>
-                    <Label htmlFor="editCashbackPercentage">Cashback % (e.g., 5 for 5%)</Label>
-                    <Input id="editCashbackPercentage" type="number" step="0.01" value={editModal.cashbackPercentage} onChange={(e) => setEditModal(s => ({...s, cashbackPercentage: e.target.value}))} />
+                    <div className="flex items-center justify-between">
+                      <Label htmlFor="editCashbackPercentage">Cashback Percentage</Label>
+                      <span className="text-xs text-muted-foreground">Enter a value between 0-100</span>
+                    </div>
+                    <div className="relative">
+                      <Input 
+                        id="editCashbackPercentage" 
+                        type="number" 
+                        min="0"
+                        max="100"
+                        step="0.5"
+                        value={editModal.cashbackPercentage} 
+                        onChange={(e) => {
+                          // Allow only numbers and one decimal point
+                          const value = e.target.value;
+                          if (value === '' || /^\d*\.?\d*$/.test(value)) {
+                            setEditModal(s => ({
+                              ...s, 
+                              cashbackPercentage: value === '' ? '' : 
+                                parseFloat(value) > 100 ? '100' : value
+                            }));
+                          }
+                        }}
+                        placeholder="e.g., 5 for 5%"
+                        className="pr-12"
+                      />
+                      <div className="absolute inset-y-0 right-0 flex items-center pr-3 pointer-events-none">
+                        <span className="text-gray-500 sm:text-sm">%</span>
+                      </div>
+                    </div>
                   </div>
                   <div>
                     <Label htmlFor="editShippingRulesId">Shipping Rules ID (Optional)</Label>
@@ -689,8 +726,12 @@ export default function ManageImportedCjProductsPage() {
               <CardFooter className="flex justify-end space-x-2 border-t pt-4">
                   <Button type="button" variant="outline" onClick={() => setEditModal(prev => ({...prev, isOpen: false}))} disabled={isUpdating}>Cancel</Button>
                   <Button type="submit" form="edit-product-form" disabled={isUpdating}>
-                    {isUpdating ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
-                    Save Changes
+                    {isUpdating ? (
+                      <>
+                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                        Updating...
+                      </>
+                    ) : 'Update Product'}
                   </Button>
               </CardFooter>
             </Card>
@@ -703,7 +744,7 @@ export default function ManageImportedCjProductsPage() {
             <AlertDialogHeader>
               <AlertDialogTitle>Confirm Deletion</AlertDialogTitle>
               <AlertDialogDescription>
-                Are you sure you want to delete product &quot;{productToDelete?.display_name}&quot; (ID: {productToDelete?.platform_product_id})? This action cannot be undone.
+                Are you sure you want to delete product &quot;{productToDelete?.display_name}&quot; (ID: {productToDelete?.id})? This action cannot be undone.
               </AlertDialogDescription>
             </AlertDialogHeader>
             <AlertDialogFooter>
@@ -717,6 +758,6 @@ export default function ManageImportedCjProductsPage() {
         </AlertDialog>
 
       </div>
-    </AdminLayout>
+    </ProtectedRoute>
   );
 }

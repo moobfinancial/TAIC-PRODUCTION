@@ -133,9 +133,10 @@ export async function GET(request: NextRequest) {
             imageUrl = parsedImages[0].startsWith('http') ? parsedImages[0] : '';
           } else if (typeof parsedImages === 'object' && parsedImages !== null) {
             // Handle case where it's an object with image URLs
-            const urls = Object.values(parsedImages).filter(url => 
-              typeof url === 'string' && url.startsWith('http')
-            );
+            const urls = Object.values(parsedImages)
+              .filter((url): url is string => 
+                typeof url === 'string' && url.startsWith('http')
+              );
             if (urls.length > 0) {
               imageUrl = urls[0];
               additionalImages = urls.slice(1);
@@ -178,7 +179,8 @@ export async function GET(request: NextRequest) {
         imageUrl: imageUrl,
         additionalImages: additionalImages,
         category: product.category || 'Uncategorized',
-        cashbackPercentage: parseFloat(product.cashback_percentage) || 0,
+        // Convert from decimal to percentage (e.g., 0.05 -> 5)
+        cashbackPercentage: (parseFloat(product.cashback_percentage) * 100) || 0,
         // Add any other fields needed by the frontend
       };
     });

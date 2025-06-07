@@ -1,6 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { Pool } from 'pg';
 
+// Get the ID from the URL path
+function getIdFromUrl(url: string): string | null {
+  const matches = url.match(/\/api\/products\/cj\/([^/]+)/);
+  return matches ? matches[1] : null;
+}
+
 // Force this route to run in Node.js runtime instead of Edge Runtime
 export const runtime = 'nodejs';
 // Disable static optimization to ensure runtime is respected
@@ -12,11 +18,9 @@ const pool = new Pool({
     `postgresql://${process.env.PGUSER}:${process.env.PGPASSWORD}@${process.env.PGHOST}:${process.env.PGPORT}/${process.env.PGDATABASE}`,
 });
 
-export async function GET(
-  request: NextRequest,
-  { params }: { params: { id: string } }
-) {
-  const id = params.id;
+export async function GET(request: NextRequest) {
+  // Extract ID from the URL
+  const id = getIdFromUrl(request.url);
   
   if (!id) {
     return NextResponse.json({ error: 'Product ID is required' }, { status: 400 });
@@ -71,9 +75,10 @@ export async function GET(
             if (Array.isArray(parsedImages)) {
               imageUrls = parsedImages.filter(url => typeof url === 'string' && url.startsWith('http'));
             } else if (typeof parsedImages === 'object' && parsedImages !== null) {
-              const urls = Object.values(parsedImages).filter(url => 
-                typeof url === 'string' && url.startsWith('http')
-              );
+              const urls = Object.values(parsedImages)
+                .filter((url): url is string => 
+                  typeof url === 'string' && url.startsWith('http')
+                );
               if (urls.length > 0) {
                 imageUrls = urls;
               }
@@ -125,7 +130,8 @@ export async function GET(
       additionalImages: additionalImages,
       variants: variants,
       category: product.category || 'Uncategorized',
-      cashbackPercentage: parseFloat(product.cashback_percentage) || 0,
+      // Convert from decimal to percentage (e.g., 0.05 -> 5)
+      cashbackPercentage: (parseFloat(product.cashback_percentage) * 100) || 0,
     };
 
     return NextResponse.json({ product: formattedProduct });
