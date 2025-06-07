@@ -56,7 +56,7 @@ export default function RegisterPage() {
         <CardHeader className="text-center">
           <UserPlus className="mx-auto h-12 w-12 text-primary mb-4" />
           <CardTitle className="text-3xl font-headline">Create Your Account</CardTitle>
-          <CardDescription>Join TAIC Showcase and get started with Demo TAIC.</CardDescription>
+          <CardDescription>Join TAIC and get started with TAIC.</CardDescription>
         </CardHeader>
         <CardContent>
           <form onSubmit={handleSubmit} className="space-y-6">

@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useEffect, FormEvent } from 'react';
-import { AdminLayout } from '@/components/admin/AdminLayout';
+import ProtectedRoute from '@/components/admin/ProtectedRoute';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
@@ -148,7 +148,7 @@ export default function ManageCategoriesPage() {
   );
 
   return (
-    <AdminLayout>
+    <ProtectedRoute>
       <div className="space-y-6">
         <Card>
           <CardHeader>
@@ -246,6 +246,6 @@ export default function ManageCategoriesPage() {
           </CardContent>
         </Card>
       </div>
-    </AdminLayout>
+    </ProtectedRoute>
   );
 }

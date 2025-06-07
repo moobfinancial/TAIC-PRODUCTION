@@ -1,7 +1,8 @@
 'use client';
 
 import React, { useState, useEffect, FormEvent } from 'react';
-import { AdminLayout } from '@/components/admin/AdminLayout';
+import ProtectedRoute from '@/components/admin/ProtectedRoute';
+import { useAdminAuth } from '@/contexts/AdminAuthContext';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea'; // For import form
@@ -34,11 +35,60 @@ interface CjProductListResponse {
   pageSize: number;
 }
 
+// Interfaces for raw CJ API category structure from their endpoint
+interface RawCjApiL3Category {
+  categoryId: string;
+  categoryName: string;
+}
+
+interface RawCjApiL2Category {
+  categorySecondName: string;
+  categorySecondList?: RawCjApiL3Category[];
+}
+
+interface RawCjApiL1Category {
+  categoryFirstName: string;
+  categoryFirstList?: RawCjApiL2Category[];
+}
+
 // Interface for CJ Category (matching the TransformedCjCategory from backend)
 interface CjCategory {
-  id: string; // Changed from categoryId
-  name: string; // Changed from categoryNameEn/categoryName
+  id: string;
+  name: string;
   children?: CjCategory[];
+}
+
+// Transformation function
+function transformCjApiDataToCjCategories(rawCategories: RawCjApiL1Category[]): CjCategory[] {
+  if (!rawCategories || !Array.isArray(rawCategories)) {
+    return [];
+  }
+
+  const mapL3 = (l3Cat: RawCjApiL3Category): CjCategory => ({
+    id: l3Cat.categoryId, // L3 has a proper ID from CJ
+    name: l3Cat.categoryName,
+    // L3 categories typically don't have children in this CJ structure
+  });
+
+  const mapL2 = (l2Cat: RawCjApiL2Category, l1Index: number, l2Index: number): CjCategory => {
+    const children = (l2Cat.categorySecondList || []).map(mapL3);
+    return {
+      // Generate a unique ID for L2 categories as CJ API doesn't provide one
+      id: `cj-l2-${l1Index}-${l2Index}-${l2Cat.categorySecondName.replace(/[^a-zA-Z0-9]/g, '_')}`,
+      name: l2Cat.categorySecondName,
+      children: children.length > 0 ? children : undefined,
+    };
+  };
+
+  return rawCategories.map((l1Cat, l1Index) => {
+    const children = (l1Cat.categoryFirstList || []).map((l2Cat, l2Index) => mapL2(l2Cat, l1Index, l2Index));
+    return {
+      // Generate a unique ID for L1 categories
+      id: `cj-l1-${l1Index}-${l1Cat.categoryFirstName.replace(/[^a-zA-Z0-9]/g, '_')}`,
+      name: l1Cat.categoryFirstName,
+      children: children.length > 0 ? children : undefined,
+    };
+  });
 }
 
 interface PlatformCategory {
@@ -58,6 +108,7 @@ interface ImportModalState {
 }
 
 export default function BrowseCjProductsPage() {
+  const { adminApiKey, loading: adminAuthLoading, isAuthenticated } = useAdminAuth();
   const { toast } = useToast();
 
   // Search and Filter State
@@ -101,15 +152,20 @@ export default function BrowseCjProductsPage() {
   // Fetch Platform Categories
   useEffect(() => {
     const fetchPlatformCategories = async () => {
-      if (!ADMIN_API_KEY) {
-        console.error('ADMIN_API_KEY is not set');
+      if (adminAuthLoading) { // Check auth loading state
+        console.log('[BrowseCjProductsPage] Admin auth is loading, skipping platform category fetch.');
+        return;
+      }
+      if (!adminApiKey) { // Use reactive adminApiKey
+        toast({title: "Authentication Error", description: "Admin API Key not found. Cannot load platform categories.", variant: "destructive"});
+        setIsLoadingCategories(false);
         return;
       }
       setIsLoadingCategories(true);
       try {
         console.log('Fetching platform categories...');
         const response = await fetch('/api/admin/categories?hierarchical=false', { // Fetch flat list
-          headers: { 'X-Admin-API-Key': ADMIN_API_KEY },
+          headers: { 'X-Admin-API-Key': adminApiKey },
         });
         if (!response.ok) {
           const errorText = await response.text();
@@ -126,46 +182,52 @@ export default function BrowseCjProductsPage() {
         setIsLoadingCategories(false);
       }
     };
-    if (ADMIN_API_KEY) {
-      console.log('ADMIN_API_KEY found, fetching platform categories...');
+    if (!adminAuthLoading && adminApiKey) { // Check auth loading state
       fetchPlatformCategories();
-    } else {
-      console.error('ADMIN_API_KEY not found');
-      toast({title: "Configuration Error", description: "Admin API Key not found.", variant: "destructive"});
     }
-  }, [ADMIN_API_KEY, toast]); // Added ADMIN_API_KEY and toast to dependency array for completeness
+  }, [adminApiKey, adminAuthLoading, toast]); // Add adminAuthLoading, re-add toast for completeness 
 
   // Fetch CJ API Categories for the filter dropdown
   useEffect(() => {
     const fetchCjApiCategories = async () => {
-      if (!ADMIN_API_KEY) return;
+      if (adminAuthLoading) { // Check auth loading state
+        console.log('[BrowseCjProductsPage] Admin auth is loading, skipping CJ API category fetch.');
+        return;
+      }
+      if (!adminApiKey) { // Use reactive adminApiKey
+        toast({title: "Authentication Error", description: "Admin API Key not found. Cannot load CJ API categories.", variant: "destructive"});
+        setIsLoadingCjApiCategories(false);
+        return;
+      };
       setIsLoadingCjApiCategories(true);
       try {
         const response = await fetch('/api/admin/cj/cj-categories-route', {
-          headers: { 'X-Admin-API-Key': ADMIN_API_KEY },
+          headers: { 'X-Admin-API-Key': adminApiKey },
         });
         if (!response.ok) {
           const errorData = await response.json();
           throw new Error(errorData.error || errorData.details || 'Failed to fetch CJ categories');
         }
-        const data: CjCategory[] = await response.json();
-        console.log('[BrowseCjProductsPage] Fetched CJ API Categories:', data);
-        setCjApiCategories(data);
+        const data = await response.json();
+        const transformedCategories = transformCjApiDataToCjCategories(data as RawCjApiL1Category[]);
+        setCjApiCategories(transformedCategories);
+        console.log('[BrowseCjProductsPage] Fetched and transformed CJ API Categories:', transformedCategories);
       } catch (error: any) {
         toast({ title: "Error", description: `Could not load CJ API categories: ${error.message}`, variant: "destructive" });
       } finally {
         setIsLoadingCjApiCategories(false);
       }
     };
-    if (ADMIN_API_KEY) {
+    if (!adminAuthLoading && adminApiKey) { // Check auth loading state
       fetchCjApiCategories();
     }
-    // We only want to run this once on mount if ADMIN_API_KEY is present, toast is for linting if it's not stable.
-  }, [ADMIN_API_KEY, toast]); 
+  }, [adminApiKey, adminAuthLoading, toast]); // Add adminAuthLoading, re-add toast for completeness 
 
   const handleSearchCjProducts = async (page = 1) => {
-    if (!ADMIN_API_KEY) {
-        toast({title: "Configuration Error", description: "Admin API Key not found.", variant: "destructive"});
+    if (!adminApiKey || adminAuthLoading) { // Wait for auth to settle and key to be available
+      toast({title: "Configuration Error", description: "Admin API Key not found or auth loading.", variant: "destructive"});
+      return;
+        toast({title: "Configuration Error", description: "Admin API Key not found or auth loading.", variant: "destructive"});
         return;
     }
     setIsLoading(true);
@@ -181,7 +243,7 @@ export default function BrowseCjProductsPage() {
 
     try {
       const response = await fetch(`/api/admin/cj/list-external?${params.toString()}`, {
-        headers: { 'X-Admin-API-Key': ADMIN_API_KEY },
+        headers: { 'X-Admin-API-Key': adminApiKey },
       });
 
       const result = await response.json();
@@ -234,6 +296,15 @@ export default function BrowseCjProductsPage() {
 
   const handleImportProduct = async (e: FormEvent) => {
     e.preventDefault();
+
+    if (!adminApiKey || adminAuthLoading) {
+      toast({
+        title: "Authentication Error",
+        description: "Admin API Key not available or authentication is still loading. Please try again.",
+        variant: "destructive",
+      });
+      return;
+    }
     
     console.log('Form submitted with state:', {
       productToImport: !!importModal.productToImport,
@@ -276,7 +347,7 @@ export default function BrowseCjProductsPage() {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'X-Admin-API-Key': ADMIN_API_KEY,
+          'X-Admin-API-Key': adminApiKey,
         },
         body: JSON.stringify(payload),
       });
@@ -323,8 +394,8 @@ export default function BrowseCjProductsPage() {
   // Helper function to render CJ Category options for the Select component
   const renderCjCategoryOptions = (categories: CjCategory[], level = 0): JSX.Element[] => {
     return categories.flatMap((category, index) => {
-      // Use category.id (which is now guaranteed by backend transformation) and ensure it's a string
-      const itemKey = `${level}-${String(category.id)}-${index}`;
+      // category.id is now guaranteed to be a unique string by the transformation
+      const itemKey = category.id; // Direct use of unique ID as key is best
       const currentItem = (
         <SelectItem key={itemKey} value={String(category.id)}>
           <span style={{ paddingLeft: `${level * 15}px` }}>
@@ -341,7 +412,7 @@ export default function BrowseCjProductsPage() {
 
 
   return (
-    <AdminLayout>
+    <ProtectedRoute>
       <div className="space-y-6">
         <Card>
           <CardHeader>
@@ -365,7 +436,7 @@ export default function BrowseCjProductsPage() {
                 </SelectContent>
               </Select>
               {/* Add minPrice, maxPrice inputs if desired */}
-              <Button type="submit" disabled={isLoading || !ADMIN_API_KEY} className="lg:col-start-4">
+              <Button type="submit" disabled={isLoading || !ADMIN_API_KEY || adminAuthLoading} className="lg:col-start-4">
                 {isLoading && searchError === null ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Search className="mr-2 h-4 w-4" />}
                 Search Products
               </Button>
@@ -525,6 +596,6 @@ export default function BrowseCjProductsPage() {
           </Card>
         </div>
       )}
-    </AdminLayout>
+    </ProtectedRoute>
   );
 }

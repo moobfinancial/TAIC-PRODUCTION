@@ -1,7 +1,6 @@
 'use server';
 
-import { ai } from '@/ai/genkit';
-import { z } from 'genkit';
+import { openai, generateVirtualTryOnImage, saveGeneratedImageToUserAccount } from '@/lib/openai';
 import { 
   VirtualTryOnInput, 
   VirtualTryOnInputSchema, 
@@ -9,134 +8,144 @@ import {
   VirtualTryOnOutputSchema 
 } from '@/ai/schemas/virtual-try-on.schema';
 
-// Note: We might need to interact with Firebase Admin for image uploads if the model returns image data directly.
-// import { adminStorage } from '@/lib/firebaseAdmin'; // Potentially needed later
-// import { v4 as uuidv4 } from 'uuid'; // Potentially needed later
+// Check for OpenAI API key
+if (!process.env.OPENAI_API_KEY) {
+  console.error('OPENAI_API_KEY is not set in environment variables');
+  throw new Error('OpenAI API key is not configured. Please set OPENAI_API_KEY in your environment variables.');
+}
 
 /**
- * Placeholder for the actual virtual try-on logic.
- * This will be highly dependent on the capabilities of the AI model used.
- *
- * Current Gemini models available directly via @genkit-ai/googleai (like gemini-pro-vision)
- * are primarily for image *understanding*. True image generation or in-painting (virtual try-on)
- * usually requires models like Imagen, which might need specific Vertex AI integration or
- * different API calls not directly exposed as simple "generate image by merging two images"
- * through the standard Genkit GoogleAI plugin.
- *
- * This flow will initially attempt a conceptual approach using gemini-pro-vision
- * to describe both images and then construct a prompt that *would* be fed to an
- * image generation model. If Genkit gets direct access to such models (e.g. Imagen 2 via Vertex AI plugin)
- * in a way that supports this, this flow should be updated.
- *
- * For now, the output `generatedImageUrl` will be a placeholder or might point to one of the inputs
- * to signify the flow structure is present but generation is pending actual model capabilities.
+ * Virtual try-on flow that uses OpenAI's API to create
+ * a realistic image of a user wearing/using a product.
  */
-
-const virtualTryOnFlow = ai.defineFlow(
-  {
-    name: 'virtualTryOnFlow',
-    inputSchema: VirtualTryOnInputSchema,
-    outputSchema: VirtualTryOnOutputSchema,
-  },
-  async (input) => {
-    console.log('[virtualTryOnFlow] Initiated with input:', JSON.stringify(input, null, 2));
-
-    const { userImageUrl, productImageUrl, userDescription, productDescription } = input;
-
-    // Step 1 & 2: Use the multimodal model to "understand" or describe the images
-    // and generate a detailed prompt for an image generation model.
-    // We are using the default model (gemini-2.0-flash) which is multimodal.
-
-    let parts: any[] = [
-      { text: "You are an expert fashion stylist and prompt engineer for an advanced image generation AI." },
-      { text: "Your task is to create a detailed text prompt to generate a realistic virtual try-on image." },
-      { text: "Based on the provided user image and product image, describe the scene to be generated." },
-      { text: "The generated image should show the person from the user image wearing or using the product from the product image." },
-      { text: "--- User Image ---" },
-      { media: { url: userImageUrl } },
-    ];
-
-    if (userDescription) {
-      parts.push({ text: `User description provided: "${userDescription}"` });
-    } else {
-      parts.push({ text: "Briefly describe the user in the image (e.g., pose, body type, clothing style if visible, key visual features). This description will help guide the image generation." });
-    }
-
-    parts.push({ text: "--- Product Image ---" });
-    parts.push({ media: { url: productImageUrl } });
-
-    if (productDescription) {
-      parts.push({ text: `Product description provided: "${productDescription}"` });
-    } else {
-      parts.push({ text: "Briefly describe the product in the image (e.g., type of clothing, color, style, specific features). This description will help guide the image generation." });
-    }
-
-    parts.push({ text: "--- Combined Image Generation Prompt ---" });
-    parts.push({ text: "Based on ALL the above information (user image, product image, and any provided descriptions), generate a highly detailed and photorealistic image of the person from the user image realistically wearing or using the product from the product image. The result should be seamless and natural-looking. Consider lighting, shadows, and how the product would fit or interact with the person. Ensure the person's face and key features are preserved. The background should be neutral or simple unless context from user image suggests otherwise and is relevant." });
-    parts.push({ text: "Output ONLY the detailed prompt for the image generation model. Do not add any other commentary." });
-
-
-    console.log('[virtualTryOnFlow] Generating descriptive prompt for image generation model...');
-    try {
-      // Use the default configured multimodal model (gemini-2.0-flash)
-      const llmResponse = await ai.generate({
-        messages: [{ role: 'user', content: parts }],
-        // You could specify a different model here if needed, e.g., a vision-specific one
-        // model: 'googleai/gemini-pro-vision',
-        config: { temperature: 0.3 }, // Lower temperature for more factual description
-      });
-
-      // Access the text content from the response
-      const generatedTextPrompt = llmResponse.text || 'Failed to generate text prompt';
-      console.log('[virtualTryOnFlow] Generated text prompt for image generation model:\n', generatedTextPrompt);
-
-      // ** Placeholder for actual Image Generation **
-      // At this point, `generatedTextPrompt` would be fed into an actual image generation model.
-      // Since we don't have a direct Genkit integration for that specific task in this step,
-      // we will simulate success and return a placeholder.
-
-      // Example: If an image generation tool/API were available:
-      // const imageData = await imageGenerationTool.generate({ prompt: generatedTextPrompt, ...otherParams });
-      // const generatedImageUrl = await saveImageToStorage(imageData); // You'd need to implement this
-
-      const placeholderGeneratedUrl = productImageUrl; // Or userImageUrl, or a static placeholder.
-      const limitationMessage = "Actual image generation for Virtual Try-On is not yet available due to limitations in accessing a suitable image generation model (e.g., Imagen 2) via the current Genkit GoogleAI plugin. This flow has successfully generated a detailed text prompt that *could* be used with such a model.";
-
-      console.log(`[virtualTryOnFlow] ${limitationMessage}`);
-      console.log(`[virtualTryOnFlow] For development, the generated text prompt that would be used is: ${generatedTextPrompt}`);
-
-
-      return {
-        generatedImageUrl: placeholderGeneratedUrl, // Placeholder
-        generatedTextPrompt: generatedTextPrompt, // Return the generated prompt
-        errorMessage: limitationMessage,
-      };
-
-    } catch (error: any) {
-      console.error('[virtualTryOnFlow] Failed during LLM call or processing:', error);
-      return {
-        generatedImageUrl: userImageUrl, // Fallback input image
-        generatedTextPrompt: undefined,
-        errorMessage: `Error in virtual try-on flow: ${error.message || 'Unknown error'}`,
-      };
-    }
+const virtualTryOnFlow = async (input: VirtualTryOnInput): Promise<VirtualTryOnOutput> => {
+  // Initialize variables at the function scope
+  let generationPrompt: string;
+  let generatedImageUrl: string;
+  
+  console.log('[virtualTryOnFlow] Initiated with input:', JSON.stringify({
+    ...input,
+    userImageUrl: input.userImageUrl ? `${input.userImageUrl.substring(0, 50)}...` : 'missing',
+    productImageUrl: input.productImageUrl ? `${input.productImageUrl.substring(0, 50)}...` : 'missing',
+    hasOpenAIKey: !!process.env.OPENAI_API_KEY,
+    nodeEnv: process.env.NODE_ENV
+  }, null, 2));
+  
+  // Verify required environment variables
+  if (!process.env.OPENAI_API_KEY) {
+    const errorMsg = 'OPENAI_API_KEY is not set in environment variables';
+    console.error('[virtualTryOnFlow] Configuration error:', errorMsg);
+    throw new Error('Server configuration error. Please contact support.');
   }
-);
 
-// Main function to be called from API (if needed, or flow can be called directly by Genkit infra)
+  const { userImageUrl, productImageUrl, userDescription, productDescription } = input;
+  
+  // Validate URLs
+  if (!userImageUrl || !productImageUrl) {
+    const errorMsg = `Missing required image URLs. User: ${!!userImageUrl}, Product: ${!!productImageUrl}`;
+    console.error('[virtualTryOnFlow] Validation error:', errorMsg);
+    throw new Error(errorMsg);
+  }
+
+  try {
+    // Generate a detailed prompt using GPT-4o
+    // This prompt will be used for true image-to-image composition via OpenAI's /v1/images/edits endpoint (gpt-image-1)
+    console.log('[virtualTryOnFlow] Generating prompt using GPT-4o...');
+    const promptResponse = await openai.chat.completions.create({
+      model: 'gpt-4o',
+      messages: [
+        {
+          role: 'system',
+          content: 'You are an expert prompt engineer for an advanced image editing AI.\nYour task is to generate a concise and highly descriptive text prompt.\nThis prompt will be given to an image editing AI that has ALREADY received an image of a user.\nThe prompt you generate MUST instruct the image editing AI to ADD a specific product (which will be described to you) onto the user in their existing image.\nThe image editing AI will NOT receive a separate product image, so your prompt is the ONLY source of information about the product\'s appearance and how it should be worn.\nVERY IMPORTANT: The prompt MUST explicitly instruct the AI to PRESERVE the user\'s face and facial features EXACTLY as they appear in the original image. The user\'s identity must remain unchanged.\nFocus on visual details of the product and its integration.\nOutput ONLY the prompt itself, with no additional commentary or explanation.'
+        },
+        {
+          role: 'user',
+          content: `Generate a detailed prompt for an image editing AI.\nThe AI has already received an image of a user, described as: ${userDescription || 'A person'}.\nYour prompt needs to instruct the AI to add the following product onto that user:\nProduct details: ${productDescription || 'A product'}.\nDesired outcome: A photorealistic image where the user from their original image is now realistically wearing or using the described product.\nVERY IMPORTANT: Explicitly instruct the AI to preserve the user's face and facial features EXACTLY as they appear in the original image. The user's identity, facial structure, and expressions must remain completely unchanged.\nBe very specific about the product\'s appearance (e.g., color, material, style, shape, any text or logos if mentioned in product details) and how it should fit or be positioned on the user.\nDescribe how the product should interact with the user\'s existing clothing, hair, or pose in their image.\nEnsure the lighting and shadows on the added product match the original user image.\nThe final image should look like a single, cohesive photograph.`
+        }
+      ],
+      temperature: 0.7,
+      max_tokens: 1000,
+    });
+
+    generationPrompt = promptResponse.choices[0]?.message?.content?.trim() || 
+      `A photorealistic image of a person wearing/using the product naturally. The person should be in a neutral pose with good lighting.`;
+    
+    console.log('[virtualTryOnFlow] Generated prompt:', generationPrompt);
+
+    console.log('[virtualTryOnFlow] Generated image generation prompt:', generationPrompt);
+
+    // Generate the virtual try-on image using OpenAI's /v1/images/edits endpoint (gpt-image-1)
+    // Both user and product images are uploaded for true image-to-image composition
+    console.log('[virtualTryOnFlow] Generating virtual try-on image using OpenAI\'s /v1/images/edits endpoint (gpt-image-1)');
+    console.log('[virtualTryOnFlow] Both user and product images are uploaded for true image-to-image composition');
+    generatedImageUrl = await generateVirtualTryOnImage({
+      userImageUrl,
+      // productImageUrl is no longer passed as it's not used by generateVirtualTryOnImage
+      prompt: generationPrompt,
+      model: 'gpt-image-1',
+      size: '1024x1024',
+      quality: 'hd',
+      style: 'vivid',
+      n: 1
+    });
+
+    console.log('[virtualTryOnFlow] Successfully generated virtual try-on image');
+    
+    // Save the generated image to the user's account
+    // Extract userId from input or use anonymous
+    const userId = input.userId || 'anonymous';
+    
+    try {
+      // Save the image to Firebase Storage with product info
+      const savedImageUrl = await saveGeneratedImageToUserAccount(
+        generatedImageUrl,
+        userId,
+        {
+          productId: input.productId,
+          productName: productDescription?.substring(0, 100) // Truncate long descriptions
+        }
+      );
+      
+      console.log('[virtualTryOnFlow] Saved generated image to user account:', savedImageUrl);
+      
+      // Return the saved image URL instead of the original generated URL
+      return {
+        generatedImageUrl: savedImageUrl, // Use the saved image URL
+        originalGeneratedImageUrl: generatedImageUrl, // Keep the original URL for reference
+        generatedTextPrompt: generationPrompt,
+      };
+    } catch (saveError: any) {
+      // If saving fails, still return the original generated image
+      console.error('[virtualTryOnFlow] Error saving image to user account:', saveError);
+      return {
+        generatedImageUrl, // Return the original generated image URL
+        generatedTextPrompt: generationPrompt,
+        saveErrorMessage: `Failed to save image to account: ${saveError.message}`,
+      };
+    }
+  } catch (error: any) {
+    console.error('[virtualTryOnFlow] Error during virtual try-on:', error);
+    return {
+      generatedImageUrl: userImageUrl, // Fallback to original image
+      generatedTextPrompt: undefined,
+      errorMessage: `Failed to generate virtual try-on: ${error.message || 'Unknown error'}`,
+    };
+  }
+};
+
+// Main function to be called from API
 async function virtualTryOn(input: VirtualTryOnInput): Promise<VirtualTryOnOutput> {
   try {
-    console.log('[virtualTryOn] Calling virtualTryOnFlow with input:', input);
+    console.log('[virtualTryOn] Starting virtual try-on process');
     const result = await virtualTryOnFlow(input);
-    console.log('[virtualTryOn] Received result from virtualTryOnFlow:', result);
+    console.log('[virtualTryOn] Completed virtual try-on process');
     return result;
-  } catch (error: any) { // This catch block might be redundant if virtualTryOnFlow handles its errors gracefully
-    console.error('[virtualTryOn] Error calling virtualTryOnFlow:', error);
-    // Ensure the returned object matches VirtualTryOnOutputSchema on error
+  } catch (error: any) {
+    console.error('[virtualTryOn] Error in virtualTryOn:', error);
     return {
-      generatedImageUrl: input.userImageUrl, // Sensible fallback
+      generatedImageUrl: input.userImageUrl,
       generatedTextPrompt: undefined,
-      errorMessage: `Failed to execute virtual try-on flow: ${error.message}`,
+      errorMessage: `Failed to execute virtual try-on: ${error.message || 'Unknown error'}`,
     };
   }
 }

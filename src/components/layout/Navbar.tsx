@@ -3,7 +3,7 @@
 
 import React from 'react';
 import Link from 'next/link';
-import { ShoppingCart, Users, Lightbulb, Sparkles, LayoutDashboard, LogOut, UserCircle, Gem, Coins, Landmark, Heart } from 'lucide-react';
+import { ShoppingCart, Users, Lightbulb, Sparkles, LayoutDashboard, LogOut, UserCircle, Gem, Coins, Landmark, Heart, Image as ImageIcon } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
@@ -90,9 +90,15 @@ export function Navbar() {
                   </Link>
                 </DropdownMenuItem>
                 <DropdownMenuItem asChild>
-                  <Link href="/wishlist" className="flex items-center">
-                    <Heart className="mr-2 h-4 w-4" />
-                    My Wishlist
+                  <Link href="/account">
+                    <UserCircle className="mr-2 h-4 w-4" />
+                    Account
+                  </Link>
+                </DropdownMenuItem>
+                <DropdownMenuItem asChild>
+                  <Link href="/account/gallery">
+                    <ImageIcon className="mr-2 h-4 w-4" />
+                    My Gallery
                   </Link>
                 </DropdownMenuItem>
                 <DropdownMenuSeparator />

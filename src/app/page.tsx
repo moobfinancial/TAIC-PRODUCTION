@@ -37,10 +37,10 @@ export default function HomePage() {
             <div className="flex flex-col justify-center space-y-4">
               <div className="space-y-2">
                 <h1 className="text-4xl font-headline font-bold tracking-tighter sm:text-5xl xl:text-6xl/none bg-clip-text text-transparent bg-gradient-to-r from-primary to-accent">
-                  Welcome to TAIC Showcase
+                  Welcome to TAIC
                 </h1>
                 <p className="max-w-[600px] text-muted-foreground md:text-xl mx-auto">
-                  Experience the future of simulated digital currency transactions and AI-driven e-commerce. Explore, innovate, and transact with Demo TAIC.
+                  Experience the future of digital currency transactions and AI-driven e-commerce. Explore, innovate, and transact with TAIC.
                 </p>
               </div>
               <div className="flex flex-col gap-2 min-[400px]:flex-row justify-center">
@@ -106,7 +106,7 @@ export default function HomePage() {
           </p>
           <Button asChild size="lg" className="font-semibold">
             <Link href="/register">
-              Join TAIC Showcase <ArrowRight className="ml-2 h-5 w-5" />
+              Join TAIC <ArrowRight className="ml-2 h-5 w-5" />
             </Link>
           </Button>
         </div>

@@ -2,6 +2,10 @@
 'use client';
 
 import { MOCK_PRODUCTS } from '@/lib/constants';
+import { useAuth } from '@/contexts/AuthContext';
+import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
+import { useRouter } from 'next/navigation';
+import { storage } from '@/lib/firebase';
 import type { Product } from '@/lib/types';
 import Image from 'next/image';
 import Link from 'next/link';
@@ -11,7 +15,6 @@ import { ArrowLeft, Gem, Tag, ShoppingCart, PackageOpen, Info, Heart, Sparkles, 
 import { notFound, useParams } from 'next/navigation';
 import { useCart } from '@/hooks/useCart';
 import { useWishlist } from '@/hooks/useWishlist';
-import { useAuth } from '@/hooks/useAuth'; // Import useAuth
 import { useToast } from '@/hooks/use-toast';
 import { useEffect, useState } from 'react';
 import { cn } from '@/lib/utils';
@@ -29,7 +32,8 @@ import { translateText, containsChineseCharacters } from '@/lib/translationUtils
 
 export default function ProductDetailPage() {
   const params = useParams<{ id?: string }>();
-  const { user } = useAuth(); // Get user from auth context
+  const { user } = useAuth();
+  const router = useRouter(); // Get user from auth context
   const { addToCart } = useCart();
   const { addToWishlist, isInWishlist, removeFromWishlist } = useWishlist();
   const { toast } = useToast();
@@ -162,6 +166,10 @@ export default function ProductDetailPage() {
   
   const handleAddToCart = () => {
     addToCart(product);
+    toast({
+      title: "Added to cart",
+      description: `${product.name} has been added to your cart.`
+    });
   };
 
   const handleVirtualTryOn = async () => {
@@ -183,37 +191,150 @@ export default function ProductDetailPage() {
     setIsTryOnModalOpen(true); // Open modal immediately to show loading state
 
     try {
+      if (!user?.profileImageUrl) {
+        throw new Error('Please upload a profile picture before using Virtual Try-On');
+      }
+
+      if (!product?.imageUrl) {
+        throw new Error('Product image is missing');
+      }
+
+      console.log('Initiating virtual try-on with:', {
+        userImageUrl: user.profileImageUrl ? `${user.profileImageUrl.substring(0, 50)}...` : 'missing',
+        productImageUrl: product.imageUrl ? `${product.imageUrl.substring(0, 50)}...` : 'missing',
+        productName: product.name
+      });
+
       const response = await fetch('/api/virtual-try-on', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 
+          'Content-Type': 'application/json',
+          'Accept': 'application/json'
+        },
         body: JSON.stringify({
           userImageUrl: user.profileImageUrl,
           productImageUrl: product.imageUrl,
-          userDescription: `User ${user.username || ''} view`, // Example, can be more dynamic
+          userDescription: `User ${user.username || ''}`, 
           productDescription: product.name,
+          // Include the authenticated user ID
+          userId: user?.id,
+          // Include the product ID for reference
+          productId: product.id,
         }),
       });
 
-      const result: VirtualTryOnOutput = await response.json();
+      const result = await response.json();
+      console.log('Virtual try-on response:', {
+        status: response.status,
+        ok: response.ok,
+        result: result ? {
+          ...result,
+          generatedImageUrl: result.generatedImageUrl ? `${result.generatedImageUrl.substring(0, 50)}...` : 'missing'
+        } : 'no result'
+      });
 
-      if (!response.ok || result.errorMessage?.startsWith("Error")) { // Check for explicit error from flow
-        throw new Error(result.errorMessage || `Virtual Try-On failed: ${response.statusText}`);
+      if (!response.ok) {
+        const errorMessage = result?.message || 
+                           result?.error || 
+                           `Request failed with status ${response.status}`;
+        throw new Error(errorMessage);
+      }
+
+      if (result.errorMessage) {
+        throw new Error(result.errorMessage);
+      }
+
+      if (!result.generatedImageUrl) {
+        throw new Error('No image URL returned from the server');
       }
 
       setTryOnResult(result);
 
+      // Create a unique filename with timestamp and user ID
+      const timestamp = Date.now();
+      const filename = `virtual_try_on_${timestamp}.jpg`;
+      const storagePath = `user_uploads/${user.id}/virtual_try_on/${filename}`;
+
+      // Upload the image to Firebase Storage with metadata
+      const storageRef = ref(storage, storagePath);
+      const metadata = {
+        contentType: 'image/jpeg',
+        metadata: {
+          productInfo: {
+            productId: product.id,
+            productName: product.name,
+            productImage: product.imageUrl || '',
+          },
+          createdAt: new Date().toISOString(),
+        },
+      };
+
+      // Convert the image URL to a blob and upload
+      const imageResponse = await fetch(result.generatedImageUrl);
+      const blob = await imageResponse.blob();
+      
+      // Upload the file with metadata
+      await uploadBytes(storageRef, blob, metadata);
+      const imageUrl = await getDownloadURL(storageRef);
+      
+      console.log('Image uploaded to storage:', imageUrl);
+
+      // Show success toast and redirect to gallery after a short delay
+      toast({
+        title: 'Success!',
+        description: 'Your virtual try-on was generated successfully!',
+        variant: 'default',
+      });
+
+      // Close the modal and redirect to gallery
+      setIsTryOnModalOpen(false);
+
+      // Small delay to allow the modal to close smoothly
+      setTimeout(() => {
+        router.push('/account/gallery?success=true');
+      }, 500);
+
     } catch (error: any) {
-      console.error("Virtual Try-On API error:", error);
-      setTryOnError(error.message || "An unexpected error occurred during Virtual Try-On.");
-      // Toast is shown via the modal's error display or could be added here too
+      console.error("Virtual Try-On error:", {
+        message: error.message,
+        name: error.name,
+        stack: error.stack,
+        code: error.code
+      });
+
+      let userFriendlyError = 'An unexpected error occurred during Virtual Try-On.';
+
+      if (error.message.includes('profile picture')) {
+        userFriendlyError = 'Please upload a profile picture before using Virtual Try-On';
+      } else if (error.message.includes('OPENAI_API_KEY')) {
+        userFriendlyError = 'Server configuration error. Please contact support.';
+      } else if (error.message.includes('network') || error.message.includes('fetch')) {
+        userFriendlyError = 'Network error. Please check your connection and try again.';
+      }
+      
+      setTryOnError(userFriendlyError);
+      toast({
+        title: 'Error',
+        description: userFriendlyError,
+        variant: 'destructive',
+        duration: 5000
+      });
     } finally {
       setIsTryingOn(false);
     }
   };
 
   const canShowTryOnButton = () => {
-    const tryOnCategories = ['Fashion', 'Gadgets & Toys', 'Novelty', 'Electronics', 'Office Tech', 'Home & Garden'];
-    return tryOnCategories.includes(product.category);
+    const tryOnCategories = ['Fashion', "Women's Fashion", 'Gadgets & Toys', 'Novelty', 'Electronics', 'Office Tech', 'Home & Garden'];
+    const canShow = tryOnCategories.includes(product.category);
+    console.log('Try-on button debug:', {
+      category: product.category,
+      canShow,
+      hasProfileImage: !!user?.profileImageUrl,
+      isLoggedIn: !!user,
+      tryOnCategories
+    });
+    return canShow;
   };
 
   // Combine main image and additional images for the gallery
@@ -293,7 +414,7 @@ export default function ProductDetailPage() {
               <span className="text-2xl font-bold">
                 {product?.price?.toLocaleString()} TAIC
               </span>
-              {product?.cashbackPercentage > 0 && (
+              {product?.cashbackPercentage && product.cashbackPercentage > 0 && (
                 <span className="ml-2 px-2 py-0.5 bg-green-100 text-green-800 text-xs rounded-full">
                   {product.cashbackPercentage}% Cashback
                 </span>
@@ -301,11 +422,11 @@ export default function ProductDetailPage() {
             </div>
             
             {/* Cash price if available */}
-            {product?.base_price && (
+            {product?.price && ( // Display selling price as cash price
               <div className="text-muted-foreground">
                 <span className="mr-1">Cash price:</span>
                 <span className="font-medium">
-                  ${parseFloat(String(product.base_price)).toFixed(2)}
+                  ${parseFloat(String(product.price)).toFixed(2)}
                 </span>
               </div>
             )}

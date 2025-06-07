@@ -10,20 +10,26 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { useToast } from '@/hooks/use-toast';
-import { Store, UserPlus } from 'lucide-react';
+import { Store, UserPlus, Loader2 } from 'lucide-react';
 
 export default function MerchantRegisterPage() {
   const [businessName, setBusinessName] = useState('');
   const [email, setEmail] = useState('');
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
   const [businessDescription, setBusinessDescription] = useState('');
+  const [isLoading, setIsLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   
   const router = useRouter();
   const { toast } = useToast();
 
-  const handleSubmit = (e: FormEvent) => {
+  const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
+    setError(null);
+    
+    // Basic validation
     if (!businessName.trim() || !email.trim() || !username.trim() || !password.trim()) {
       toast({
         title: 'Registration Failed',
@@ -32,13 +38,57 @@ export default function MerchantRegisterPage() {
       });
       return;
     }
-    // Simulate registration
-    console.log('Simulated Merchant Registration:', { businessName, email, username, password, businessDescription });
-    toast({
-      title: 'Merchant Registration Successful! (Simulated)',
-      description: `Welcome, ${businessName}! Your merchant account is ready. Please login.`,
-    });
-    router.push('/merchant/login');
+    
+    // Check if passwords match
+    if (password !== confirmPassword) {
+      toast({
+        title: 'Registration Failed',
+        description: 'Passwords do not match.',
+        variant: 'destructive',
+      });
+      return;
+    }
+    
+    setIsLoading(true);
+    
+    try {
+      const response = await fetch('/api/merchant/register', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          username,
+          email,
+          password,
+          businessName,
+          businessDescription,
+        }),
+      });
+      
+      const data = await response.json();
+      
+      if (!response.ok) {
+        throw new Error(data.error || 'Registration failed');
+      }
+      
+      toast({
+        title: 'Registration Successful',
+        description: `Welcome, ${businessName}! Your merchant account is ready. Please login.`,
+      });
+      
+      router.push('/merchant/login?registered=true');
+    } catch (err) {
+      console.error('Registration error:', err);
+      setError(err instanceof Error ? err.message : 'Registration failed. Please try again.');
+      toast({
+        title: 'Registration Failed',
+        description: err instanceof Error ? err.message : 'Registration failed. Please try again.',
+        variant: 'destructive',
+      });
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   return (
@@ -50,69 +100,99 @@ export default function MerchantRegisterPage() {
           <CardDescription>Register your business to start selling on TAIC Showcase.</CardDescription>
         </CardHeader>
         <CardContent>
-          <form onSubmit={handleSubmit} className="space-y-6">
-            <div className="space-y-2">
-              <Label htmlFor="businessName">Business/Store Name</Label>
-              <Input
-                id="businessName"
-                type="text"
-                placeholder="Your Awesome Store"
-                value={businessName}
-                onChange={(e) => setBusinessName(e.target.value)}
-                required
-                className="text-base"
-              />
+          {error && (
+            <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded mb-4">
+              {error}
             </div>
+          )}
+          
+          <form onSubmit={handleSubmit} className="space-y-4">
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label htmlFor="businessName">Business Name *</Label>
+                <Input 
+                  id="businessName" 
+                  placeholder="Your Business Name" 
+                  value={businessName}
+                  onChange={(e) => setBusinessName(e.target.value)}
+                  required
+                  disabled={isLoading}
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="username">Username *</Label>
+                <Input 
+                  id="username" 
+                  placeholder="Choose a username" 
+                  value={username}
+                  onChange={(e) => setUsername(e.target.value)}
+                  required
+                  disabled={isLoading}
+                />
+              </div>
+            </div>
+            
             <div className="space-y-2">
-              <Label htmlFor="email">Contact Email</Label>
-              <Input
-                id="email"
-                type="email"
-                placeholder="contact@yourstore.com"
+              <Label htmlFor="email">Email *</Label>
+              <Input 
+                id="email" 
+                type="email" 
+                placeholder="your@email.com" 
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 required
-                className="text-base"
+                disabled={isLoading}
               />
             </div>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div className="space-y-2">
-                <Label htmlFor="username">Username</Label>
-                <Input
-                    id="username"
-                    type="text"
-                    placeholder="yourstore_admin"
-                    value={username}
-                    onChange={(e) => setUsername(e.target.value)}
-                    required
-                    className="text-base"
-                />
-                </div>
-                <div className="space-y-2">
-                <Label htmlFor="password">Password</Label>
-                <Input
-                    id="password"
-                    type="password"
-                    placeholder="Choose a strong password"
-                    value={password}
-                    onChange={(e) => setPassword(e.target.value)}
-                    required
-                    className="text-base"
-                />
-                </div>
-            </div>
+            
             <div className="space-y-2">
-              <Label htmlFor="businessDescription">Brief Business Description (Optional)</Label>
-              <Textarea
-                id="businessDescription"
-                placeholder="Tell us about your business..."
+              <Label htmlFor="password">Password *</Label>
+              <Input 
+                id="password" 
+                type="password" 
+                placeholder="Create a secure password" 
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                required
+                disabled={isLoading}
+              />
+            </div>
+            
+            <div className="space-y-2">
+              <Label htmlFor="confirmPassword">Confirm Password *</Label>
+              <Input 
+                id="confirmPassword" 
+                type="password" 
+                placeholder="Confirm your password" 
+                value={confirmPassword}
+                onChange={(e) => setConfirmPassword(e.target.value)}
+                required
+                disabled={isLoading}
+              />
+            </div>
+            
+            <div className="space-y-2">
+              <Label htmlFor="businessDescription">Business Description</Label>
+              <Textarea 
+                id="businessDescription" 
+                placeholder="Tell customers about your business..." 
                 value={businessDescription}
                 onChange={(e) => setBusinessDescription(e.target.value)}
-                className="text-base min-h-[100px]"
+                rows={3}
+                disabled={isLoading}
               />
             </div>
-            <Button type="submit" className="w-full text-lg py-6 font-semibold">
-              <UserPlus className="mr-2 h-5 w-5" /> Register My Business
+            
+            <Button type="submit" className="w-full" disabled={isLoading}>
+              {isLoading ? (
+                <>
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" /> Registering...
+                </>
+              ) : (
+                <>
+                  <UserPlus className="mr-2 h-4 w-4" /> Register as Merchant
+                </>
+              )}
             </Button>
           </form>
         </CardContent>

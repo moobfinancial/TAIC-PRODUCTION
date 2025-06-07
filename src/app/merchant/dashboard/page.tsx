@@ -6,19 +6,39 @@ import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle }
 import { LayoutDashboard, Package, ShoppingBag, DollarSign, Settings, BarChart3, LogOut, PlusCircle } from 'lucide-react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
+import { useMerchantAuth } from '@/contexts/MerchantAuthContext';
+import { useEffect } from 'react';
 
-// Placeholder for merchant data - in a real app, this would come from auth context
-const MOCK_MERCHANT_NAME = "Demo Merchant Store";
+// No longer need mock data as we're using real auth context
 
 export default function MerchantDashboardPage() {
   const router = useRouter();
+  const { merchant, logout, isAuthenticated, loading } = useMerchantAuth();
+  
+  // Redirect if not authenticated
+  useEffect(() => {
+    if (!loading && !isAuthenticated) {
+      router.push('/merchant/login');
+    }
+  }, [isAuthenticated, loading, router]);
 
-  // Simulate logout
+  // Handle logout
   const handleLogout = () => {
-    // In a real app, clear merchant auth state
-    console.log('Simulated Merchant Logout');
+    logout();
     router.push('/merchant/login');
   };
+  
+  // Show loading state while checking authentication
+  if (loading || !merchant) {
+    return (
+      <div className="flex items-center justify-center h-screen">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-primary mx-auto"></div>
+          <p className="mt-4 text-lg">Loading dashboard...</p>
+        </div>
+      </div>
+    );
+  }
 
   const dashboardSections = [
     { title: "Manage Products", description: "View, add, edit, or remove your product listings.", icon: <Package className="h-8 w-8 text-primary" />, href: "/merchant/products", cta: "Go to Products" },
@@ -34,7 +54,7 @@ export default function MerchantDashboardPage() {
         <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center">
             <div>
                 <h1 className="text-3xl sm:text-4xl font-headline font-bold tracking-tight">Merchant Dashboard</h1>
-                <p className="text-lg text-muted-foreground mt-1">Welcome back, {MOCK_MERCHANT_NAME}!</p>
+                <p className="text-lg text-muted-foreground mt-1">Welcome back, {merchant.businessName || merchant.username}!</p>
             </div>
             <div className="flex flex-col sm:flex-row gap-2 mt-4 sm:mt-0">
                  <Button asChild size="lg">

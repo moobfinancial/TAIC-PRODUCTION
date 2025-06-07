@@ -1,13 +1,14 @@
 // src/app/admin/page.tsx
 'use client';
 
-import { AdminLayout } from '@/components/admin/AdminLayout';
+import ProtectedRoute from '@/components/admin/ProtectedRoute';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { LayoutDashboard } from 'lucide-react';
 
 export default function AdminDashboardPage() {
+  console.log('[AdminDashboardPage] Rendering for /admin path.');
   return (
-    <AdminLayout>
+    <ProtectedRoute>
       <div className="space-y-6">
         <Card>
           <CardHeader>
@@ -23,6 +24,6 @@ export default function AdminDashboardPage() {
         </Card>
         {/* You can add more cards or components for a richer dashboard */}
       </div>
-    </AdminLayout>
+    </ProtectedRoute>
   );
 }

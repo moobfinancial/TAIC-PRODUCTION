@@ -230,9 +230,9 @@ export async function POST(request: NextRequest) {
         // $3: cj_product_data_json (store the complete product data)
         cjProduct,
         // $4: display_name
-        displayName,
+        displayName, // This has translation logic applied
         // $5: display_description
-        inputDisplayDescription || cjProduct.description || cjProduct.productDesc || '',
+        displayDescription, // This has translation logic applied
         // $6: platform_category_id
         platform_category_id,
         // $7: selling_price
@@ -246,7 +246,11 @@ export async function POST(request: NextRequest) {
         // $11: variants_json
         variants.length > 0 ? JSON.stringify(variants) : null,
         // $12: is_active (set to true by default when importing)
-        true
+        true,
+        // $13: original_name
+        originalName,
+        // $14: original_description
+        originalDescription
       ]);
 
       // Commit the transaction

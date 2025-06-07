@@ -1,0 +1,8 @@
+{
+  "storage": [
+    {
+      "rules": "storage.rules",
+      "bucket": "taic-3c401.appspot.com"
+    }
+  ]
+}

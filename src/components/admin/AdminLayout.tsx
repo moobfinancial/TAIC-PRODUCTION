@@ -1,9 +1,12 @@
 'use client';
 
+import React from 'react';
 import Link from 'next/link';
-import { usePathname } from 'next/navigation';
-import { Home, ListChecks, Settings, PackagePlus, PackageSearch, LayoutDashboard, Boxes } from 'lucide-react'; // Added Boxes for Categories
+import { usePathname, useRouter } from 'next/navigation';
+import { Home, ListChecks, Settings, PackagePlus, PackageSearch, LayoutDashboard, Boxes, LogOut } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { useAdminAuth } from '@/contexts/AdminAuthContext';
+import { Button } from '@/components/ui/button';
 
 const adminNavItems = [
   { href: '/admin', label: 'Dashboard', icon: LayoutDashboard },
@@ -20,16 +23,23 @@ interface AdminLayoutProps {
 
 export function AdminLayout({ children }: AdminLayoutProps) {
   const pathname = usePathname();
+  const { logout } = useAdminAuth();
+  const router = useRouter();
+
+  const handleLogout = () => {
+    logout();
+    router.push('/admin/login');
+  };
 
   return (
     <div className="flex min-h-screen">
-      <aside className="w-64 bg-card p-4 border-r shadow-md">
+      <aside className="w-64 bg-card p-4 border-r shadow-md flex flex-col">
         <div className="mb-8 text-center">
-          <Link href="/admin/categories" className="text-2xl font-bold font-headline text-primary">
+          <Link href="/admin" className="text-2xl font-bold font-headline text-primary">
             Admin Portal
           </Link>
         </div>
-        <nav className="space-y-2">
+        <nav className="space-y-2 flex-1">
           {adminNavItems.map((item) => (
             <Link
               key={item.label}
@@ -46,16 +56,26 @@ export function AdminLayout({ children }: AdminLayoutProps) {
             </Link>
           ))}
         </nav>
-        <div className="mt-auto pt-8">
+        <div className="mt-auto pt-4 border-t">
+          <Button
+            variant="ghost"
+            className="w-full justify-start text-muted-foreground hover:text-foreground"
+            onClick={handleLogout}
+          >
+            <LogOut className="h-4 w-4 mr-2" />
+            Sign Out
+          </Button>
+          <div className="pt-4">
             <Link
-                href="/"
-                className={cn(
-                    "flex items-center space-x-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors text-muted-foreground hover:bg-muted hover:text-foreground"
-                )}
-                >
-                <Home className="h-5 w-5" />
-                <span>Back to Main Site</span>
+              href="/"
+              className={cn(
+                "flex items-center space-x-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors text-muted-foreground hover:bg-muted hover:text-foreground"
+              )}
+            >
+              <Home className="h-5 w-5" />
+              <span>Back to Main Site</span>
             </Link>
+          </div>
         </div>
       </aside>
       <main className="flex-1 p-6 lg:p-8 bg-muted/20">

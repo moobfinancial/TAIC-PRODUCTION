@@ -1,70 +1,47 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
-  webpack: (config, { webpack }) => {
-    // Ignore 'cloudflare:sockets' to prevent Webpack from trying to bundle it.
-    // This is necessary because 'pg' includes 'pg-cloudflare' which uses Cloudflare-specific imports.
-    config.plugins.push(
-      new webpack.IgnorePlugin({
-        resourceRegExp: /^cloudflare:sockets$/,
-      })
-    );
-
-
-    // Force 'pg' to resolve to its CommonJS version to avoid ESM/Web Crypto issues in middleware
-    config.resolve.alias = {
-      ...config.resolve.alias,
-      // The '$' ensures we only alias the exact 'pg' import, not 'pg-pool', etc.
-      'pg$': 'pg/lib/index.js',
-      'pg-cloudflare$': false, // Prevent pg-cloudflare from being resolved
-    };
-
-    // Important: return the modified config
-    return config;
-  },
+  // Preserving this as it appeared in previous versions
+  serverExternalPackages: ['pg', 'pg-format'],
+  
+  // Image optimization configuration
   images: {
+    domains: [
+      'oss-cf.cjdropshipping.com',
+      'cf.cjdropshipping.com',
+      'cbu01.alicdn.com',
+      'placehold.co',
+      'storage.googleapis.com',
+      'firebasestorage.googleapis.com',
+      'storage.cloud.google.com',
+      'lh3.googleusercontent.com',
+      'taic-3c401.firebasestorage.app',
+      'taic-3c401.appspot.com',
+      'localhost',
+      'localhost:9002'
+    ],
     remotePatterns: [
       {
         protocol: 'https',
-        hostname: 'placehold.co',
-        port: '',
-        pathname: '/**',
+        hostname: '**.firebasestorage.googleapis.com',
       },
       {
         protocol: 'https',
-        hostname: 'cf.cjdropshipping.com',
-        port: '',
-        pathname: '/**',
+        hostname: '**.googleapis.com',
       },
       {
         protocol: 'https',
-        hostname: 'oss-cf.cjdropshipping.com',
-        port: '',
-        pathname: '/**',
-      },
-      {
-        protocol: 'https',
-        hostname: 'cbu01.alicdn.com',
-        port: '',
-        pathname: '/**',
-      },
-      {
-        protocol: 'https',
-        hostname: '**.alicdn.com',
-        port: '',
-        pathname: '/**',
+        hostname: 'taic-3c401.firebasestorage.app',
       },
     ],
-    // Enable modern image formats (WebP, AVIF)
     formats: ['image/avif', 'image/webp'],
-    // Set device sizes for responsive images
     deviceSizes: [640, 750, 828, 1080, 1200, 1920, 2048, 3840],
-    // Set image sizes for different breakpoints
     imageSizes: [16, 32, 48, 64, 96, 128, 256, 384],
+    dangerouslyAllowSVG: true,
+    contentSecurityPolicy: "default-src 'self'; script-src 'none'; sandbox;",
   },
-  experimental: {
-    // Add any other Next.js experimental options here if needed
-  },
-  // Add any other Next.js config options here
+  
+  // Add other Next.js configurations here if needed
+  // reactStrictMode: true,
 };
 
 module.exports = nextConfig;

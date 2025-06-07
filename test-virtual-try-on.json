@@ -1,0 +1,8 @@
+{
+  "userImageUrl": "https://upload.wikimedia.org/wikipedia/commons/9/99/Sample_User_Icon.png",
+  "productImageUrl": "https://i.dummyjson.com/data/products/1/2.jpg",
+  "userDescription": "A young woman with brown hair, smiling.",
+  "productDescription": "A red polo shirt, women's fashion.",
+  "userId": "test-user-123",
+  "productId": "product-456"
+}

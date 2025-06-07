@@ -31,7 +31,8 @@ async function handleGet(req: NextApiRequest, res: NextApiResponse) {
   let client;
   try {
     client = await pool.connect();
-    const { rows } = await client.query('SELECT * FROM cj_products WHERE platform_product_id = $1', [id]);
+    const query = 'SELECT * FROM cj_products WHERE id = $1';
+    const { rows } = await client.query(query, [id]);
     if (rows.length === 0) {
       return res.status(404).json({ error: 'Imported product not found.' });
     }
@@ -46,6 +47,10 @@ async function handleGet(req: NextApiRequest, res: NextApiResponse) {
 
 // PUT Handler: Update an imported CJ product
 async function handlePut(req: NextApiRequest, res: NextApiResponse) {
+  console.log('\n[API PUT /admin/cj/imported-products/:id] handlePut invoked.');
+  console.log('[API PUT /admin/cj/imported-products/:id] Request Method:', req.method);
+  console.log('[API PUT /admin/cj/imported-products/:id] Request Headers:', JSON.stringify(req.headers, null, 2));
+
   const { platform_product_id } = req.query;
   const id = parseInt(platform_product_id as string, 10);
 
@@ -57,9 +62,22 @@ async function handlePut(req: NextApiRequest, res: NextApiResponse) {
   try {
     const updateData = typeof req.body === 'string' ? JSON.parse(req.body) : req.body;
     
+    console.log('API received update data (req.body):', updateData);
+
+    if (!updateData) {
+      console.error('[API PUT /admin/cj/imported-products/:id] req.body is undefined after parsing attempt.');
+      return res.status(400).json({ error: 'Request body is missing or malformed.' });
+    }
+
+    console.log('Data types:', Object.entries(updateData).reduce((acc, [key, value]) => {
+      acc[key] = typeof value;
+      return acc;
+    }, {} as Record<string, string>));
+    
     // Validate request body against schema
     const validation = UpdateCjProductSchema.safeParse(updateData);
     if (!validation.success) {
+      console.error('Validation error:', validation.error.format());
       return res.status(400).json({ 
         error: 'Invalid request body', 
         details: validation.error.format() 
@@ -93,17 +111,29 @@ async function handlePut(req: NextApiRequest, res: NextApiResponse) {
         UPDATE cj_products 
         SET ${updateFields.map((field, i) => `${field} = $${i + 1}`).join(', ')}
         WHERE platform_product_id = $${updateFields.length + 1}
-        RETURNING *
       `,
       values: [...Object.values(validation.data), id]
     };
 
-    const { rows } = await client.query(query);
-
-    if (rows.length === 0) {
-      return res.status(404).json({ error: 'Imported product not found.' });
+    // Ensure client is defined before using it
+    if (!client) {
+      console.error('[API PUT /admin/cj/imported-products/:id] Database client is not initialized.');
+      return res.status(500).json({ error: 'Database client error.' });
     }
-    return res.status(200).json(rows[0]);
+
+    const { rowCount } = await client.query(query);
+
+    if (rowCount === 0) {
+      return res.status(404).json({ error: 'Imported product not found or no changes were applied.' });
+    }
+
+    // Since RETURNING is removed, we construct the response from the validated input data + id
+    const responseData = {
+      id: id, // Use the 'id' variable directly as it's already a number
+      ...validation.data,
+    };
+
+    res.status(200).json(responseData);
   } catch (error: any) {
     console.error(`[API PUT /admin/cj/imported-products/${id}] Error:`, error);
     return res.status(500).json({ 
@@ -127,10 +157,8 @@ async function handleDelete(req: NextApiRequest, res: NextApiResponse) {
   let client;
   try {
     client = await pool.connect();
-    const { rowCount } = await client.query(
-      'DELETE FROM cj_products WHERE platform_product_id = $1',
-      [id]
-    );
+    const query = 'DELETE FROM cj_products WHERE id = $1 RETURNING *';
+    const { rowCount } = await client.query(query, [id]);
 
     if (rowCount === 0) {
       return res.status(404).json({ error: 'Imported product not found.' });
@@ -154,7 +182,14 @@ export default async function handler(
 ) {
   // Check for admin authentication
   const authHeader = req.headers.authorization;
-  if (!authHeader || authHeader !== `Bearer ${process.env.ADMIN_API_KEY}`) {
+  const adminApiKey = req.headers['x-admin-api-key'] as string;
+  
+  // Accept either Authorization header or X-Admin-API-Key header
+  const isValidAuth = 
+    (authHeader && authHeader === `Bearer ${process.env.ADMIN_API_KEY}`) || 
+    (adminApiKey && adminApiKey === process.env.ADMIN_API_KEY);
+    
+  if (!isValidAuth) {
     return res.status(401).json({ error: 'Unauthorized' });
   }
 
@@ -182,6 +217,8 @@ export default async function handler(
 // Disable body parsing for file uploads
 export const config = {
   api: {
-    bodyParser: false,
+    bodyParser: {
+      sizeLimit: '1mb', // Explicitly enable default body parsing for JSON
+    },
   },
 };

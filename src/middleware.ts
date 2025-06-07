@@ -1,36 +1,101 @@
-export const runtime = 'nodejs';
+import { NextResponse, type NextRequest } from 'next/server';
 
-import { NextRequest, NextResponse } from 'next/server';
+// Middleware will now use the default Edge runtime.
 
+// Run on all routes under /admin except /admin/login
+export const config = {
+  matcher: [
+    '/admin',
+    '/admin/((?!login|api).*)', // Match all /admin routes except /admin/login and /admin/api/...
+    '/api/admin/:path*', // API routes
+  ],
+};
 
-// Database connection logic (getDbPool, Pool import, sha256) has been removed from middleware.
-// Authentication will be handled in individual API routes.
-
-export function middleware(request: NextRequest) { // Made non-async
-  // Check if the request path starts with /api/admin/
-  if (request.nextUrl.pathname.startsWith('/api/admin/')) {
-    console.log('[Middleware] Path matches /api/admin/. Checking for X-Admin-API-Key header for route:', request.nextUrl.pathname);
-
-    const apiKeyHeader = request.headers.get('X-Admin-API-Key');
-
-    if (!apiKeyHeader) {
-      console.log('[Middleware] X-Admin-API-Key header missing. Denying access.');
-      return new NextResponse(
-        JSON.stringify({ success: false, message: 'Admin API Key is required in X-Admin-API-Key header.' }),
-        { status: 401, headers: { 'Content-Type': 'application/json' } }
-      );
-    }
-    // If header is present, allow request to proceed.
-    // Actual validation of the key's value will happen in the API route itself.
-    console.log('[Middleware] X-Admin-API-Key header present. Allowing request to proceed to API route for full validation.');
+export async function middleware(request: NextRequest) {
+  const { pathname } = request.nextUrl;
+  
+  // Skip middleware for login page and API routes that don't require auth
+  if (pathname.startsWith('/admin/login') || 
+      pathname.startsWith('/api/admin/auth') ||
+      pathname.startsWith('/api/validate-api-key')) {
+    return NextResponse.next();
   }
 
-  // Allow ALL requests (including admin ones that passed the basic header check, or non-admin routes)
-  // to proceed to their respective handlers or the next middleware in the chain.
-  return NextResponse.next();
-}
+  // Check for API key in headers or cookies
+  let apiKey = request.headers.get('x-admin-api-key');
+  
+  // If no API key in headers, check cookies
+  if (!apiKey) {
+    const cookie = request.cookies.get('admin-api-key');
+    if (cookie) {
+      apiKey = cookie.value;
+    }
+  }
 
-// Specify which paths the middleware should run on
-export const config = {
-  matcher: '/api/admin/:path*', // Apply middleware to all routes under /api/admin/
-};
+  // If no API key found, redirect to login
+  if (!apiKey) {
+    if (pathname.startsWith('/api/admin')) {
+      return NextResponse.json(
+        { error: 'API key is required' },
+        { status: 401 }
+      );
+    }
+    
+    const loginUrl = new URL('/admin/login', request.url);
+    loginUrl.searchParams.set('from', pathname);
+    return NextResponse.redirect(loginUrl);
+  }
+
+  // Validate the API key using the API endpoint
+  const validationUrl = new URL('/api/validate-api-key', request.url);
+  
+  try {
+    const validationResponse = await fetch(validationUrl.toString(), {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ apiKey }),
+    });
+
+    const result = await validationResponse.json();
+    
+    // If API key is invalid, redirect to login
+    if (!result.valid) {
+      if (pathname.startsWith('/api/admin')) {
+        return NextResponse.json(
+          { error: 'Unauthorized' },
+          { status: 401 }
+        );
+      }
+      
+      const loginUrl = new URL('/admin/login', request.url);
+      loginUrl.searchParams.set('from', pathname);
+      return NextResponse.redirect(loginUrl);
+    }
+
+    // If we get here, the API key is valid
+    const nextResponse = NextResponse.next();
+    
+    // Add user info to response headers for API routes
+    if (pathname.startsWith('/api/admin')) {
+      if (result.userId) nextResponse.headers.set('x-user-id', result.userId);
+      if (result.username) nextResponse.headers.set('x-username', result.username);
+    }
+
+    return nextResponse;
+  } catch (error) {
+    console.error('Error in middleware:', error);
+    
+    if (pathname.startsWith('/api/admin')) {
+      return NextResponse.json(
+        { error: 'Internal Server Error' },
+        { status: 500 }
+      );
+    }
+    
+    const loginUrl = new URL('/admin/login', request.url);
+    loginUrl.searchParams.set('error', 'server_error');
+    return NextResponse.redirect(loginUrl);
+  }
+}

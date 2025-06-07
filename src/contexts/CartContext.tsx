@@ -4,6 +4,7 @@ import type { ReactNode } from 'react';
 import React, { createContext, useState, useEffect } from 'react';
 import type { Product, CartItem, CartContextType } from '@/lib/types';
 import { useToast } from "@/hooks/use-toast";
+import { translateText, containsChineseCharacters } from '@/lib/translationUtils';
 
 export const CartContext = createContext<CartContextType | undefined>(undefined);
 
@@ -29,16 +30,37 @@ export const CartProvider = ({ children }: { children: ReactNode }) => {
     }
   }, [cartItems]);
 
-  const addToCart = (product: Product) => {
+  const addToCart = async (product: Product) => {
+    // Ensure we have an English description
+    let englishDescription = product.description;
+    if (containsChineseCharacters(product.description)) {
+      try {
+        englishDescription = await translateText(product.description, 'en', 'auto');
+      } catch (error) {
+        console.error('Error translating product description:', error);
+        // If translation fails, keep the original description
+        englishDescription = product.description;
+      }
+    }
+
+    // Create a product with the English description
+    const productWithEnglishDescription = {
+      ...product,
+      description: englishDescription
+    };
+
     setCartItems(prevItems => {
       const existingItem = prevItems.find(item => item.id === product.id);
       if (existingItem) {
         return prevItems.map(item =>
-          item.id === product.id ? { ...item, quantity: item.quantity + 1 } : item
+          item.id === product.id 
+            ? { ...item, quantity: item.quantity + 1, description: englishDescription } 
+            : item
         );
       }
-      return [...prevItems, { ...product, quantity: 1 }];
+      return [...prevItems, { ...product, quantity: 1, description: englishDescription }];
     });
+    
     toast({ title: "Added to cart", description: `${product.name} has been added to your cart.` });
   };
 

@@ -121,13 +121,13 @@ export function ProductCard({ product, showVirtualTryOnButton = false, productCo
           </div>
           
           {/* Cash Price */}
-          {product.base_price && (
+          {product.price && ( // Display selling price as cash price
             <div className="flex items-center text-sm text-muted-foreground">
               <span className="mr-1">Cash:</span>
               <span className="font-medium">
-                ${parseFloat(product.base_price).toFixed(2)}
+                ${parseFloat(String(product.price)).toFixed(2)} 
               </span>
-              {product.cashbackPercentage > 0 && (
+              {product.cashbackPercentage && product.cashbackPercentage > 0 && (
                 <span className="ml-2 px-2 py-0.5 bg-green-100 text-green-800 text-xs rounded-full">
                   {product.cashbackPercentage}% Cashback
                 </span>
@@ -137,7 +137,15 @@ export function ProductCard({ product, showVirtualTryOnButton = false, productCo
         </div>
       </CardContent>
       <CardFooter className="p-6 pt-0 flex flex-col space-y-2">
-        <Button className="w-full font-semibold" onClick={() => addToCart(product)}>
+        <Button className="w-full font-semibold" onClick={() => {
+          // Create a copy of the product with translated name and description
+          const translatedProduct = {
+            ...product,
+            name: translatedName || product.name,
+            description: translatedDescription || product.description
+          };
+          addToCart(translatedProduct);
+        }}>
           <PlusCircle className="mr-2 h-5 w-5" /> Add to Cart
         </Button>
         <Button asChild variant="outline" className="w-full font-semibold">

@@ -1,40 +1,98 @@
 
 'use client';
 
-import { useState, type FormEvent } from 'react';
-import { useRouter } from 'next/navigation';
+import { useState, type FormEvent, useEffect } from 'react';
+import { useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { useToast } from '@/hooks/use-toast';
-import { LogIn, Store } from 'lucide-react';
+import { LogIn, Store, Loader2 } from 'lucide-react';
+import { useMerchantAuth } from '@/contexts/MerchantAuthContext';
 
 export default function MerchantLoginPage() {
-  const [username, setUsername] = useState('');
+  const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [isLoading, setIsLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  
   const router = useRouter();
+  const searchParams = useSearchParams();
   const { toast } = useToast();
+  const { login, isAuthenticated } = useMerchantAuth();
 
-  const handleSubmit = (e: FormEvent) => {
+  useEffect(() => {
+    // Safe access to searchParams
+    const registered = searchParams?.get('registered');
+    if (registered === 'true') {
+      toast({
+        title: 'Registration Successful',
+        description: 'Please log in with your new account.',
+      });
+    }
+    
+    // Redirect if already logged in
+    if (isAuthenticated) {
+      router.push('/merchant/dashboard');
+    }
+  }, [searchParams, isAuthenticated, router, toast]);
+
+  const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
-    if (!username.trim() || !password.trim()) {
+    setError(null);
+    
+    if (!email.trim() || !password.trim()) {
       toast({
         title: 'Login Failed',
-        description: 'Please enter username and password.',
+        description: 'Please enter email and password.',
         variant: 'destructive',
       });
       return;
     }
-    // Simulate login
-    console.log('Simulated Merchant Login:', { username, password });
-    toast({
-      title: 'Merchant Login Successful! (Simulated)',
-      description: `Welcome back, ${username}! Redirecting to your dashboard...`,
-    });
-    // In a real app, you'd set merchant auth state here
-    router.push('/merchant/dashboard');
+    
+    setIsLoading(true);
+    
+    try {
+      const response = await fetch('/api/merchant/login', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          email,
+          password,
+        }),
+      });
+      
+      const data = await response.json();
+      
+      if (!response.ok) {
+        throw new Error(data.error || 'Login failed');
+      }
+      
+      // Store token and user data in context
+      login(data.token, data.user);
+      
+      toast({
+        title: 'Login Successful',
+        description: `Welcome back, ${data.user.businessName || data.user.username}!`,
+      });
+      
+      // Redirect to merchant dashboard
+      router.push('/merchant/dashboard');
+    } catch (err) {
+      console.error('Login error:', err);
+      setError(err instanceof Error ? err.message : 'Login failed. Please try again.');
+      toast({
+        title: 'Login Failed',
+        description: err instanceof Error ? err.message : 'Invalid email or password.',
+        variant: 'destructive',
+      });
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   return (
@@ -46,16 +104,23 @@ export default function MerchantLoginPage() {
           <CardDescription>Access your TAIC Showcase Merchant Dashboard.</CardDescription>
         </CardHeader>
         <CardContent>
+          {error && (
+            <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded mb-4">
+              {error}
+            </div>
+          )}
+          
           <form onSubmit={handleSubmit} className="space-y-6">
             <div className="space-y-2">
-              <Label htmlFor="username">Username</Label>
+              <Label htmlFor="email">Email</Label>
               <Input
-                id="username"
-                type="text"
-                placeholder="Enter your merchant username"
-                value={username}
-                onChange={(e) => setUsername(e.target.value)}
+                id="email"
+                type="email"
+                placeholder="Enter your email address"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
                 required
+                disabled={isLoading}
                 className="text-base"
               />
             </div>
@@ -68,11 +133,20 @@ export default function MerchantLoginPage() {
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 required
+                disabled={isLoading}
                 className="text-base"
               />
             </div>
-            <Button type="submit" className="w-full text-lg py-6 font-semibold">
-              <LogIn className="mr-2 h-5 w-5" /> Login to Merchant Dashboard
+            <Button type="submit" className="w-full text-lg py-6 font-semibold" disabled={isLoading}>
+              {isLoading ? (
+                <>
+                  <Loader2 className="mr-2 h-5 w-5 animate-spin" /> Logging in...
+                </>
+              ) : (
+                <>
+                  <LogIn className="mr-2 h-5 w-5" /> Login to Merchant Dashboard
+                </>
+              )}
             </Button>
           </form>
         </CardContent>

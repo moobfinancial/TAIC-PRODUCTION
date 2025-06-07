@@ -2,16 +2,35 @@
 'use client';
 
 import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { PackagePlus, ListChecks, PlusCircle } from 'lucide-react';
+import { ListChecks, PlusCircle } from 'lucide-react';
 import Link from 'next/link';
+import ProductList from '@/components/merchant/ProductList';
+import { useMerchantAuth } from '@/contexts/MerchantAuthContext';
+import { useRouter } from 'next/navigation';
+import { useEffect } from 'react';
 
 export default function MerchantProductsPage() {
-  // In a real app, this would fetch and display the merchant's products
-  const mockProducts = [
-    // { id: '1', name: 'Sample Product 1', price: 100, stock: 10, category: 'Electronics' },
-    // { id: '2', name: 'Sample Product 2', price: 50, stock: 5, category: 'Books' },
-  ];
+  const { isAuthenticated, loading } = useMerchantAuth();
+  const router = useRouter();
+  
+  // Redirect if not authenticated
+  useEffect(() => {
+    if (!loading && !isAuthenticated) {
+      router.push('/merchant/login');
+    }
+  }, [isAuthenticated, loading, router]);
+  
+  // Show loading state while checking authentication
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center h-screen">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-primary mx-auto"></div>
+          <p className="mt-4 text-lg">Loading products...</p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-8">
@@ -30,40 +49,7 @@ export default function MerchantProductsPage() {
         </Button>
       </header>
 
-      {mockProducts.length === 0 ? (
-        <Card className="text-center py-12 shadow-md">
-          <CardHeader>
-            <PackagePlus className="mx-auto h-16 w-16 text-muted-foreground mb-4" />
-            <CardTitle className="text-2xl">No Products Yet</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <CardDescription className="mb-6">
-              You haven&apos;t added any products to your store. Get started by adding your first product!
-            </CardDescription>
-            <Button asChild size="lg">
-              <Link href="/merchant/products/new">Add Your First Product</Link>
-            </Button>
-          </CardContent>
-        </Card>
-      ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-          {/* Placeholder for product cards when data is available */}
-          {/* {mockProducts.map(product => (
-            <Card key={product.id}>
-              <CardHeader><CardTitle>{product.name}</CardTitle></CardHeader>
-              <CardContent>
-                <p>Price: {product.price} TAIC</p>
-                <p>Stock: {product.stock}</p>
-                <p>Category: {product.category}</p>
-              </CardContent>
-              <CardFooter><Button variant="outline">Edit</Button></CardFooter>
-            </Card>
-          ))} */}
-          <p className="text-muted-foreground md:col-span-3 text-center">
-            Product display will appear here once products are added and backend is connected.
-          </p>
-        </div>
-      )}
+      <ProductList />
 
       <div className="mt-12 text-center">
         <Button variant="outline" asChild>
