@@ -33,38 +33,38 @@ export async function GET(request: NextRequest) {
   }
   const userId = userPayload.userId;
 
-  const { searchParams } = new URL(request.url);
-  const imageType = searchParams.get('imageType') || null; // Get imageType from query params, default to null if not provided
-
   let client;
   try {
     client = await pool.connect();
 
-    const imagesQuery = `
+    const stakesQuery = `
       SELECT
         id,
-        image_url AS "imageUrl",
-        image_type AS "imageType",
-        description,
-        created_at AS "createdAt"
-      FROM user_gallery_images
-      WHERE user_id = $1
-        AND ($2::VARCHAR IS NULL OR image_type = $2)
-      ORDER BY created_at DESC;
+        user_id AS "userId",
+        amount_staked AS "amountStaked",
+        stake_date AS "stakeDate",
+        status,
+        created_at AS "createdAt",
+        updated_at AS "updatedAt"
+      FROM user_stakes
+      WHERE user_id = $1 AND status = 'active'
+      ORDER BY stake_date DESC;
     `;
-    // Parameters: userId, imageType (or null if no filter)
-    const result = await client.query(imagesQuery, [userId, imageType]);
-    
-    const images = result.rows.map(img => ({
-      ...img,
-      createdAt: new Date(img.createdAt).toISOString(), // Ensure ISO format
+    const result = await client.query(stakesQuery, [userId]);
+
+    const activeStakes = result.rows.map(stake => ({
+      ...stake,
+      stakeDate: new Date(stake.stakeDate).toISOString(),
+      createdAt: new Date(stake.createdAt).toISOString(),
+      updatedAt: new Date(stake.updatedAt).toISOString(),
+      amountStaked: parseFloat(stake.amountStaked) // Ensure numeric type
     }));
 
-    return NextResponse.json(images); // Return array directly as per common practice
+    return NextResponse.json(activeStakes);
 
   } catch (error) {
-    console.error('Error fetching user gallery images:', error);
-    return NextResponse.json({ error: 'Failed to fetch user gallery images' }, { status: 500 });
+    console.error('Error fetching active stakes:', error);
+    return NextResponse.json({ error: 'Failed to fetch active stakes' }, { status: 500 });
   } finally {
     if (client) {
       client.release();

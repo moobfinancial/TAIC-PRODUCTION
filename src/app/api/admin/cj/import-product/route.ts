@@ -168,16 +168,22 @@ export async function POST(request: NextRequest) {
           additional_image_urls_json,
           variants_json,
           is_active,
+          approval_status, // Added approval_status
           cashback_percentage,
           original_name,
           original_description,
           created_at,
           updated_at
         ) VALUES (
-          $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, 0.00, $13, $14,
+          $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11,
+          $12, -- is_active (false)
+          $13, -- approval_status ('pending')
+          $14, -- cashback_percentage (0.00)
+          $15, -- original_name
+          $16, -- original_description
           NOW(), NOW()
         )
-        RETURNING platform_product_id, cj_product_id, platform_category_id, selling_price, display_name;`;
+        RETURNING platform_product_id, cj_product_id, platform_category_id, selling_price, display_name, is_active, approval_status;`;
 
       // Prepare product data for insertion
       const productImages = Array.isArray(cjProduct.productImage) 
@@ -245,11 +251,15 @@ export async function POST(request: NextRequest) {
         additionalImages.length > 0 ? JSON.stringify(additionalImages) : null,
         // $11: variants_json
         variants.length > 0 ? JSON.stringify(variants) : null,
-        // $12: is_active (set to true by default when importing)
-        true,
-        // $13: original_name
+        // $12: is_active - set to false by default
+        false,
+        // $13: approval_status - set to 'pending' by default
+        'pending',
+        // $14: cashback_percentage
+        0.00,
+        // $15: original_name
         originalName,
-        // $14: original_description
+        // $16: original_description
         originalDescription
       ]);
 

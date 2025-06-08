@@ -7,13 +7,16 @@ import { ShoppingCart, Users, Lightbulb, Sparkles, LayoutDashboard, LogOut, User
 import { Button } from '@/components/ui/button';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
-import { useAuth } from '@/hooks/useAuth';
+// Switch to the new AuthContext
+import { useAuth } from '@/contexts/AuthContext';
+import { WalletConnectButton } from '@/components/wallet/WalletConnectButton'; // Import the new button
 import { useCart } from '@/hooks/useCart';
 import { useWishlist } from '@/hooks/useWishlist';
 import { Logo } from '@/components/Logo';
 
 export function Navbar() {
-  const { user, logout } = useAuth();
+  // Use new state from AuthContext
+  const { user, isAuthenticated, logout } = useAuth();
   const { getCartItemCount } = useCart();
   const { getWishlistItemCount } = useWishlist();
 
@@ -63,22 +66,32 @@ export function Navbar() {
               )}
             </Button>
           </Link>
-          {user ? (
+
+          <WalletConnectButton />
+
+          {isAuthenticated && user && (
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <Button variant="ghost" className="relative h-8 w-8 rounded-full">
                   <Avatar className="h-8 w-8">
-                    <AvatarImage src={`https://avatar.vercel.sh/${user.username}.png`} alt={user.username} />
-                    <AvatarFallback>{user.username.substring(0, 2).toUpperCase()}</AvatarFallback>
+                    {/* Use walletAddress for avatar if username is not available, or a generic icon */}
+                    <AvatarImage src={user.profileImageUrl || `https://avatar.vercel.sh/${user.username || user.walletAddress}.png`} alt={user.username || user.walletAddress} />
+                    <AvatarFallback>{(user.username || user.walletAddress).substring(0, 2).toUpperCase()}</AvatarFallback>
                   </Avatar>
                 </Button>
               </DropdownMenuTrigger>
               <DropdownMenuContent className="w-56" align="end" forceMount>
                 <DropdownMenuLabel className="font-normal">
                   <div className="flex flex-col space-y-1">
-                    <p className="text-sm font-medium leading-none">{user.username}</p>
+                    {/* Display username if available, otherwise wallet address */}
+                    <p className="text-sm font-medium leading-none">{user.username || shortenAddress(user.walletAddress)}</p>
+                    {user.email && (
+                       <p className="text-xs leading-none text-muted-foreground">
+                         {user.email}
+                       </p>
+                    )}
                     <p className="text-xs leading-none text-muted-foreground flex items-center">
-                      <Gem className="mr-1 h-3 w-3 text-primary" /> {user.taicBalance.toLocaleString()} TAIC
+                      <Gem className="mr-1 h-3 w-3 text-primary" /> {user.taicBalance?.toLocaleString() || 0} TAIC
                     </p>
                   </div>
                 </DropdownMenuLabel>
@@ -90,36 +103,41 @@ export function Navbar() {
                   </Link>
                 </DropdownMenuItem>
                 <DropdownMenuItem asChild>
-                  <Link href="/account">
+                  <Link href="/account" className="flex items-center">
                     <UserCircle className="mr-2 h-4 w-4" />
                     Account
                   </Link>
                 </DropdownMenuItem>
                 <DropdownMenuItem asChild>
-                  <Link href="/account/gallery">
+                  <Link href="/account/gallery" className="flex items-center">
                     <ImageIcon className="mr-2 h-4 w-4" />
                     My Gallery
                   </Link>
                 </DropdownMenuItem>
-                <DropdownMenuSeparator />
+                {/* The WalletConnectButton now handles logout, so this can be removed or kept if preferred */}
+                {/* For simplicity, let's assume WalletConnectButton is the sole logout point for now */}
+                {/* <DropdownMenuSeparator />
                 <DropdownMenuItem onClick={logout} className="flex items-center cursor-pointer">
                   <LogOut className="mr-2 h-4 w-4" />
                   Log out
-                </DropdownMenuItem>
+                </DropdownMenuItem> */}
               </DropdownMenuContent>
             </DropdownMenu>
-          ) : (
-            <div className="space-x-2">
-              <Button asChild variant="ghost">
-                <Link href="/login">Login</Link>
-              </Button>
-              <Button asChild>
-                <Link href="/register">Register</Link>
-              </Button>
-            </div>
           )}
         </div>
       </div>
+    </header>
+  );
+}
+
+// Helper function (if not already globally available or part of user model)
+// Can be defined here or imported if it's a common utility
+const shortenAddress = (address: string, chars = 4): string => {
+  if (!address) return "";
+  const prefix = address.substring(0, chars + 2); // 0x + chars
+  const suffix = address.substring(address.length - chars);
+  return `${prefix}...${suffix}`;
+};
     </header>
   );
 }

@@ -1,98 +1,52 @@
 
 'use client';
 
-import { useState, type FormEvent, useEffect } from 'react';
+import { useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import { useAuth } from '@/hooks/useAuth';
-import { useToast } from '@/hooks/use-toast';
-import { Gem } from 'lucide-react';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { useAuth } from '@/contexts/AuthContext'; // Updated import
+import { Gem, LogIn } from 'lucide-react'; // LogIn or Wallet icon
 
 export default function LoginPage() {
-  const [username, setUsername] = useState('');
-  const [password, setPassword] = useState(''); // Password not used for demo
-  const { login, user, loading } = useAuth();
+  const { isAuthenticated, isLoading } = useAuth(); // Use new context values
   const router = useRouter();
-  const { toast } = useToast();
 
   useEffect(() => {
-    if (!loading && user) {
+    if (!isLoading && isAuthenticated) {
       router.push('/dashboard'); // Redirect if already logged in
     }
-  }, [user, loading, router]);
+  }, [isAuthenticated, isLoading, router]);
 
-  if (loading || user) { // Prevent rendering form if loading or user exists (and redirect is pending)
-    return null;
+  // Show loading state or null if redirecting
+  if (isLoading || (!isLoading && isAuthenticated)) {
+    return (
+      <div className="flex justify-center items-center min-h-screen">
+        <Gem className="h-12 w-12 animate-pulse text-primary" />
+      </div>
+    );
   }
 
-  const handleSubmit = (e: FormEvent) => {
-    e.preventDefault();
-    if (!username.trim()) {
-      toast({
-        title: 'Login Failed',
-        description: 'Please enter a username.',
-        variant: 'destructive',
-      });
-      return;
-    }
-    login(username);
-    toast({
-      title: 'Login Successful!',
-      description: `Welcome back, ${username}!`,
-    });
-    // The useEffect above will handle the redirect to dashboard after login sets the user
-  };
-
   return (
-    <div className="flex items-center justify-center py-12">
+    <div className="flex items-center justify-center py-12 min-h-[calc(100vh-150px)]">
       <Card className="w-full max-w-md shadow-xl">
         <CardHeader className="text-center">
-          <Gem className="mx-auto h-12 w-12 text-primary mb-4" />
-          <CardTitle className="text-3xl font-headline">Welcome Back!</CardTitle>
-          <CardDescription>Log in to your TAIC account.</CardDescription>
+          <LogIn className="mx-auto h-12 w-12 text-primary mb-4" /> {/* Changed Icon */}
+          <CardTitle className="text-3xl font-headline">Login via Wallet</CardTitle>
+          <CardDescription>
+            Authentication is now handled by connecting your cryptocurrency wallet (e.g., MetaMask).
+          </CardDescription>
         </CardHeader>
-        <CardContent>
-          <form onSubmit={handleSubmit} className="space-y-6">
-            <div className="space-y-2">
-              <Label htmlFor="username">Username</Label>
-              <Input
-                id="username"
-                type="text"
-                placeholder="Enter your username"
-                value={username}
-                onChange={(e) => setUsername(e.target.value)}
-                required
-                className="text-base"
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="password">Password</Label>
-              <Input
-                id="password"
-                type="password"
-                placeholder="Enter your password (demo)"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                className="text-base"
-              />
-            </div>
-            <Button type="submit" className="w-full text-lg py-6 font-semibold">
-              Login
-            </Button>
-          </form>
-        </CardContent>
-        <CardFooter className="flex flex-col items-center space-y-2">
-          <p className="text-sm text-muted-foreground">
-            Don&apos;t have an account?{' '}
-            <Button variant="link" asChild className="p-0 h-auto">
-              <Link href="/register">Register here</Link>
-            </Button>
+        <CardContent className="text-center space-y-6">
+          <p className="text-muted-foreground">
+            Please use the &quot;Connect Wallet&quot; button, typically found in the website header,
+            to log in or create an account.
           </p>
-        </CardFooter>
+          <Button asChild size="lg" className="w-full text-lg py-6 font-semibold">
+            <Link href="/">Go to Homepage</Link>
+          </Button>
+        </CardContent>
       </Card>
     </div>
   );

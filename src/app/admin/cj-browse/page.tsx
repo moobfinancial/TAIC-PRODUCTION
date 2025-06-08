@@ -124,6 +124,9 @@ export default function BrowseCjProductsPage() {
   const [isLoading, setIsLoading] = useState(false);
   const [searchError, setSearchError] = useState<string | null>(null);
 
+  // State for product selection
+  const [selectedCjProductIds, setSelectedCjProductIds] = useState(new Set<string>());
+
   // State for CJ API Categories for filtering
   const [cjApiCategories, setCjApiCategories] = useState<CjCategory[]>([]);
   const [isLoadingCjApiCategories, setIsLoadingCjApiCategories] = useState(false);
@@ -132,22 +135,29 @@ export default function BrowseCjProductsPage() {
   const [platformCategories, setPlatformCategories] = useState<PlatformCategory[]>([]);
   const [isLoadingCategories, setIsLoadingCategories] = useState(false);
 
-  // Import Modal State
+  // Import Modal State (for single import)
   const [importModal, setImportModal] = useState<ImportModalState>({
     isOpen: false,
     productToImport: null,
-    platformCategoryId: 'select-category',
+    platformCategoryId: 'select-category', // Ensure this is a string if Select expects it
     sellingPrice: '',
     displayName: '',
     displayDescription: '',
   });
 
-  // Debug: Log importModal state changes
-  useEffect(() => {
-    console.log('importModal state changed:', importModal);
-  }, [importModal]);
+  // State for Bulk Import Modal
+  const [isBulkImportModalOpen, setIsBulkImportModalOpen] = useState(false);
+  const [bulkImportPlatformCategoryId, setBulkImportPlatformCategoryId] = useState<string>('');
+  const [bulkImportMarkup, setBulkImportMarkup] = useState<string>('50'); // Default markup e.g. 50%
+  const [isBulkImporting, setIsBulkImporting] = useState(false);
 
-  const [isImporting, setIsImporting] = useState(false);
+
+  // Debug: Log importModal state changes
+  // useEffect(() => {
+  //   console.log('importModal state changed:', importModal);
+  // }, [importModal]);
+
+  const [isImporting, setIsImporting] = useState(false); // For single import
 
   // Fetch Platform Categories
   useEffect(() => {
@@ -258,7 +268,7 @@ export default function BrowseCjProductsPage() {
       setCjProducts(cjApiResponseData.list || []);
       setTotalResults(cjApiResponseData.total || 0);
       setTotalPages(Math.ceil((cjApiResponseData.total || 0) / limitPerPage));
-
+      setSelectedCjProductIds(new Set()); // Clear selection on new search/page
     } catch (err: any) {
       setSearchError(err.message);
       setCjProducts([]);
@@ -394,8 +404,7 @@ export default function BrowseCjProductsPage() {
   // Helper function to render CJ Category options for the Select component
   const renderCjCategoryOptions = (categories: CjCategory[], level = 0): JSX.Element[] => {
     return categories.flatMap((category, index) => {
-      // category.id is now guaranteed to be a unique string by the transformation
-      const itemKey = category.id; // Direct use of unique ID as key is best
+      const itemKey = category.id;
       const currentItem = (
         <SelectItem key={itemKey} value={String(category.id)}>
           <span style={{ paddingLeft: `${level * 15}px` }}>
@@ -408,6 +417,84 @@ export default function BrowseCjProductsPage() {
       }
       return [currentItem];
     });
+  };
+
+  const handleSelectProduct = (productId: string, checked: boolean) => {
+    setSelectedCjProductIds(prev => {
+      const newSet = new Set(prev);
+      if (checked) {
+        newSet.add(productId);
+      } else {
+        newSet.delete(productId);
+      }
+      return newSet;
+    });
+  };
+
+  const handleSelectAllOnPage = () => {
+    setSelectedCjProductIds(prev => {
+      const newSet = new Set(prev);
+      cjProducts.forEach(p => newSet.add(p.pid));
+      return newSet;
+    });
+  };
+
+  const handleClearSelection = () => {
+    setSelectedCjProductIds(new Set());
+  };
+
+  const handleOpenBulkImportModal = () => {
+    if (selectedCjProductIds.size === 0) {
+      toast({ title: "No Products Selected", description: "Please select products to bulk import.", variant: "destructive" });
+      return;
+    }
+    setIsBulkImportModalOpen(true);
+  };
+
+  const handleBulkImportConfirm = async () => {
+    if (!adminApiKey) {
+      toast({ title: "Authentication Error", description: "Admin API Key not available.", variant: "destructive" });
+      return;
+    }
+    if (!bulkImportPlatformCategoryId) {
+      toast({ title: "Validation Error", description: "Please select a platform category.", variant: "destructive" });
+      return;
+    }
+    const markup = parseFloat(bulkImportMarkup);
+    if (isNaN(markup) || markup < 0) {
+      toast({ title: "Validation Error", description: "Please enter a valid non-negative markup percentage.", variant: "destructive" });
+      return;
+    }
+
+    setIsBulkImporting(true);
+    try {
+      const payload = {
+        cjProductIds: Array.from(selectedCjProductIds),
+        platformCategoryId: parseInt(bulkImportPlatformCategoryId, 10),
+        pricingMarkupPercentage: markup,
+      };
+      const response = await fetch('/api/admin/cj/bulk-import', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'X-Admin-API-Key': adminApiKey },
+        body: JSON.stringify(payload),
+      });
+      const result = await response.json();
+      if (!response.ok) {
+        throw new Error(result.error || result.message || 'Bulk import failed');
+      }
+      toast({
+        title: "Bulk Import Processed",
+        description: `${result.successfullyImported} products imported. ${result.failedImports} failed. ${result.alreadyExists} already existed.`,
+      });
+      setSelectedCjProductIds(new Set());
+      setIsBulkImportModalOpen(false);
+      // Optionally refresh current page search results
+      // handleSearchCjProducts(currentPage);
+    } catch (error: any) {
+      toast({ title: "Bulk Import Error", description: error.message, variant: "destructive" });
+    } finally {
+      setIsBulkImporting(false);
+    }
   };
 
 
@@ -457,12 +544,29 @@ export default function BrowseCjProductsPage() {
 
         {!isLoading && cjProducts.length > 0 && (
           <div key="product-list-wrapper" className="space-y-4">
+            <div className="flex items-center justify-between mb-4">
+              <div className="flex items-center gap-2">
+                <Button variant="outline" size="sm" onClick={handleSelectAllOnPage} disabled={cjProducts.length === 0}>Select Page ({cjProducts.length})</Button>
+                <Button variant="outline" size="sm" onClick={handleClearSelection} disabled={selectedCjProductIds.size === 0}>Clear Selection</Button>
+                <span className="text-sm text-muted-foreground">{selectedCjProductIds.size} selected</span>
+              </div>
+              <Button onClick={handleOpenBulkImportModal} disabled={selectedCjProductIds.size === 0}>
+                <Import className="mr-2 h-4 w-4"/> Import Selected ({selectedCjProductIds.size})
+              </Button>
+            </div>
+
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-              {cjProducts.map((product) => {
-                console.log(`[Image Debug] PID: ${product.pid}, Image URL: "${product.productImage}", Hostname from URL: "${new URL(product.productImage).hostname}"`);
-                return (
-                <Card key={product.pid} className="flex flex-col">
-                  <CardHeader className="p-2">
+              {cjProducts.map((product) => (
+                <Card key={product.pid} className="flex flex-col relative">
+                  <div className="absolute top-2 right-2 z-10">
+                    <Input
+                      type="checkbox"
+                      className="h-5 w-5 cursor-pointer"
+                      checked={selectedCjProductIds.has(product.pid)}
+                      onCheckedChange={(checked) => handleSelectProduct(product.pid, !!checked)}
+                    />
+                  </div>
+                  <CardHeader className="p-2 pt-8"> {/* Added pt-8 for checkbox space */}
                     <div className="relative aspect-square w-full">
                       <Image 
                         src={product.productImage || '/placeholder.png'} 
@@ -482,12 +586,11 @@ export default function BrowseCjProductsPage() {
                   </CardContent>
                   <CardFooter className="p-3">
                     <Button size="sm" className="w-full" onClick={() => openImportModal(product)} disabled={isLoadingCategories}>
-                      <Import className="mr-2 h-4 w-4"/> Import
+                      <Import className="mr-2 h-4 w-4"/> Import Single
                     </Button>
                   </CardFooter>
                 </Card>
-              );
-            })}
+              ))}
             </div>
             {/* Pagination Controls */}
             {totalPages > 1 && (
@@ -536,15 +639,15 @@ export default function BrowseCjProductsPage() {
                     </div>
                 </div>
                 <div>
-                  <Label htmlFor="displayName">Display Name (Overrides CJ Name)</Label>
-                  <Input id="displayName" value={importModal.displayName} onChange={(e) => setImportModal(s => ({...s, displayName: e.target.value}))} />
+                  <Label htmlFor="singleDisplayName">Display Name (Overrides CJ Name)</Label>
+                  <Input id="singleDisplayName" value={importModal.displayName} onChange={(e) => setImportModal(s => ({...s, displayName: e.target.value}))} />
                 </div>
                 <div>
-                  <Label htmlFor="displayDescription">Display Description (Overrides CJ Description)</Label>
-                  <Textarea id="displayDescription" value={importModal.displayDescription} onChange={(e) => setImportModal(s => ({...s, displayDescription: e.target.value}))} rows={3}/>
+                  <Label htmlFor="singleDisplayDescription">Display Description (Overrides CJ Description)</Label>
+                  <Textarea id="singleDisplayDescription" value={importModal.displayDescription} onChange={(e) => setImportModal(s => ({...s, displayDescription: e.target.value}))} rows={3}/>
                 </div>
                 <div>
-                  <Label htmlFor="platformCategoryId">Platform Category <span className="text-destructive">*</span></Label>
+                  <Label htmlFor="singlePlatformCategoryId">Platform Category <span className="text-destructive">*</span></Label>
                   <Select
                     value={importModal.platformCategoryId}
                     onValueChange={(value) => setImportModal(s => ({...s, platformCategoryId: value}))}
@@ -558,7 +661,7 @@ export default function BrowseCjProductsPage() {
                         Select a category
                       </SelectItem>
                       {platformCategories.map(cat => (
-                        <SelectItem key={cat.id} value={String(cat.id)}>
+                        <SelectItem key={`single-${cat.id}`} value={String(cat.id)}>
                           {cat.name}
                         </SelectItem>
                       ))}
@@ -566,22 +669,14 @@ export default function BrowseCjProductsPage() {
                   </Select>
                 </div>
                 <div>
-                  <Label htmlFor="sellingPrice">Your Selling Price ($) <span className="text-destructive">*</span></Label>
-                  <Input id="sellingPrice" type="number" step="0.01" value={importModal.sellingPrice} onChange={(e) => setImportModal(s => ({...s, sellingPrice: e.target.value}))} required />
+                  <Label htmlFor="singleSellingPrice">Your Selling Price ($) <span className="text-destructive">*</span></Label>
+                  <Input id="singleSellingPrice" type="number" step="0.01" value={importModal.sellingPrice} onChange={(e) => setImportModal(s => ({...s, sellingPrice: e.target.value}))} required />
                 </div>
                 <div className="flex justify-end space-x-2 pt-2">
                   <Button type="button" variant="outline" onClick={() => setImportModal(prev => ({...prev, isOpen: false}))} disabled={isImporting}>Cancel</Button>
                   <Button 
                     type="submit" 
                     disabled={isImporting || !importModal.platformCategoryId || !importModal.sellingPrice || importModal.platformCategoryId === 'select-category'}
-                    onClick={() => {
-                      console.log('Button clicked with state:', {
-                        isImporting,
-                        platformCategoryId: importModal.platformCategoryId,
-                        sellingPrice: importModal.sellingPrice,
-                        disabled: isImporting || !importModal.platformCategoryId || !importModal.sellingPrice || importModal.platformCategoryId === 'select-category'
-                      });
-                    }}
                   >
                     {isImporting ? (
                       <Loader2 className="mr-2 h-4 w-4 animate-spin" />
@@ -592,6 +687,59 @@ export default function BrowseCjProductsPage() {
                   </Button>
                 </div>
               </form>
+            </CardContent>
+          </Card>
+        </div>
+      )}
+
+      {/* Bulk Import Modal */}
+      {isBulkImportModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
+          <Card className="w-full max-w-md shadow-2xl">
+            <CardHeader>
+              <CardTitle>Bulk Import Settings</CardTitle>
+              <CardDescription>Configure settings for importing {selectedCjProductIds.size} selected products.</CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div>
+                <Label htmlFor="bulkPlatformCategoryId">Platform Category for ALL selected products <span className="text-destructive">*</span></Label>
+                <Select
+                  value={bulkImportPlatformCategoryId}
+                  onValueChange={setBulkImportPlatformCategoryId}
+                  required
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="Select a category" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {platformCategories.map(cat => (
+                      <SelectItem key={`bulk-${cat.id}`} value={String(cat.id)}>
+                        {cat.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div>
+                <Label htmlFor="bulkPricingMarkup">Pricing Markup Percentage (%) <span className="text-destructive">*</span></Label>
+                <Input
+                  id="bulkPricingMarkup"
+                  type="number"
+                  step="0.01"
+                  value={bulkImportMarkup}
+                  onChange={(e) => setBulkImportMarkup(e.target.value)}
+                  placeholder="e.g., 50 for 50%"
+                  required
+                />
+                <p className="text-xs text-muted-foreground mt-1">This percentage will be added to the CJ base price to set your selling price.</p>
+              </div>
+              <div className="flex justify-end space-x-2 pt-2">
+                <Button type="button" variant="outline" onClick={() => setIsBulkImportModalOpen(false)} disabled={isBulkImporting}>Cancel</Button>
+                <Button onClick={handleBulkImportConfirm} disabled={isBulkImporting || !bulkImportPlatformCategoryId || !bulkImportMarkup}>
+                  {isBulkImporting ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Import className="mr-2 h-4 w-4" />}
+                  Confirm Bulk Import
+                </Button>
+              </div>
             </CardContent>
           </Card>
         </div>

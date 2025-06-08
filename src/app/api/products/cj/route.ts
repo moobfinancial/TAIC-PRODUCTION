@@ -41,7 +41,7 @@ export async function GET(request: NextRequest) {
         cp.is_active
       FROM cj_products cp
       LEFT JOIN categories c ON cp.platform_category_id = c.id
-      WHERE cp.is_active = true
+      WHERE cp.is_active = true AND cp.approval_status = 'approved'
     `;
 
     const queryParams: any[] = [];
@@ -90,7 +90,7 @@ export async function GET(request: NextRequest) {
       SELECT COUNT(*) 
       FROM cj_products cp
       LEFT JOIN categories c ON cp.platform_category_id = c.id
-      WHERE cp.is_active = true
+      WHERE cp.is_active = true AND cp.approval_status = 'approved'
     `;
 
     // Add the same filters to count query

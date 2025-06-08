@@ -48,7 +48,7 @@ export async function GET(request: NextRequest) {
         cp.is_active
       FROM cj_products cp
       LEFT JOIN categories c ON cp.platform_category_id = c.id
-      WHERE cp.platform_product_id = $1 AND cp.is_active = true
+      WHERE cp.platform_product_id = $1 AND cp.is_active = true AND cp.approval_status = 'approved'
     `;
 
     const result = await client.query(query, [id]);

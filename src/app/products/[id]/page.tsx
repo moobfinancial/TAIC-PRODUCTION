@@ -32,8 +32,9 @@ import { translateText, containsChineseCharacters } from '@/lib/translationUtils
 
 export default function ProductDetailPage() {
   const params = useParams<{ id?: string }>();
-  const { user } = useAuth();
-  const router = useRouter(); // Get user from auth context
+  // user and token will be used
+  const { user, token } = useAuth();
+  const router = useRouter();
   const { addToCart } = useCart();
   const { addToWishlist, isInWishlist, removeFromWishlist } = useWishlist();
   const { toast } = useToast();
@@ -209,15 +210,16 @@ export default function ProductDetailPage() {
         method: 'POST',
         headers: { 
           'Content-Type': 'application/json',
-          'Accept': 'application/json'
+          'Accept': 'application/json',
+          // Add Authorization header if token is available
+          ...(token && { 'Authorization': `Bearer ${token}` })
         },
         body: JSON.stringify({
-          userImageUrl: user.profileImageUrl,
+          userImageUrl: user.profileImageUrl, // This implies user must exist and have profileImageUrl
           productImageUrl: product.imageUrl,
-          userDescription: `User ${user.username || ''}`, 
+          userDescription: `User ${user.username || user.walletAddress || 'Guest'}`, // Fallback for username
           productDescription: product.name,
-          // Include the authenticated user ID
-          userId: user?.id,
+          // userId: user?.id, // userId from JWT will be used on backend if this is a protected route
           // Include the product ID for reference
           productId: product.id,
         }),
@@ -253,7 +255,8 @@ export default function ProductDetailPage() {
       // Create a unique filename with timestamp and user ID
       const timestamp = Date.now();
       const filename = `virtual_try_on_${timestamp}.jpg`;
-      const storagePath = `user_uploads/${user.id}/virtual_try_on/${filename}`;
+      // Ensure user.id is available for storage path
+      const storagePath = `user_uploads/${user?.id || 'guest_uploads'}/virtual_try_on/${filename}`;
 
       // Upload the image to Firebase Storage with metadata
       const storageRef = ref(storage, storagePath);
