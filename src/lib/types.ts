@@ -138,3 +138,9 @@ export interface UserGalleryImage {
   description?: string | null;
   createdAt: string; // ISO string date
 }
+
+// For Shopping Assistant and conversation history
+export interface ChatMessage {
+  role: 'user' | 'assistant' | 'system'; // Align with common chat roles
+  content: string;
+}
