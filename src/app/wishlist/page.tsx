@@ -4,11 +4,13 @@
 import Image from 'next/image';
 import Link from 'next/link';
 import { Button } from '@/components/ui/button';
-import { useWishlist } from '@/hooks/useWishlist';
-import { useAuth } from '@/hooks/useAuth';
+import { useWishlist } from '@/hooks/useWishlist'; // Assuming useWishlist is self-contained or will be updated separately
+// Update useAuth import path
+import { useAuth } from '@/contexts/AuthContext';
 import { useToast } from '@/hooks/use-toast';
-import { Trash2, Heart, Gem, ShoppingBag, Info, Target, PlusCircle, Clock, PartyPopper, ThumbsUp } from 'lucide-react';
-import type { WishlistItem, StakedWishlistGoal } from '@/lib/types';
+import { Trash2, Heart, Gem, ShoppingBag, Info, Target, PlusCircle, Clock, PartyPopper, ThumbsUp, ShieldAlert } from 'lucide-react'; // Added ShieldAlert
+// StakedWishlistGoal might need to be sourced differently if not on user object
+import type { WishlistItem, StakedWishlistGoal as StakedWishlistGoalType } from '@/lib/types';
 import { StakeToShopCalculator } from '@/components/staking/StakeToShopCalculator';
 import { useState, useMemo, useEffect } from 'react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
@@ -44,7 +46,8 @@ const formatTimeRemaining = (maturityDateISO: string): string => {
 
 export default function WishlistPage() {
   const { wishlistItems, removeFromWishlist, getWishlistTotalValue, getWishlistItemCount, clearWishlist } = useWishlist();
-  const { user, updateUser } = useAuth();
+  // Use new auth context values. updateUser is removed.
+  const { user, isAuthenticated, isLoading: authIsLoading } = useAuth();
   const { toast } = useToast();
   
   const currentWishlistTotal = useMemo(() => getWishlistTotalValue(), [getWishlistTotalValue]);
@@ -52,6 +55,8 @@ export default function WishlistPage() {
   const [newGoalName, setNewGoalName] = useState('');
   const [newGoalPrincipal, setNewGoalPrincipal] = useState<number | string>('');
   const [processedWishlistItems, setProcessedWishlistItems] = useState<WishlistItem[]>([]);
+  // Local state for staked goals, as they are no longer on the main user auth object
+  const [localStakedGoals, setLocalStakedGoals] = useState<StakedWishlistGoalType[]>([]);
 
   // For time remaining display update
   const [, setTick] = useState(0);
@@ -105,9 +110,9 @@ export default function WishlistPage() {
     }
   };
 
-  const handleCreateStakedGoal = () => {
-    if (!user) {
-      toast({ title: "Login Required", variant: "destructive" });
+  const handleCreateStakedGoal = async () => {
+    if (!isAuthenticated || !user) {
+      toast({ title: "Login Required", description: "Please connect your wallet to create a staked goal.", variant: "destructive" });
       return;
     }
     if (!newGoalName.trim()) {
@@ -119,8 +124,8 @@ export default function WishlistPage() {
       toast({ title: "Invalid Amount", description: "Please enter a positive amount to dedicate.", variant: "destructive" });
       return;
     }
-    if (principal > user.taicBalance) {
-      toast({ title: "Insufficient TAIC Balance", description: `You only have ${user.taicBalance} TAIC to dedicate.`, variant: "destructive" });
+    if (principal > (user.taicBalance || 0)) {
+      toast({ title: "Insufficient TAIC Balance", description: `You only have ${user.taicBalance || 0} TAIC to dedicate.`, variant: "destructive" });
       return;
     }
     if (currentWishlistTotal <= 0) {
@@ -128,48 +133,66 @@ export default function WishlistPage() {
         return;
     }
 
+    // TODO: API Call to backend to create staked goal, update balances
+    // POST /api/staking/goals { name, principal, targetValue (currentWishlistTotal) }
+    // This API would debit user.taicBalance and create/update staking records.
+    // On success, it might return the new goal or updated user staking info.
+    // AuthContext user might need refresh for taicBalance.
+
+    console.log(`Simulating creation of staked goal "${newGoalName}" with principal ${principal} for user ${user.id}`);
+
+    // For UI feedback (simulation only, not durable):
     const targetValue = currentWishlistTotal;
     const startDate = new Date();
     let estimatedMaturityDate = new Date();
-    
     const amountToEarnViaRewards = targetValue - principal;
-
     if (amountToEarnViaRewards <= 0) { 
-        estimatedMaturityDate = startDate; // Matures instantly if principal covers target
+        estimatedMaturityDate = startDate;
     } else {
         const annualRewardsFromPrincipal = principal * SIMULATED_APY;
         const monthlyRewardsFromPrincipal = annualRewardsFromPrincipal / 12;
-
-        if (monthlyRewardsFromPrincipal <= 0) {
-            toast({ title: "Calculation Error", description: "Cannot estimate maturity with current APY and principal. Staking a very small amount might lead to this.", variant: "destructive" });
-            return; 
+        if (monthlyRewardsFromPrincipal > 0) {
+            const monthsToGoal = amountToEarnViaRewards / monthlyRewardsFromPrincipal;
+            estimatedMaturityDate.setMonth(startDate.getMonth() + Math.ceil(monthsToGoal));
+        } else {
+            // Cannot estimate if no rewards from principal, effectively infinite time
+            // This case should be handled by UI or prevented if APY is zero and principal < target
+            console.warn("Cannot estimate maturity date with zero monthly rewards from principal.");
         }
-        const monthsToGoal = amountToEarnViaRewards / monthlyRewardsFromPrincipal;
-        estimatedMaturityDate.setMonth(startDate.getMonth() + Math.ceil(monthsToGoal));
     }
-
-    const newGoal: StakedWishlistGoal = {
-      id: Date.now().toString(),
-      name: newGoalName,
-      targetValue: targetValue,
-      principalStakedForGoal: principal,
-      startDate: startDate.toISOString(),
-      estimatedMaturityDate: estimatedMaturityDate.toISOString(),
+    const newGoalSimulated: StakedWishlistGoalType = {
+      id: Date.now().toString(), name: newGoalName, targetValue, principalStakedForGoal: principal,
+      startDate: startDate.toISOString(), estimatedMaturityDate: estimatedMaturityDate.toISOString(),
     };
+    setLocalStakedGoals(prev => [...prev, newGoalSimulated]);
+    // user.taicBalance will be stale in AuthContext.
 
-    updateUser({
-      ...user,
-      taicBalance: user.taicBalance - principal,
-      stakedTaicBalance: (user.stakedTaicBalance || 0) + principal,
-      stakedWishlistGoals: [...(user.stakedWishlistGoals || []), newGoal],
-    });
-
-    toast({ title: "Staked Goal Created!", description: `Goal "${newGoalName}" for ${targetValue} TAIC created for your current wishlist.` });
+    toast({ title: "Staked Goal Action (Simulated)", description: `Goal "${newGoalName}" for ${targetValue} TAIC would be created. Backend integration needed.` });
     setNewGoalName('');
     setNewGoalPrincipal('');
   };
 
-  if (processedWishlistItems.length === 0 && !user?.stakedWishlistGoals?.length) {
+  if (authIsLoading) {
+    return <div className="flex justify-center items-center min-h-screen"><Loader2 className="h-12 w-12 animate-spin text-primary" /></div>;
+  }
+
+  // If not authenticated, show a generic empty wishlist/goals state or login prompt
+  if (!isAuthenticated) {
+    return (
+      <div className="text-center py-20">
+        <Heart className="mx-auto h-24 w-24 text-muted-foreground mb-6" />
+        <h1 className="text-3xl font-headline font-semibold mb-4">Your Wishlist & Goals</h1>
+        <p className="text-muted-foreground mb-8">Connect your wallet to manage your wishlist and staked goals.</p>
+        {/* WalletConnectButton in Navbar is the primary way */}
+        <Button asChild size="lg" variant="outline">
+          <Link href="/">Explore Products</Link>
+        </Button>
+      </div>
+    );
+  }
+
+  // User is authenticated, but might have empty wishlist and no local (simulated) goals
+  if (processedWishlistItems.length === 0 && localStakedGoals.length === 0) {
     return (
       <div className="text-center py-20">
         <Heart className="mx-auto h-24 w-24 text-muted-foreground mb-6" />
@@ -181,7 +204,7 @@ export default function WishlistPage() {
       </div>
     );
   }
-
+  // Render content for authenticated user
   return (
     <div className="space-y-12">
       {/* Header remains the same, uses getWishlistItemCount for original count if needed */}
@@ -251,7 +274,8 @@ export default function WishlistPage() {
         </div>
       )}
       
-      {user && (
+      {/* Staked goal creation section - only if authenticated */}
+      {isAuthenticated && user && (
         <section id="create-staked-goal" className="py-8">
             <h2 className="text-3xl font-bold text-gray-800 mb-6 text-center">Stake for Current Wishlist</h2>
             {currentWishlistTotal > 0 ? (
@@ -263,6 +287,7 @@ export default function WishlistPage() {
                         <CardDescription>
                             Dedicate TAIC from your balance to work towards acquiring the items in your current wishlist.
                             Your current wishlist total is <Gem className="inline h-4 w-4 text-primary/70"/> {currentWishlistTotal.toLocaleString()} TAIC.
+                            Your available TAIC balance: <Gem className="inline h-4 w-4 text-primary/70"/> {(user.taicBalance || 0).toLocaleString()} TAIC.
                         </CardDescription>
                     </CardHeader>
                     <CardContent className="space-y-6">
@@ -275,7 +300,6 @@ export default function WishlistPage() {
                                 value={newGoalName} 
                                 onChange={(e) => setNewGoalName(e.target.value)}
                                 className="text-base"
-                                disabled={!user}
                             />
                         </div>
                         <div className="space-y-2">
@@ -283,16 +307,15 @@ export default function WishlistPage() {
                             <Input 
                                 id="newGoalPrincipal" 
                                 type="number" 
-                                placeholder={`Max ${user?.taicBalance.toLocaleString()} TAIC`}
+                                placeholder={`Max ${(user.taicBalance || 0).toLocaleString()} TAIC`}
                                 value={newGoalPrincipal} 
                                 onChange={(e) => setNewGoalPrincipal(e.target.value)}
                                 className="text-base"
-                                disabled={!user}
-                                max={user?.taicBalance}
+                                max={(user.taicBalance || 0)}
                             />
                         </div>
-                        <Button onClick={handleCreateStakedGoal} className="w-full font-semibold" disabled={!user || !newGoalName || !newGoalPrincipal}>
-                            <PlusCircle className="mr-2 h-5 w-5" /> Create & Stake Goal
+                        <Button onClick={handleCreateStakedGoal} className="w-full font-semibold" disabled={!newGoalName || !newGoalPrincipal}>
+                            <PlusCircle className="mr-2 h-5 w-5" /> Create & Stake Goal (Simulated)
                         </Button>
                     </CardContent>
                 </Card>
@@ -307,11 +330,12 @@ export default function WishlistPage() {
         </section>
       )}
 
-      {user && user.stakedWishlistGoals && user.stakedWishlistGoals.length > 0 && (
+      {/* Display localStakedGoals for authenticated users */}
+      {isAuthenticated && localStakedGoals.length > 0 && (
           <section id="my-staked-goals" className="py-8">
-             <h2 className="text-3xl md:text-4xl font-bold text-gray-800 mb-10 text-center">My Staked Wishlist Goals</h2>
+             <h2 className="text-3xl md:text-4xl font-bold text-gray-800 mb-10 text-center">My Staked Wishlist Goals (Simulated)</h2>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                    {user.stakedWishlistGoals.map(goal => {
+                    {localStakedGoals.map(goal => {
                         const startDate = new Date(goal.startDate);
                         const maturityDate = new Date(goal.estimatedMaturityDate);
                         const isMature = new Date() >= maturityDate;
@@ -320,7 +344,6 @@ export default function WishlistPage() {
                         if (maturityDate.getTime() > startDate.getTime()) {
                             progress = isMature ? 100 : Math.min(100, ((new Date().getTime() - startDate.getTime()) / (maturityDate.getTime() - startDate.getTime())) * 100);
                         } else if (maturityDate.getTime() <= startDate.getTime()) {
-                            // If maturity is on or before start (e.g. principal covers target), it's 100%
                             progress = 100;
                         }
                         
@@ -363,7 +386,8 @@ export default function WishlistPage() {
           </section>
       )}
 
-      {user && (
+      {/* Calculator section - only if authenticated */}
+      {isAuthenticated && user && (
          <section id="wishlist-calculator-section" className="py-8">
              <h2 className="text-3xl font-bold text-gray-800 mb-6 text-center">Wishlist Goal Estimator</h2>
             <StakeToShopCalculator 

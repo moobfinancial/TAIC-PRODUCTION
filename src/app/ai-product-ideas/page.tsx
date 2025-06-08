@@ -7,8 +7,11 @@ import { Textarea } from '@/components/ui/textarea';
 import { Card, CardContent } from '@/components/ui/card';
 import { Lightbulb, Sparkles, Send, Loader2, User, Gift, ImagePlus, CornerDownLeft, XCircle, Mic, MicOff, UploadCloud, CheckCircle } from 'lucide-react'; // Added Mic, MicOff, UploadCloud, CheckCircle
 import { generateProductIdeas } from '@/ai/flows/product-idea-generator';
-import { useAuth } from '@/hooks/useAuth';
-import type { AIConversation, Product } from '@/lib/types';
+// Update useAuth import path
+import { useAuth } from '@/contexts/AuthContext';
+// AIConversation type might be an issue if it was removed from User type and not defined elsewhere.
+// For now, we are removing the logic that uses it.
+// import type { AIConversation, Product } from '@/lib/types';
 import { useToast } from '@/hooks/use-toast';
 import useWebSpeech from '@/hooks/useWebSpeech'; // Import the hook
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
@@ -33,7 +36,8 @@ export default function AIProductIdeasPage() {
   const [description, setDescription] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [messages, setMessages] = useState<Message[]>([]);
-  const { user, updateUser } = useAuth();
+  // updateUser is removed. user and token will be used for API calls if needed.
+  const { user, token } = useAuth();
   const { toast } = useToast();
   const [generatorMode, setGeneratorMode] = useState<GeneratorMode>('product');
 
@@ -121,13 +125,19 @@ export default function AIProductIdeasPage() {
     setImageUploadError(null);
     const formData = new FormData();
     formData.append('file', selectedImageFile);
-    // Optional: Add userId if relevant for context, though this is for idea generation context
-    // if (user?.id) formData.append('userId', user.id);
+    // if (user?.id) formData.append('userId', user.id.toString()); // No longer sending userId directly
 
     try {
+      const headers: HeadersInit = {};
+      if (token) {
+        headers['Authorization'] = `Bearer ${token}`;
+      }
+      // Ensure Content-Type is not set manually for FormData, browser handles it with boundary
+
       const response = await fetch('/api/upload-image', {
         method: 'POST',
         body: formData,
+        headers: headers, // Send token if available
       });
       const result = await response.json();
       if (!response.ok) {
@@ -208,18 +218,20 @@ export default function AIProductIdeasPage() {
       setChatAreaMode('full');
       setCanvasProducts([]);
 
-      if (user) {
-        const newConversation: AIConversation = {
-          id: Date.now().toString(),
-          type: 'product_idea_generator', // Using product_idea_generator for both product and gift ideas
-          query: currentDescription, // Log the text query
-          imageUrlContext: uploadedImageUrlForContext || undefined, // Log image URL used
-          response: result.suggestions,
-          timestamp: new Date().toISOString(),
-        };
-        const updatedUserConversations = user.aiConversations ? [...user.aiConversations] : [];
-        updateUser({ ...user, aiConversations: [...updatedUserConversations, newConversation] });
-      }
+      // Removed updateUser logic for saving conversations.
+      // This would require a backend API.
+      // if (user) {
+      //   const newConversation: AIConversation = {
+      //     id: Date.now().toString(),
+      //     type: 'product_idea_generator',
+      //     query: currentDescription,
+      //     imageUrlContext: uploadedImageUrlForContext || undefined,
+      //     response: result.suggestions,
+      //     timestamp: new Date().toISOString(),
+      //   };
+      //   const updatedUserConversations = user.aiConversations ? [...user.aiConversations] : [];
+      //   updateUser({ ...user, aiConversations: [...updatedUserConversations, newConversation] });
+      // }
 
     } catch (error) {
       console.error('Error generating product ideas:', error);

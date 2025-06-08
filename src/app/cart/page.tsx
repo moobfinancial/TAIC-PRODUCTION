@@ -8,7 +8,8 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { useCart } from '@/hooks/useCart';
-import { useAuth } from '@/hooks/useAuth';
+// Update useAuth import path
+import { useAuth } from '@/contexts/AuthContext';
 import { useToast } from '@/hooks/use-toast';
 import { Trash2, ShoppingCartIcon, Gem, MinusCircle, PlusCircle, Wallet, LogIn, CreditCard, CheckCircle, Loader2, MapPin } from 'lucide-react';
 import type { Order, OrderItem } from '@/lib/types';
@@ -46,7 +47,8 @@ type CheckoutStep =
 
 export default function CartPage() {
   const { cartItems, removeFromCart, updateQuantity, getCartTotal, clearCart, getCartItemCount } = useCart();
-  const { user, updateUser, userId } = useAuth(); // Assuming userId is available from useAuth for backend calls
+  // Use new auth context values. updateUser is removed. userId is now user?.id
+  const { user, token, isAuthenticated, isLoading: authIsLoading } = useAuth();
   const { toast } = useToast();
   const router = useRouter();
   
@@ -66,37 +68,38 @@ export default function CartPage() {
     setCheckoutStep('initial'); // Reset step
   };
 
-  const handleTaicPayment = () => {
-    if (!user) return; 
+  const handleTaicPayment = async () => {
+    if (!user) {
+      toast({ title: "Authentication Error", description: "You must be logged in to pay with TAIC.", variant: "destructive" });
+      setCheckoutStep('guestCheckoutOptions'); // Or initial
+      return;
+    }
     const totalAmount = getCartTotal();
     if (user.taicBalance < totalAmount) {
         toast({ title: "Insufficient Balance", description: `You need ${totalAmount - user.taicBalance} more TAIC.`, variant: "destructive" });
-        setCheckoutStep('paymentSelection'); // Go back to payment options
+        setCheckoutStep('paymentSelection');
         return;
     }
 
-    const orderItems: OrderItem[] = cartItems.map(item => ({
-        productId: item.id,
-        name: item.name,
-        price: item.price,
-        quantity: item.quantity,
-        imageUrl: item.imageUrl,
-    }));
+    // TODO: Replace with backend API call for TAIC payment
+    // This API should handle balance deduction and order creation.
+    // For now, we'll simulate success and move to address form.
+    console.log('Simulating TAIC payment for user:', user.id, 'amount:', totalAmount);
+    setIsLoadingCrypto(true); // Use a general loading state for this
 
-    const newOrder: Order = {
-        id: Date.now().toString(),
-        items: orderItems,
-        totalAmount,
-        date: new Date().toISOString(),
-    };
+    // Simulate API call
+    await new Promise(resolve => setTimeout(resolve, 1500));
 
-    const updatedUser = {
-        ...user,
-        taicBalance: user.taicBalance - totalAmount,
-        orders: [...user.orders, newOrder],
-    };
-    updateUser(updatedUser);
-    setCheckoutStep('addressForm'); // Proceed to address form after TAIC payment
+    // Assuming payment is successful:
+    // The user's TAIC balance would be updated on the backend.
+    // The AuthContext needs to be refreshed to show the new balance.
+    // This could be done by calling a hypothetical `refreshUser()` from AuthContext,
+    // or the payment API could return the updated user object.
+    // For this subtask, we'll just proceed. The balance will be stale until next login/refresh.
+
+    toast({ title: "TAIC Payment (Simulated)", description: "Your payment with TAIC was successful." });
+    setIsLoadingCrypto(false);
+    setCheckoutStep('addressForm'); // Proceed to address form
   };
 
   const handleStripePaymentSuccess = (paymentIntentId: string) => {
@@ -121,21 +124,29 @@ export default function CartPage() {
 
   const handleProceedToCheckout = () => {
     if (getCartItemCount() === 0) return;
-    if (!user) {
-      setCheckoutStep('guestCheckoutOptions'); // Use new step for guest options
-    } else {
+    if (!isAuthenticated) { // Check isAuthenticated from new context
+      setCheckoutStep('guestCheckoutOptions');
+    } else if (user) { // User should exist if isAuthenticated is true
       const totalAmount = getCartTotal();
-      if (user.taicBalance < totalAmount && user.paymentMethods?.length === 0) { // Simplified condition
-        toast({ title: "Insufficient Balance", description: `You need ${totalAmount - user.taicBalance} more TAIC or add a payment method.`, variant: "destructive" });
-        return;
+      // Assuming paymentMethods is not part of the core User object from auth anymore
+      // Logic simplifies to checking TAIC balance or relying on other methods like Stripe/Crypto
+      if (user.taicBalance < totalAmount) {
+        // Allow proceeding, user can choose Stripe or Crypto (if available)
+        // The toast for insufficient balance might be too early here if other options exist.
+        // toast({ title: "Note: Insufficient TAIC Balance", description: `Your TAIC balance is less than the total. You can use other payment methods.`, variant: "default" });
       }
       setCheckoutStep('paymentSelection');
+    } else {
+      // Should not happen if isAuthenticated is true but user is null. Handle as guest.
+      setCheckoutStep('guestCheckoutOptions');
     }
   };
 
   const handleLoginRedirect = () => {
     setCheckoutStep('initial');
-    router.push('/login?redirect=/cart');
+    // Login page is now informational, wallet connection is via Navbar.
+    // Redirecting to home might be better, or cart itself and user uses Navbar.
+    router.push('/?action=connectWallet&redirect=/cart');
   };
 
   const connectWallet = async () => {
@@ -175,23 +186,25 @@ export default function CartPage() {
     setCryptoErrorMessage(null);
     setCheckoutStep('cryptoInitiatePayment');
 
-    // Use a guest user ID or a placeholder if user is not logged in for crypto
-    const effectiveUserId = user ? userId : 'guest_crypto_user';
-    if (!effectiveUserId) {
-      toast({ title: "User ID Error", description: "Could not determine user ID for the transaction.", variant: "destructive" });
-      setIsLoadingCrypto(false);
-      setCheckoutStep('cryptoWalletConnected'); // Go back
-      return;
-    }
+    // Use user.id if available for crypto, otherwise a guest identifier
+    const effectiveUserId = user?.id ? user.id.toString() : 'guest_crypto_user';
+    // Note: If this API requires JWT for logged-in users, that should be added to headers.
+    // For now, following existing structure of sending user_id in body.
 
     try {
+      const headers: HeadersInit = { 'Content-Type': 'application/json' };
+      // If the payment API expects JWT for logged-in users, add it.
+      // if (token && user) {
+      //   headers['Authorization'] = `Bearer ${token}`;
+      // }
+
       const response = await fetch(`${process.env.NEXT_PUBLIC_PAYMENT_API_URL || 'http://localhost:5000'}/initiate-crypto-payment`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: headers,
         body: JSON.stringify({
-          amount: getCartTotal(), // Assuming getCartTotal() is in TAIC for this path
-          currency: 'TAIC', // Hardcoding TAIC for this demo
-          user_id: effectiveUserId,
+          amount: getCartTotal(),
+          currency: 'TAIC',
+          user_id: effectiveUserId, // Send numeric ID as string, or as number if API supports
         }),
       });
       const data = await response.json();
@@ -299,22 +312,22 @@ export default function CartPage() {
             </AlertDialogHeader>
             <AlertDialogFooter className="flex flex-col sm:flex-row gap-2 pt-4">
               <AlertDialogCancel onClick={() => { setCheckoutStep('initial'); setCryptoWalletAddress(null);}} className="w-full sm:w-auto">Cancel</AlertDialogCancel>
-              {user && ( // Only show Stripe for logged-in users as per original logic
+              {isAuthenticated && user && ( // Stripe for authenticated users
                 <Button onClick={() => setCheckoutStep('stripeRealForm')} variant="outline" className="w-full sm:w-auto">
                   <CreditCard className="mr-2 h-4 w-4" /> Pay with Card (Stripe)
                 </Button>
               )}
-              {/* Allow TAIC payment if user is logged in OR if wallet is connected for guest crypto */}
-              {(user || cryptoWalletAddress) && (
+              {/* Allow TAIC payment if user is authenticated (for their balance) OR if wallet is connected (for guest crypto) */}
+              {(isAuthenticated && user) || cryptoWalletAddress ? (
                 <Button
-                  onClick={user ? handleTaicPayment : handleInitiateCryptoPayment}
+                  onClick={(isAuthenticated && user) ? handleTaicPayment : handleInitiateCryptoPayment}
                   className="w-full sm:w-auto"
                   disabled={isLoadingCrypto}
                 >
                   {isLoadingCrypto ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Gem className="mr-2 h-4 w-4" />}
-                  {user ? "Pay with Demo TAIC" : "Pay with TAIC (Wallet)"}
+                  {(isAuthenticated && user) ? "Pay with My TAIC Balance" : "Pay with TAIC (Wallet)"}
                 </Button>
-              )}
+              ) : null}
             </AlertDialogFooter>
           </>
         );
@@ -499,9 +512,9 @@ export default function CartPage() {
               <Button onClick={() => setCheckoutStep('cryptoConnectWallet')} variant="outline" className="w-full sm:w-auto">
                 <Wallet className="mr-2 h-4 w-4" /> Connect Crypto Wallet for TAIC
               </Button>
-              {!user && ( // Only show login/register if not logged in
+              {!isAuthenticated && ( // Only show login/register if not authenticated
                 <Button onClick={handleLoginRedirect} className="w-full sm:w-auto">
-                  <LogIn className="mr-2 h-4 w-4" /> Login or Register
+                  <LogIn className="mr-2 h-4 w-4" /> Login or Register (Legacy)
                 </Button>
               )}
             </AlertDialogFooter>

@@ -22,26 +22,28 @@ interface GalleryImage {
 }
 
 export default function GalleryPage() {
-  const { user } = useAuth();
+  // Use token, isAuthenticated, isLoading from AuthContext
+  const { user, token, isAuthenticated, isLoading: authIsLoading } = useAuth();
   const [images, setImages] = useState<GalleryImage[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(true); // This is for images loading, distinct from authIsLoading
   const [error, setError] = useState<string | null>(null);
   const [showSuccess, setShowSuccess] = useState(false);
 
   const fetchImages = useCallback(async () => {
+    if (!token || !user?.id) { // Check for token and user ID
+      // setError('User not authenticated. Cannot fetch images.'); // Or handle silently
+      setLoading(false);
+      return;
+    }
     try {
       setLoading(true);
-      // Get the user ID from localStorage
-      const userData = localStorage.getItem('taicUser');
-      const userId = userData ? JSON.parse(userData).id : null;
-      
-      if (!userId) {
-        throw new Error('User not authenticated');
-      }
+      setError(null); // Clear previous errors
 
+      // API call should now use JWT for authorization
       const response = await fetch('/api/user/images', {
         headers: {
-          'x-user-id': userId
+          'Authorization': `Bearer ${token}`,
+          // 'x-user-id': user.id.toString() // No longer needed if API uses JWT
         }
       });
       
@@ -58,43 +60,60 @@ export default function GalleryPage() {
     } finally {
       setLoading(false);
     }
-  }, [user?.id]);
+  }, [user?.id, token]); // Added token as a dependency
 
   useEffect(() => {
-    if (!user?.id) return;
-
-    fetchImages();
-  }, [fetchImages, user?.id]);
+    // Fetch images only if authenticated and user ID is available
+    if (isAuthenticated && user?.id) {
+      fetchImages();
+    } else if (!authIsLoading && !isAuthenticated) {
+      // If auth is done loading and user is not authenticated, don't attempt to load images
+      setLoading(false);
+      setImages([]); // Clear any existing images
+      // setError("Please log in to view your gallery."); // Optional: set an error message
+    }
+  }, [fetchImages, isAuthenticated, user?.id, authIsLoading]);
 
   useEffect(() => {
-    // Check for success message in URL
+    // Check for success message in URL (this logic can remain as is)
     if (typeof window !== 'undefined') {
       const searchParams = new URLSearchParams(window.location.search);
       if (searchParams.get('success') === 'true') {
         setShowSuccess(true);
-        // Remove the success parameter from URL
         const newUrl = new URL(window.location.href);
         newUrl.searchParams.delete('success');
         window.history.replaceState({}, '', newUrl.toString());
       }
     }
+  }, []); // This effect only needs to run once on mount
 
-    fetchImages();
-  }, [user?.id]);
-
-  if (!user) {
+  // Handle auth loading state
+  if (authIsLoading) {
     return (
-      <div className="container mx-auto p-6 text-center">
-        <h1 className="text-2xl font-bold mb-4">My Virtual Try-On Gallery</h1>
-        <p className="text-gray-600 mb-4">
-          Please sign in to view your gallery.
-        </p>
-        <Link href="/login">
-          <Button>Sign In</Button>
-        </Link>
+      <div className="flex flex-col items-center justify-center h-64">
+        <Loader2 className="h-12 w-12 animate-spin text-primary mb-4" />
+        <p className="text-gray-600">Loading authentication...</p>
       </div>
     );
   }
+
+  // Handle not authenticated state
+  if (!isAuthenticated) {
+    return (
+      <div className="container mx-auto p-6 text-center">
+        <ImageIcon className="mx-auto h-16 w-16 text-gray-400 mb-6" />
+        <h1 className="text-2xl font-bold mb-4">My Virtual Try-On Gallery</h1>
+        <p className="text-gray-600 mb-6">
+          Please connect your wallet to view your gallery.
+        </p>
+        {/* The WalletConnectButton in Navbar is the primary way to connect */}
+        <Button asChild>
+          <Link href="/">Go to Homepage</Link>
+        </Button>
+      </div>
+    );
+  }
+  // At this point, user is authenticated. We now consider the 'loading' state for images.
 
 
   return (

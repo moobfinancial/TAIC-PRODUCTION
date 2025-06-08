@@ -7,10 +7,12 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Button } from '@/components/ui/button';
 import { useEffect, useState, useMemo } from 'react';
-import { ShoppingBag, BotIcon, Sparkles, Gift, TrendingUp, Gem, PiggyBank, Landmark, MinusCircle, PlusCircle, Target, Clock, PartyPopper, ThumbsUp, Info, Calculator } from 'lucide-react';
-import { useAuth } from '@/hooks/useAuth';
+import { ShoppingBag, BotIcon, Sparkles, Gift, TrendingUp, Gem, PiggyBank, Landmark, MinusCircle, PlusCircle, Target, Clock, PartyPopper, ThumbsUp, Info, Calculator, ShieldAlert } from 'lucide-react'; // Added ShieldAlert
+// Update useAuth import path
+import { useAuth } from '@/contexts/AuthContext';
 import { useToast } from '@/hooks/use-toast';
 import { cn } from '@/lib/utils';
+import Link from 'next/link'; // Import Link for login prompt
 import { SIMULATED_APY } from '@/lib/constants';
 import { StakeToShopCalculator } from '@/components/staking/StakeToShopCalculator';
 
@@ -20,19 +22,26 @@ const Placeholder = ({ children }: { children: React.ReactNode }) => (
 
 export default function StakingPage() {
   const [currentYear, setCurrentYear] = useState(new Date().getFullYear());
-  const { user, updateUser } = useAuth();
+  // Use new auth context values. updateUser is removed.
+  const { user, isAuthenticated, isLoading: authIsLoading } = useAuth();
   const { toast } = useToast();
 
+  // Local state for stake/unstake amounts and potentially for displaying staked balance if fetched separately
   const [stakeAmount, setStakeAmount] = useState<number | string>('');
   const [unstakeAmount, setUnstakeAmount] = useState<number | string>('');
+  // Staked balance would ideally come from a dedicated API / user profile details related to staking
+  const [localStakedBalance, setLocalStakedBalance] = useState<number>(0);
 
   useEffect(() => {
     setCurrentYear(new Date().getFullYear());
-  }, []);
+    // If user data is available and contains staking info (from a more detailed profile fetch, not core auth)
+    // you could set localStakedBalance here. For now, it's 0.
+    // Example: if (user?.detailedProfile?.stakedTaic) setLocalStakedBalance(user.detailedProfile.stakedTaic);
+  }, [user]);
 
-  const handleStake = () => {
-    if (!user) {
-      toast({ title: "Login Required", description: "Please login to stake TAIC.", variant: "destructive" });
+  const handleStake = async () => {
+    if (!isAuthenticated || !user) {
+      toast({ title: "Login Required", description: "Please connect your wallet to stake TAIC.", variant: "destructive" });
       return;
     }
     const amount = parseFloat(String(stakeAmount));
@@ -45,18 +54,22 @@ export default function StakingPage() {
       return;
     }
 
-    updateUser({
-      ...user,
-      taicBalance: (user.taicBalance || 0) - amount,
-      stakedTaicBalance: (user.stakedTaicBalance || 0) + amount,
-    });
-    toast({ title: "Stake Successful!", description: `${amount} TAIC staked.` });
+    // TODO: API call to backend to perform staking
+    // POST /api/staking/stake { amount }
+    // On success, backend updates user's balances and returns new state or confirmation.
+    // AuthContext's user might need a refresh mechanism (e.g., re-fetch /api/auth/me).
+    console.log(`Simulating staking ${amount} TAIC for user ${user.id}`);
+    toast({ title: "Stake Action (Simulated)", description: `${amount} TAIC would be staked. Backend integration needed.` });
+
+    // For UI feedback (simulation only, not durable):
+    // setLocalStakedBalance(prev => prev + amount);
+    // The user.taicBalance in AuthContext will be stale until a proper refresh.
     setStakeAmount('');
   };
 
-  const handleUnstake = () => {
-    if (!user) {
-      toast({ title: "Login Required", description: "Please login to unstake TAIC.", variant: "destructive" });
+  const handleUnstake = async () => {
+    if (!isAuthenticated || !user) {
+      toast({ title: "Login Required", description: "Please connect your wallet to unstake TAIC.", variant: "destructive" });
       return;
     }
     const amount = parseFloat(String(unstakeAmount));
@@ -64,16 +77,20 @@ export default function StakingPage() {
       toast({ title: "Invalid Amount", description: "Please enter a positive amount to unstake.", variant: "destructive" });
       return;
     }
-    if (amount > (user.stakedTaicBalance || 0)) {
-      toast({ title: "Insufficient Staked Balance", description: `You only have ${user.stakedTaicBalance || 0} TAIC staked.`, variant: "destructive" });
+    // Staked balance should be fetched from a reliable source, not just local state if it were real
+    if (amount > localStakedBalance) {
+      toast({ title: "Insufficient Staked Balance", description: `You only have ${localStakedBalance} TAIC staked (simulated).`, variant: "destructive" });
       return;
     }
-    updateUser({
-      ...user,
-      taicBalance: (user.taicBalance || 0) + amount,
-      stakedTaicBalance: (user.stakedTaicBalance || 0) - amount,
-    });
-    toast({ title: "Unstake Successful!", description: `${amount} TAIC unstaked.` });
+
+    // TODO: API call to backend to perform unstaking
+    // POST /api/staking/unstake { amount }
+    console.log(`Simulating unstaking ${amount} TAIC for user ${user.id}`);
+    toast({ title: "Unstake Action (Simulated)", description: `${amount} TAIC would be unstaked. Backend integration needed.` });
+
+    // For UI feedback (simulation only, not durable):
+    // setLocalStakedBalance(prev => prev - amount);
+    // The user.taicBalance in AuthContext will be stale.
     setUnstakeAmount('');
   };
 
@@ -227,13 +244,16 @@ export default function StakingPage() {
                 <div>
                   <Label className="text-muted-foreground">Available TAIC Balance</Label>
                   <p className="font-semibold text-primary flex items-center gap-1">
-                    <Gem className="h-5 w-5" /> {user && typeof user.taicBalance === 'number' ? user.taicBalance.toLocaleString() : (user ? '0' : 'N/A')} TAIC
+                    <Gem className="h-5 w-5" />
+                    {isAuthenticated && user ? `${(user.taicBalance || 0).toLocaleString()} TAIC` : 'N/A'}
                   </p>
                 </div>
                 <div>
                   <Label className="text-muted-foreground">Currently Staked TAIC (General)</Label>
                   <p className="font-semibold text-green-600 flex items-center gap-1">
-                    <Landmark className="h-5 w-5" /> {user && typeof user.stakedTaicBalance === 'number' ? user.stakedTaicBalance.toLocaleString() : (user ? '0' : 'N/A')} TAIC
+                    <Landmark className="h-5 w-5" />
+                    {/* This should come from a dedicated staking data source, not core user auth object */}
+                    {isAuthenticated && user ? `${localStakedBalance.toLocaleString()} TAIC (Simulated)` : 'N/A'}
                   </p>
                 </div>
                 <div>
@@ -261,9 +281,9 @@ export default function StakingPage() {
                       value={stakeAmount} 
                       onChange={(e) => setStakeAmount(e.target.value)}
                       className="text-base flex-grow"
-                      disabled={!user}
+                      disabled={!isAuthenticated || authIsLoading}
                     />
-                    <Button onClick={handleStake} disabled={!user || !stakeAmount} className="font-semibold">
+                    <Button onClick={handleStake} disabled={!isAuthenticated || authIsLoading || !stakeAmount} className="font-semibold">
                       <PlusCircle className="mr-2 h-5 w-5"/>Stake
                     </Button>
                   </div>
@@ -278,14 +298,22 @@ export default function StakingPage() {
                       value={unstakeAmount} 
                       onChange={(e) => setUnstakeAmount(e.target.value)}
                       className="text-base flex-grow"
-                      disabled={!user}
+                      disabled={!isAuthenticated || authIsLoading}
                     />
-                    <Button onClick={handleUnstake} disabled={!user || !unstakeAmount} variant="outline" className="font-semibold">
+                    <Button onClick={handleUnstake} disabled={!isAuthenticated || authIsLoading || !unstakeAmount} variant="outline" className="font-semibold">
                       <MinusCircle className="mr-2 h-5 w-5"/>Unstake
                     </Button>
                   </div>
                 </div>
-                 { !user && <p className="text-sm text-muted-foreground text-center">Please <a href="/login" className="underline hover:text-primary">login</a> to manage your stake.</p>}
+                 { (!isAuthenticated && !authIsLoading) &&
+                   <div className="text-center p-4 border-t mt-4">
+                     <ShieldAlert className="mx-auto h-10 w-10 text-amber-500 mb-2" />
+                     <p className="text-sm text-muted-foreground">
+                       Please <Link href="/?action=connectWallet" className="underline hover:text-primary font-medium">connect your wallet</Link> to manage your stake.
+                     </p>
+                   </div>
+                 }
+                 { authIsLoading && <p className="text-sm text-muted-foreground text-center">Loading user data...</p>}
               </CardContent>
             </Card>
           </section>

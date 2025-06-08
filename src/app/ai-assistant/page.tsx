@@ -7,8 +7,11 @@ import { Textarea } from '@/components/ui/textarea';
 import { Card, CardContent } from '@/components/ui/card';
 import { Bot, Sparkles, Send, Loader2, User, XCircle, CornerDownLeft, Mic, MicOff, Volume2, VolumeX } from 'lucide-react'; // Added MicOff, Volume2, VolumeX
 import { getProductRecommendations, type ProductForAI, type GetProductRecommendationsOutput } from '@/ai/flows/shopping-assistant';
-import { useAuth } from '@/hooks/useAuth';
-import type { AIConversation } from '@/lib/types';
+// Update useAuth import path
+import { useAuth } from '@/contexts/AuthContext';
+// AIConversation type might be an issue if it was removed from User type and not defined elsewhere.
+// For now, we are removing the logic that uses it.
+// import type { AIConversation } from '@/lib/types';
 import { useToast } from '@/hooks/use-toast';
 import useWebSpeech from '@/hooks/useWebSpeech'; // Import the hook
 import { ProductCanvas } from '@/components/products/ProductCanvas';
@@ -26,7 +29,8 @@ export default function AIAssistantPage() {
   const [query, setQuery] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [messages, setMessages] = useState<Message[]>([]);
-  const { user, updateUser } = useAuth();
+  // updateUser is removed. user object might be used if auth-gated features are added later.
+  const { user } = useAuth();
   const { toast } = useToast();
 
   const {
@@ -116,22 +120,25 @@ export default function AIAssistantPage() {
         setChatAreaMode('sidebar');
       } else if (result.responseType === 'clarification') {
         if (chatAreaMode === 'full') {
-          setCanvasProducts([]);
+          setCanvasProducts([]); // Keep canvas empty or as is if AI is just talking
         }
       } else if (result.responseType === 'error') {
-        setCanvasProducts([]);
+        setCanvasProducts([]); // Clear products on error
       }
       
-      if (user) {
-        const newConversation: AIConversation = {
-          id: Date.now().toString(),
-          type: 'shopping_assistant',
-          query: userMessage.content as string,
-          response: result.responseText || "AI response",
-          timestamp: new Date().toISOString(),
-        };
-        updateUser({ ...user, aiConversations: [...(user.aiConversations || []), newConversation] });
-      }
+      // Removed updateUser logic:
+      // AI conversations are not persisted to user object in frontend anymore.
+      // This would require backend API calls and different state management if implemented.
+      // if (user) {
+      //   const newConversation: AIConversation = {
+      //     id: Date.now().toString(),
+      //     type: 'shopping_assistant',
+      //     query: userMessage.content as string,
+      //     response: result.responseText || "AI response",
+      //     timestamp: new Date().toISOString(),
+      //   };
+      //   updateUser({ ...user, aiConversations: [...(user.aiConversations || []), newConversation] });
+      // }
 
       if (result.responseType === 'no_results') {
          toast({ title: "No products found", description: result.responseText });
