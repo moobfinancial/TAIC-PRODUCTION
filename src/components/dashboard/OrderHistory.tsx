@@ -6,9 +6,11 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/com
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/components/ui/accordion';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Badge } from '@/components/ui/badge';
-import { ListOrdered, Gem, Package, Loader2, AlertTriangle } from 'lucide-react';
-import { useAuth } from '@/contexts/AuthContext'; // Updated import
-import type { Order } from '@/lib/types'; // Assuming Order type is still relevant
+import { ListOrdered, Gem, Package, Loader2, AlertTriangle, RefreshCw, ExternalLink, Truck } from 'lucide-react'; // Added RefreshCw, ExternalLink, Truck
+import { useAuth } from '@/contexts/AuthContext';
+import type { Order, OrderItem } from '@/lib/types'; // OrderItem for explicit typing
+import { Button } from '@/components/ui/button'; // For Retry button
+import Link from 'next/link'; // For tracking link
 
 export function OrderHistory() {
   const { user, token, isAuthenticated, isLoading: authLoading } = useAuth(); // Updated to use new AuthContext values
@@ -185,6 +187,42 @@ export function OrderHistory() {
                       </li>
                     ))}
                   </ul>
+
+                  {/* Shipping Information Section */}
+                  {(order.status === 'shipped' || order.status === 'delivered' || order.trackingNumber) && (
+                    <div className="mt-3 pt-3 border-t border-muted/50">
+                      <h4 className="text-sm font-semibold mb-1 flex items-center">
+                        <Truck className="mr-2 h-4 w-4 text-muted-foreground" />
+                        Shipping Information:
+                      </h4>
+                      {order.shippingCarrier && (
+                        <p className="text-sm text-muted-foreground">
+                          Carrier: <span className="font-medium text-foreground">{order.shippingCarrier}</span>
+                        </p>
+                      )}
+                      {order.trackingNumber ? (
+                        <p className="text-sm text-muted-foreground">
+                          Tracking: <span className="font-medium text-foreground">{order.trackingNumber}</span>
+                          <Link
+                            href={`https://www.17track.net/en/track?nums=${order.trackingNumber}`}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="ml-2 text-blue-600 hover:text-blue-700 text-xs font-medium"
+                            title="Track via 17track.net"
+                          >
+                            (Track <ExternalLink className="inline h-3 w-3" />)
+                          </Link>
+                        </p>
+                      ) : (
+                        <p className="text-sm text-muted-foreground">Tracking information not yet available.</p>
+                      )}
+                       {order.cjShippingStatus && (
+                        <p className="text-xs text-muted-foreground mt-1">
+                          Supplier Status: <span className="font-medium text-foreground">{order.cjShippingStatus}</span>
+                        </p>
+                      )}
+                    </div>
+                  )}
                 </AccordionContent>
               </AccordionItem>
             ))}

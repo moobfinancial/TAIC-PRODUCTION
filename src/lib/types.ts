@@ -1,4 +1,3 @@
-
 export interface Product {
   id: string;
   name: string;
@@ -30,17 +29,31 @@ export interface OrderItem {
   price: number; // This is price_at_purchase
   quantity: number;
   imageUrl?: string;
-  cashbackPercentage?: number; // To be sent to backend during order creation
+  cashbackPercentage?: number;
 }
 
 export interface Order {
-  id: number; // Changed to number to align with API response
+  id: number;
   items: OrderItem[];
   totalAmount: number;
   date: string; // ISO String
-  currency?: string; // Added from API response
-  status?: string;   // Added from API response
-  cashbackAwarded?: number; // Added for cashback feature
+  currency?: string;
+  status?: string;
+  cashbackAwarded?: number;
+
+  cjOrderId?: string | null;
+  cjShippingStatus?: string | null;
+  shippingCarrier?: string | null;
+  trackingNumber?: string | null;
+
+  shippingRecipientName?: string | null;
+  shippingAddressLine1?: string | null;
+  shippingAddressLine2?: string | null;
+  shippingCity?: string | null;
+  shippingStateOrProvince?: string | null;
+  shippingPostalCode?: string | null;
+  shippingCountryCode?: string | null;
+  shippingPhoneNumber?: string | null;
 }
 
 export interface AIConversation {
@@ -49,17 +62,16 @@ export interface AIConversation {
   query: string;
   response: string;
   timestamp: string;
-  imageUrlContext?: string; // Optional URL of the image used as context
+  imageUrlContext?: string;
 }
 
 export interface StakedWishlistGoal {
   id: string;
-  name: string; // User-defined name for this goal
-  targetValue: number; // Wishlist total at the time of staking for it
-  principalStakedForGoal: number; // Amount of TAIC user committed from their balance
-  startDate: string; // ISO date string when goal was created
-  estimatedMaturityDate: string; // Calculated ISO date string
-  // isMature can be derived dynamically: new Date() >= new Date(estimatedMaturityDate)
+  name: string;
+  targetValue: number;
+  principalStakedForGoal: number;
+  startDate: string;
+  estimatedMaturityDate: string;
 }
 
 export interface PaymentMethod {
@@ -71,42 +83,22 @@ export interface PaymentMethod {
   isDefault: boolean;
 }
 
-// Updated User interface for wallet-based authentication
 export interface User {
-  id: number; // Database ID (SERIAL)
+  id: number;
   walletAddress: string;
-  username?: string | null; // Optional, as per schema and new auth
-  email?: string | null;    // Optional, as per schema and new auth
-  role: string;             // e.g., 'user', 'merchant', 'admin'
-  taicBalance: number;      // Numeric type from DB
-  cashbackBalance: number;  // Added cashback balance
-
-  // The following fields were part of the old User type.
-  // If they are still needed, they might be fetched separately or part of a different type (e.g., UserProfile).
-  // For now, they are removed to align with the auth/me and auth/verify API responses.
-  // stakedTaicBalance?: number;
-  // orders?: Order[];
-  // aiConversations?: AIConversation[];
-  // stakedWishlistGoals?: StakedWishlistGoal[];
-  // paymentMethods?: PaymentMethod[];
-  // profileImageUrl?: string;
+  username?: string | null;
+  email?: string | null;
+  role: string;
+  taicBalance: number;
+  cashbackBalance: number;
+  profileImageUrl?: string | null; // Added back as ProfileSection uses it
 }
 
 export interface AuthContextType {
   user: User | null;
-  // userId: string | null; // This can be derived from user.id if user is not null
-  // The login/register methods will be replaced by wallet-specific ones
-  // login: (username: string) => void;
   logout: () => void;
-  // register: (username: string) => void;
-  // updateUser: (updatedUser: User) => void; // This might be handled differently or removed
-
-  // New wallet-based auth methods will be added here by the AuthContext task
-  // For example:
-  // loginWithWallet: (walletAddress: string) => Promise<void>;
-  // isAuthenticated: boolean;
-  // token: string | null;
-  isLoading: boolean; // Renamed from 'loading' for consistency
+  isLoading: boolean;
+  // refreshUser: () => Promise<void>; // This should be in the actual AuthContextValue if defined elsewhere
 }
 
 export interface CartContextType {
@@ -136,11 +128,53 @@ export interface UserGalleryImage {
   imageUrl: string;
   imageType?: string | null;
   description?: string | null;
-  createdAt: string; // ISO string date
+  createdAt: string;
 }
 
-// For Shopping Assistant and conversation history
 export interface ChatMessage {
-  role: 'user' | 'assistant' | 'system'; // Align with common chat roles
+  role: 'user' | 'assistant' | 'system';
   content: string;
+}
+
+export interface CjOrderItemInput {
+  productId: string;
+  quantity: number;
+}
+export interface CjShippingAddressInput {
+  recipientName: string;
+  addressLine1: string;
+  addressLine2?: string;
+  city: string;
+  stateOrProvince: string;
+  postalCode: string;
+  countryCode: string;
+  phoneNumber?: string;
+}
+export interface CjOrderPayload {
+  platformOrderId: string;
+  shippingAddress: CjShippingAddressInput;
+  items: CjOrderItemInput[];
+}
+export interface CjOrderResponse {
+  success: boolean;
+  cjOrderId?: string;
+  status?: string;
+  message?: string;
+  errors?: any[];
+}
+
+// New types for CJ Order Status API response
+export interface CjOrderStatusData {
+  cjOrderId: string;
+  cjShippingStatus?: string; // e.g., "Processing", "Shipped", "Delivered", "Cancelled"
+  shippingCarrier?: string | null;
+  trackingNumber?: string | null;
+  dateShipped?: string | null; // ISO Date
+}
+
+export interface CjGetOrderStatusApiResponse {
+  success: boolean;
+  data?: CjOrderStatusData;
+  message?: string;
+  errors?: any[];
 }

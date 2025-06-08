@@ -52,7 +52,13 @@ interface OrderWithItems {
   status: string;
   date: string; // ISO string
   items: OrderItem[];
-  cashbackAwarded?: number; // Added cashback_awarded
+  cashbackAwarded?: number;
+  // Add new shipping fields here to match global Order type
+  cjOrderId?: string | null;
+  cjShippingStatus?: string | null;
+  shippingCarrier?: string | null;
+  trackingNumber?: string | null;
+  // Assuming shipping address fields are not directly needed for history list, but could be added
 }
 
 
@@ -67,9 +73,19 @@ export async function GET(request: NextRequest) {
   try {
     client = await pool.connect();
 
-    // Fetch orders for user, including cashback_awarded
+    // Fetch orders for user, including cashback_awarded and new shipping fields
     const ordersQuery = `
-      SELECT id, amount AS totalAmount, currency, status, created_at AS date, cashback_awarded AS "cashbackAwarded"
+      SELECT
+        id,
+        amount AS totalAmount,
+        currency,
+        status,
+        created_at AS date,
+        cashback_awarded AS "cashbackAwarded",
+        cj_order_id AS "cjOrderId",
+        cj_shipping_status AS "cjShippingStatus",
+        shipping_carrier AS "shippingCarrier",
+        tracking_number AS "trackingNumber"
       FROM orders
       WHERE user_id = $1
       ORDER BY created_at DESC;
@@ -93,7 +109,11 @@ export async function GET(request: NextRequest) {
         status: order.status,
         date: new Date(order.date).toISOString(),
         items: itemsResult.rows,
-        cashbackAwarded: order.cashbackAwarded ? parseFloat(order.cashbackAwarded) : 0, // Ensure numeric and default
+        cashbackAwarded: order.cashbackAwarded ? parseFloat(order.cashbackAwarded) : 0,
+        cjOrderId: order.cjOrderId,
+        cjShippingStatus: order.cjShippingStatus,
+        shippingCarrier: order.shippingCarrier,
+        trackingNumber: order.trackingNumber,
       });
     }
 
