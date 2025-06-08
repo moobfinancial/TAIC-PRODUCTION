@@ -11,9 +11,9 @@ const updateProductSchema = z.object({
   basePrice: z.number().positive('Base price must be positive').optional(),
   // Accept any non-empty string for imageUrl (including local paths starting with /uploads/)
   imageUrl: z.string().min(1, 'Image URL is required').optional(),
-  additionalImages: z.array(z.string()).optional(),
-  // Make categoryId optional without UUID validation
-  categoryId: z.string().optional(),
+  additionalImages: z.array(z.string().url()).optional(), // Ensuring URLs if array is provided
+  // categoryId from form is string, allow empty/null for 'no category', parse to int in backend if not null
+  categoryId: z.string().optional().nullable(),
   stockQuantity: z.number().int().nonnegative('Stock quantity must be a non-negative integer').optional(),
   cashbackConfig: z.object({
     type: z.enum(['percentage', 'fixed']),
