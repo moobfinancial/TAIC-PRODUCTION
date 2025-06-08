@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { validateAdminApiKey } from '../../../../../lib/adminAuth';
-import { getCjAccessToken } from '../../../../../lib/cjAuth';
+import { getSupplierAccessToken } from '../../../../../lib/supplierAuth'; // Updated import
 
 // Force this route to run in Node.js runtime instead of Edge Runtime
 export const runtime = 'nodejs';
@@ -8,8 +8,8 @@ export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
 /**
- * GET handler for CJ authentication
- * This endpoint returns a valid CJ access token after validating the admin API key
+ * GET handler for Supplier authentication (currently CJ)
+ * This endpoint returns a valid supplier access token after validating the admin API key
  */
 export async function GET(request: NextRequest) {
   // Check admin API key directly in the route handler
@@ -24,18 +24,18 @@ export async function GET(request: NextRequest) {
   }
   
   try {
-    const accessToken = await getCjAccessToken();
+    const accessToken = await getSupplierAccessToken(); // Updated function call
     
     return NextResponse.json({
       success: true,
       accessToken,
     });
   } catch (error: any) {
-    console.error('[CJ Auth API] Error:', error);
+    console.error('[Supplier Auth API] Error:', error); // Updated log prefix
     return NextResponse.json(
       { 
         success: false, 
-        message: 'Failed to authenticate with CJ Dropshipping',
+        message: 'Failed to authenticate with Supplier API', // Updated message
         error: error.message 
       }, 
       { status: 500 }

@@ -35,3 +35,60 @@ The primary method for interaction between the main Next.js application (fronten
 
 *   FastAPI services should be configured to listen on a specific port (e.g., 8001, 8002, etc., distinct from Next.js's default 3000). This port should be configurable via environment variables for the FastAPI service itself.
 *   The base URL for the AI services cluster (e.g., `http://localhost:8001` in development, or an internal service discovery URL in production) should be configured as an environment variable in the Next.js application.
+
+## Local Development Setup
+
+To develop and test features involving both the Next.js application and these FastAPI AI services, you'll need to run both projects concurrently.
+
+**1. Run the Next.js Application:**
+*   Navigate to the root directory of the Next.js project (the main project root).
+*   Ensure your `.env.local` file has the `AI_SERVICE_BASE_URL` correctly set (e.g., `AI_SERVICE_BASE_URL=http://localhost:8001`).
+*   Start the Next.js development server (usually on port 3000):
+    ```bash
+    npm run dev
+    ```
+
+**2. Run the FastAPI AI Services:**
+*   Navigate to the `ai_services` directory from the project root:
+    ```bash
+    cd ai_services
+    ```
+*   **Python Virtual Environment (Recommended):**
+    *   If you haven't set one up inside `ai_services`:
+        ```bash
+        python3 -m venv venv  # Or python -m venv venv
+        ```
+    *   Activate the virtual environment:
+        *   On macOS/Linux:
+            ```bash
+            source venv/bin/activate
+            ```
+        *   On Windows:
+            ```bash
+            .\venv\Scripts\activate
+            ```
+*   **Install Dependencies:**
+    *   Once the virtual environment is active, install the required Python packages:
+        ```bash
+        pip install -r requirements.txt
+        ```
+*   **Configure Environment Variables for FastAPI:**
+    *   Create a `.env` file within the `ai_services` directory (you can copy from `.env.example`):
+        ```bash
+        cp .env.example .env
+        ```
+    *   Edit the `ai_services/.env` file to set your actual `DATABASE_URL` for the PostgreSQL database that the AI service will connect to.
+*   **Start the FastAPI Service:**
+    *   With the virtual environment active and from within the `ai_services` directory, run Uvicorn:
+        ```bash
+        uvicorn main:app --reload --port 8001
+        ```
+    *   `main:app` refers to the `app` instance in `main.py`.
+    *   `--reload` enables auto-reloading on code changes.
+    *   `--port 8001` specifies the port for the FastAPI service (matching `AI_SERVICE_BASE_URL` in Next.js).
+
+**Default Ports:**
+*   Next.js application: `http://localhost:3000`
+*   FastAPI AI Services: `http://localhost:8001`
+
+With both services running, the Next.js application (via its proxy API routes like `/api/ai/shopping-assistant/query`) will be able to communicate with the FastAPI AI services.

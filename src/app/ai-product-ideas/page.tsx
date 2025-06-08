@@ -233,34 +233,77 @@ export default function AIProductIdeasPage() {
     }
 
     // Proceed with actual product idea generation
+    if (!isAuthenticated || !token) {
+      toast({ title: "Authentication Required", description: "Please log in to generate product ideas.", variant: "destructive" });
+      setIsLoading(false); // Reset loading state
+      // Remove user message if not authenticated, or handle differently
+      setMessages(prev => prev.filter(msg => msg.id !== userMessage.id));
+      return;
+    }
+
+    // Prepare history for API
+    const conversationHistoryForApi = messages
+      .filter(msg => msg.id !== userMessage.id) // Exclude current user message just added
+      .slice(-10)
+      .map(m => ({ role: m.role, content: m.content }));
+
     try {
-      const result = await generateProductIdeas({
-        productDescription: currentDescription,
-        imageUrl: uploadedImageUrlForContext || undefined,
-        generatorMode: generatorMode
+      // Call the Next.js proxy API
+      // Note: The current proxy /api/ai/shopping-assistant/query is generic.
+      // The FastAPI service it calls might need to differentiate behavior based on query/context,
+      // or a dedicated proxy/FastAPI endpoint for product ideas might be better in the long run.
+      // For now, we send the product description as the 'query'.
+      // We are not sending uploadedImageUrlForContext to this proxy, as it doesn't support it directly.
+      // However, saveProductIdeaConversation *will* save it for our records.
+      const proxyResponse = await fetch('/api/ai/shopping-assistant/query', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          query: currentDescription,
+          conversation_history: conversationHistoryForApi,
+          // If FastAPI endpoint was enhanced to take image context for product ideas:
+          // custom_params: { imageUrlContext: uploadedImageUrlForContext || undefined, generatorMode: generatorMode }
+        }),
       });
-      const assistantMessage: Message = { id: (Date.now() + 1).toString(), role: 'assistant', content: result.suggestions };
+
+      if (!proxyResponse.ok) {
+        const errorData = await proxyResponse.json().catch(() => ({ error: "Failed to parse AI response." }));
+        throw new Error(errorData.error || `AI service failed with status ${proxyResponse.status}`);
+      }
+
+      const resultFromProxy = await proxyResponse.json();
+      // Adapt proxy response to the structure expected by existing logic (if any)
+      // Proxy returns { reply: string, suggested_products: [] }
+      // This page expects suggestions as a string.
+      const aiSuggestions = resultFromProxy.reply || "No specific suggestions were generated, but here's a creative thought!";
+
+      const assistantMessage: Message = {
+        id: (Date.now() + 1).toString(),
+        role: 'assistant',
+        content: aiSuggestions
+        // This page doesn't use assistantMessage.products for 'product' mode, so suggested_products from proxy is ignored here.
+      };
       setMessages(prev => [...prev, assistantMessage]);
 
-      if (isTTSSupported && result.suggestions) { // Speak out the suggestions
-        speak(result.suggestions);
+      if (isTTSSupported && aiSuggestions) {
+        speak(aiSuggestions);
       }
 
-      setChatAreaMode('full');
+      setChatAreaMode('full'); // Product ideas usually don't push to sidebar with products
       setCanvasProducts([]);
 
-      // Save the conversation
-      if (currentDescription && result.suggestions) {
-        await saveProductIdeaConversation(currentDescription, result.suggestions, uploadedImageUrlForContext);
-      }
+      // Save the conversation (original query, AI's suggestions string, and image context used for generation)
+      await saveProductIdeaConversation(currentDescription, aiSuggestions, uploadedImageUrlForContext);
 
-      // Removed updateUser logic (already done in previous step)
-
-    } catch (error) {
-      console.error('Error generating product ideas:', error);
-      const errorMessage: Message = { id: (Date.now() + 1).toString(), role: 'assistant', content: "Sorry, I couldn't generate ideas right now." };
-      setMessages(prev => [...prev, errorMessage]);
-      toast({ title: "Error", description: "Failed to generate product ideas.", variant: "destructive" });
+    } catch (error: any) {
+      console.error('Error generating product ideas via proxy:', error);
+      const errorMessageContent = error.message || "Sorry, I couldn't generate ideas right now.";
+      const errorMessageObj: Message = { id: (Date.now() + 1).toString(), role: 'assistant', content: `Error: ${errorMessageContent}` };
+      setMessages(prev => [...prev, errorMessageObj]);
+      toast({ title: "Error", description: errorMessageContent, variant: "destructive" });
       setChatAreaMode('full');
       setCanvasProducts([]);
     } finally {

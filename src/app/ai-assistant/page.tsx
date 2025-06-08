@@ -124,64 +124,88 @@ export default function AIAssistantPage() {
     const currentQuery = query.trim();
     if (!currentQuery) return;
 
+    if (!isAuthenticated || !token) {
+      toast({ title: "Authentication Required", description: "Please log in to use the AI Assistant.", variant: "destructive" });
+      return;
+    }
+
+    // Prepare history for API (send last N messages, excluding current query)
+    const conversationHistoryForApi = messages
+      .slice(-10) // Example: Take last 10 messages
+      .map(m => ({ role: m.role, content: m.content }));
+
     const userMessage: Message = { id: Date.now().toString(), role: 'user', content: currentQuery };
     setMessages(prev => [...prev, userMessage]);
     setIsLoading(true);
     setQuery('');
+    setCanvasProducts([]); // Clear previous products
 
     try {
-      const result = await getProductRecommendations({ query: userMessage.content as string });
+      const response = await fetch('/api/ai/shopping-assistant/query', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`,
+        },
+        body: JSON.stringify({ query: currentQuery, conversation_history: conversationHistoryForApi }),
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({ error: "Failed to parse AI response." }));
+        // Use errorData.details if available from FastAPI's Zod validation, otherwise errorData.error
+        const detail = errorData.details ? JSON.stringify(errorData.details) : errorData.error;
+        throw new Error(detail || `AI service failed with status ${response.status}`);
+      }
+
+      const result = await response.json(); // FastAPI response: { reply: string, suggested_products?: ProductModel[] }
       
       const assistantMessage: Message = {
         id: (Date.now() + 1).toString(),
         role: 'assistant',
-        content: result.responseText || "I'm not sure how to respond to that.",
-        products: result.products,
-        responseType: result.responseType,
+        content: result.reply || "I'm not sure how to respond to that.",
+        products: result.suggested_products || [], // Use suggested_products from new API
+        // responseType is not directly available from the new simple API response.
+        // We can infer it or simplify the logic that uses responseType.
+        // For now, if products are returned, consider it 'products', otherwise 'clarification' or 'no_results' based on content.
+        responseType: (result.suggested_products && result.suggested_products.length > 0) ? 'products' : 'clarification',
       };
       setMessages(prev => [...prev, assistantMessage]);
 
-      // Speak out the AI's response text
-      if (result.responseText && isTTSSupported) {
-        speak(result.responseText);
+      if (result.reply && isTTSSupported) {
+        speak(result.reply);
       }
 
-      if (result.responseType === 'products' && result.products && result.products.length > 0) {
-        setCanvasProducts(result.products);
+      if (assistantMessage.products && assistantMessage.products.length > 0) {
+        setCanvasProducts(assistantMessage.products);
         setChatAreaMode('sidebar');
-      } else if (result.responseType === 'no_results') {
-        setCanvasProducts([]);
-        setChatAreaMode('sidebar');
-      } else if (result.responseType === 'clarification') {
+      } else {
+        // If no products, or if it's a clarification, stay in full chat or sidebar without products
+        // setCanvasProducts([]); // already cleared
         if (chatAreaMode === 'full') {
-          setCanvasProducts([]); // Keep canvas empty or as is if AI is just talking
+            setCanvasProducts([]);
+        } else if (chatAreaMode === 'sidebar' && assistantMessage.products?.length === 0) {
+            // Stay in sidebar, but it will show "no products to display"
+            setCanvasProducts([]);
         }
-      } else if (result.responseType === 'error') {
-        setCanvasProducts([]); // Clear products on error
       }
       
-      // Save conversation after processing AI response and before showing specific toasts
-      if (userMessage.content && assistantMessage.content) {
-        // This page currently does not seem to send image context to getProductRecommendations,
-        // so imageUrlContext will be undefined here. If it did, it would be passed.
-        await saveConversation(userMessage.content, assistantMessage.content);
-      }
+      await saveConversation(currentQuery, assistantMessage.content); // Save the new turn
 
-      // Removed updateUser logic (already done in previous step)
+      // Toasts for specific conditions can be added here if desired, based on result.reply or product presence
+      // e.g. if result.reply indicates no products found explicitly.
 
-      if (result.responseType === 'no_results') {
-         toast({ title: "No products found", description: result.responseText });
-      } else if (result.responseType === 'error') {
-        toast({ title: "Error", description: result.responseText, variant: "destructive" });
-      }
-
-    } catch (error) {
-      console.error('Error getting product recommendations:', error);
-      const errorResponseMessage = "Sorry, I couldn't fetch recommendations right now. Please try again.";
-      const errorMessage: Message = { id: (Date.now() + 1).toString(), role: 'assistant', content: errorResponseMessage, responseType: 'error' };
+    } catch (error: any) {
+      console.error('Error calling AI Assistant proxy:', error);
+      const errorResponseMessage = error.message || "Sorry, I couldn't connect to the AI assistant right now.";
+      const errorMessage: Message = {
+        id: (Date.now() + 1).toString(),
+        role: 'assistant',
+        content: `Error: ${errorResponseMessage}`,
+        responseType: 'error'
+      };
       setMessages(prev => [...prev, errorMessage]);
       toast({ title: "Error", description: errorResponseMessage, variant: "destructive" });
-      setChatAreaMode('full');
+      setChatAreaMode('full'); // Revert to full chat on error
       setCanvasProducts([]);
     } finally {
       setIsLoading(false);

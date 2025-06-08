@@ -12,6 +12,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { useToast } from '@/hooks/use-toast';
 import { Search, PackageSearch, Loader2, AlertCircle, Import, XCircle, ChevronLeft, ChevronRight } from 'lucide-react';
 import Image from 'next/image'; // For displaying product images
+// Import the new helper and types from cjUtils.ts
+import { fetchAndTransformCjCategories, type CjCategory } from '@/lib/cjUtils';
 
 // Temporary Admin API Key for development - replace with secure auth
 const ADMIN_API_KEY = process.env.NEXT_PUBLIC_ADMIN_API_KEY || "";
@@ -35,61 +37,7 @@ interface CjProductListResponse {
   pageSize: number;
 }
 
-// Interfaces for raw CJ API category structure from their endpoint
-interface RawCjApiL3Category {
-  categoryId: string;
-  categoryName: string;
-}
-
-interface RawCjApiL2Category {
-  categorySecondName: string;
-  categorySecondList?: RawCjApiL3Category[];
-}
-
-interface RawCjApiL1Category {
-  categoryFirstName: string;
-  categoryFirstList?: RawCjApiL2Category[];
-}
-
-// Interface for CJ Category (matching the TransformedCjCategory from backend)
-interface CjCategory {
-  id: string;
-  name: string;
-  children?: CjCategory[];
-}
-
-// Transformation function
-function transformCjApiDataToCjCategories(rawCategories: RawCjApiL1Category[]): CjCategory[] {
-  if (!rawCategories || !Array.isArray(rawCategories)) {
-    return [];
-  }
-
-  const mapL3 = (l3Cat: RawCjApiL3Category): CjCategory => ({
-    id: l3Cat.categoryId, // L3 has a proper ID from CJ
-    name: l3Cat.categoryName,
-    // L3 categories typically don't have children in this CJ structure
-  });
-
-  const mapL2 = (l2Cat: RawCjApiL2Category, l1Index: number, l2Index: number): CjCategory => {
-    const children = (l2Cat.categorySecondList || []).map(mapL3);
-    return {
-      // Generate a unique ID for L2 categories as CJ API doesn't provide one
-      id: `cj-l2-${l1Index}-${l2Index}-${l2Cat.categorySecondName.replace(/[^a-zA-Z0-9]/g, '_')}`,
-      name: l2Cat.categorySecondName,
-      children: children.length > 0 ? children : undefined,
-    };
-  };
-
-  return rawCategories.map((l1Cat, l1Index) => {
-    const children = (l1Cat.categoryFirstList || []).map((l2Cat, l2Index) => mapL2(l2Cat, l1Index, l2Index));
-    return {
-      // Generate a unique ID for L1 categories
-      id: `cj-l1-${l1Index}-${l1Cat.categoryFirstName.replace(/[^a-zA-Z0-9]/g, '_')}`,
-      name: l1Cat.categoryFirstName,
-      children: children.length > 0 ? children : undefined,
-    };
-  });
-}
+// RawCjApi... interfaces and transformCjApiDataToCjCategories function are now in cjUtils.ts
 
 interface PlatformCategory {
   id: number;
@@ -199,39 +147,37 @@ export default function BrowseCjProductsPage() {
 
   // Fetch CJ API Categories for the filter dropdown
   useEffect(() => {
-    const fetchCjApiCategories = async () => {
-      if (adminAuthLoading) { // Check auth loading state
-        console.log('[BrowseCjProductsPage] Admin auth is loading, skipping CJ API category fetch.');
+    const loadCjApiCategories = async () => {
+      if (adminAuthLoading) {
+        console.log('[BrowseCjProductsPage] Admin auth is loading, skipping Supplier API category fetch.');
         return;
       }
-      if (!adminApiKey) { // Use reactive adminApiKey
-        toast({title: "Authentication Error", description: "Admin API Key not found. Cannot load CJ API categories.", variant: "destructive"});
-        setIsLoadingCjApiCategories(false);
-        return;
-      };
+      // adminApiKey is used to protect this page, but fetchAndTransformCjCategories handles its own auth to CJ
+      // So, we only need to ensure the user is an admin to be on this page.
+      if (!isAuthenticated) {
+          toast({title: "Authentication Error", description: "You must be logged in as an admin.", variant: "destructive"});
+          setIsLoadingCjApiCategories(false);
+          return;
+      }
+
       setIsLoadingCjApiCategories(true);
       try {
-        const response = await fetch('/api/admin/cj/cj-categories-route', {
-          headers: { 'X-Admin-API-Key': adminApiKey },
-        });
-        if (!response.ok) {
-          const errorData = await response.json();
-          throw new Error(errorData.error || errorData.details || 'Failed to fetch CJ categories');
-        }
-        const data = await response.json();
-        const transformedCategories = transformCjApiDataToCjCategories(data as RawCjApiL1Category[]);
+        // Call the new helper function directly
+        // It does not need adminApiKey as it uses getSupplierAccessToken internally
+        const transformedCategories = await fetchAndTransformCjCategories();
         setCjApiCategories(transformedCategories);
-        console.log('[BrowseCjProductsPage] Fetched and transformed CJ API Categories:', transformedCategories);
+        console.log('[BrowseCjProductsPage] Fetched and transformed Supplier API Categories via helper:', transformedCategories);
       } catch (error: any) {
-        toast({ title: "Error", description: `Could not load CJ API categories: ${error.message}`, variant: "destructive" });
+        toast({ title: "Error", description: `Could not load Supplier API categories: ${error.message}`, variant: "destructive" });
       } finally {
         setIsLoadingCjApiCategories(false);
       }
     };
-    if (!adminAuthLoading && adminApiKey) { // Check auth loading state
-      fetchCjApiCategories();
+    // Call this effect when admin auth is resolved and user is authenticated (implied by ProtectedRoute)
+    if (!adminAuthLoading && isAuthenticated) {
+      loadCjApiCategories();
     }
-  }, [adminApiKey, adminAuthLoading, toast]); // Add adminAuthLoading, re-add toast for completeness 
+  }, [adminAuthLoading, isAuthenticated, toast]);
 
   const handleSearchCjProducts = async (page = 1) => {
     if (!adminApiKey || adminAuthLoading) { // Wait for auth to settle and key to be available
@@ -294,13 +240,31 @@ export default function BrowseCjProductsPage() {
       // If parsing fails, keep the original name
     }
 
+    // Suggest platform category
+    let suggestedPlatformCategoryId: string = ''; // Default to empty string (for "Select a category")
+    if (product.categoryName && platformCategories.length > 0) {
+      const cjCategoryNameLower = product.categoryName.toLowerCase().trim();
+      let matchedCategory = platformCategories.find(
+        pCat => pCat.name.toLowerCase().trim() === cjCategoryNameLower
+      );
+      if (!matchedCategory) {
+        matchedCategory = platformCategories.find(
+          pCat => cjCategoryNameLower.includes(pCat.name.toLowerCase().trim()) ||
+                  pCat.name.toLowerCase().trim().includes(cjCategoryNameLower)
+        );
+      }
+      if (matchedCategory) {
+        suggestedPlatformCategoryId = String(matchedCategory.id);
+      }
+    }
+
     setImportModal({
       isOpen: true,
       productToImport: product,
-      platformCategoryId: '', // Empty string for initial state
+      platformCategoryId: suggestedPlatformCategoryId, // Use suggested or empty string
       sellingPrice: parseFloat(product.sellPrice) ? (parseFloat(product.sellPrice) * 1.5).toFixed(2) : '0.00',
       displayName: productName,
-      displayDescription: `Imported from CJ: ${productName}`,
+      displayDescription: `Imported from CJ: ${productName}`, // Will be Supplier later
     });
   };
 
@@ -324,18 +288,24 @@ export default function BrowseCjProductsPage() {
       hasSellingPrice: !!importModal.sellingPrice
     });
 
-    if (!importModal.productToImport || !importModal.platformCategoryId || !importModal.sellingPrice) {
-      console.log('Validation failed:', {
-        missingProduct: !importModal.productToImport,
-        missingCategory: !importModal.platformCategoryId,
-        missingPrice: !importModal.sellingPrice
-      });
+    // Updated validation to ensure a category is selected (not an empty string)
+    if (!importModal.productToImport ||
+        !importModal.platformCategoryId ||
+        importModal.platformCategoryId === 'select-category' || // Explicitly check against placeholder if used
+        importModal.platformCategoryId.trim() === '' || // Check for empty string
+        !importModal.sellingPrice) {
+
+      let errorDesc = "Please make sure to:\n";
+      if (!importModal.platformCategoryId || importModal.platformCategoryId === 'select-category' || importModal.platformCategoryId.trim() === '') {
+        errorDesc += '• Select a product category\n';
+      }
+      if (!importModal.sellingPrice) {
+        errorDesc += '• Set a selling price\n';
+      }
       
       toast({ 
         title: "Missing Required Fields", 
-        description: `Please make sure to:\n` +
-                   `${!importModal.platformCategoryId ? '• Select a product category\n' : ''}` +
-                   `${!importModal.sellingPrice ? '• Set a selling price\n' : ''}`,
+        description: errorDesc,
         variant: "destructive"
       });
       return;
@@ -657,9 +627,8 @@ export default function BrowseCjProductsPage() {
                       <SelectValue placeholder="Select a category" />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="select-category" disabled className="text-muted-foreground">
-                        Select a category
-                      </SelectItem>
+                      {/* Ensure a placeholder or default instruction is clear if platformCategoryId can be '' initially */}
+                      <SelectItem value="" disabled>Select a platform category...</SelectItem>
                       {platformCategories.map(cat => (
                         <SelectItem key={`single-${cat.id}`} value={String(cat.id)}>
                           {cat.name}
@@ -676,7 +645,7 @@ export default function BrowseCjProductsPage() {
                   <Button type="button" variant="outline" onClick={() => setImportModal(prev => ({...prev, isOpen: false}))} disabled={isImporting}>Cancel</Button>
                   <Button 
                     type="submit" 
-                    disabled={isImporting || !importModal.platformCategoryId || !importModal.sellingPrice || importModal.platformCategoryId === 'select-category'}
+                    disabled={isImporting || !importModal.platformCategoryId || importModal.platformCategoryId.trim() === '' || !importModal.sellingPrice}
                   >
                     {isImporting ? (
                       <Loader2 className="mr-2 h-4 w-4 animate-spin" />
@@ -709,9 +678,10 @@ export default function BrowseCjProductsPage() {
                   required
                 >
                   <SelectTrigger>
-                    <SelectValue placeholder="Select a category" />
+                    <SelectValue placeholder="Assign a category to all selected products" />
                   </SelectTrigger>
                   <SelectContent>
+                    <SelectItem value="" disabled>Select a platform category...</SelectItem>
                     {platformCategories.map(cat => (
                       <SelectItem key={`bulk-${cat.id}`} value={String(cat.id)}>
                         {cat.name}

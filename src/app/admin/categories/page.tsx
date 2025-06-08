@@ -9,7 +9,7 @@ import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useToast } from '@/hooks/use-toast';
-import { PlusCircle, Trash2, Edit, Loader2, AlertCircle, ListTree, List } from 'lucide-react';
+import { PlusCircle, Trash2, Edit, Loader2, AlertCircle, ListTree, List, Save } from 'lucide-react'; // Added Save
 
 interface Category {
   id: number;
@@ -33,10 +33,11 @@ export default function ManageCategoriesPage() {
 
   const [newCategoryName, setNewCategoryName] = useState('');
   const [newCategoryDescription, setNewCategoryDescription] = useState('');
-  const [newCategoryParentId, setNewCategoryParentId] = useState<string | undefined>(undefined); // Store as string for Select
+  const [newCategoryParentId, setNewCategoryParentId] = useState<string>(''); // Store as string for Select, init as '' for "None"
 
-  const [isAdding, setIsAdding] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false); // Renamed from isAdding
   const [viewMode, setViewMode] = useState<'list' | 'tree'>('list');
+  const [editingCategory, setEditingCategory] = useState<Category | null>(null);
 
   const fetchCategories = async (hierarchical = false) => {
     setIsLoading(true);
@@ -79,68 +80,138 @@ export default function ManageCategoriesPage() {
         setIsLoading(false);
         return;
     }
-    fetchCategories(viewMode === 'tree');
-  }, [viewMode]); // Refetch when viewMode changes
+    // Ensure flatCategories is also updated when viewMode changes and hierarchical fetch is done
+    if (ADMIN_API_KEY) { // Check if ADMIN_API_KEY is available
+      fetchCategories(viewMode === 'tree');
+    }
+  }, [viewMode, ADMIN_API_KEY]); // Added ADMIN_API_KEY dependency
 
-  const handleAddCategory = async (e: FormEvent) => {
-    e.preventDefault();
-    if (!newCategoryName.trim()) {
-      toast({ 
-        title: "Validation Error", 
-        description: "Category name is required.",
-        variant: "destructive" 
-      });
+  const handleCancelEdit = () => {
+    setEditingCategory(null);
+    setNewCategoryName('');
+    setNewCategoryDescription('');
+    setNewCategoryParentId(''); // Reset to "None" or empty
+  };
+
+  const handleEditClick = (category: Category) => {
+    setEditingCategory(category);
+    setNewCategoryName(category.name);
+    setNewCategoryDescription(category.description || '');
+    setNewCategoryParentId(category.parent_category_id ? String(category.parent_category_id) : '');
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
+
+  const handleDeleteClick = async (categoryId: number) => {
+    if (!window.confirm("Are you sure you want to delete this category? This action cannot be undone.")) {
       return;
     }
-    setIsAdding(true);
-    setError(null);
+    if (!ADMIN_API_KEY) {
+      toast({ title: "Error", description: "Admin API key not configured.", variant: "destructive" });
+      return;
+    }
+    setIsSubmitting(true); // Use general submitting state or a specific deleting state
     try {
-      const body: any = {
-        name: newCategoryName,
-        description: newCategoryDescription || null,
-      };
-      if (newCategoryParentId && newCategoryParentId !== 'none') {
-        body.parent_category_id = parseInt(newCategoryParentId, 10);
+      const response = await fetch(`/api/admin/categories/${categoryId}`, {
+        method: 'DELETE',
+        headers: { 'X-Admin-API-Key': ADMIN_API_KEY },
+      });
+      const result = await response.json();
+      if (!response.ok) {
+        throw new Error(result.error || `Failed to delete category: ${response.statusText}`);
       }
+      toast({ title: "Success", description: "Category deleted successfully." });
+      fetchCategories(viewMode === 'tree'); // Refresh list
+      handleCancelEdit(); // Clear form if deleted category was being edited
+    } catch (err: any) {
+      toast({ title: "Error Deleting Category", description: err.message, variant: "destructive" });
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
 
-      const response = await fetch('/api/admin/categories', {
-        method: 'POST',
+
+  const handleSubmitCategory = async (e: FormEvent) => {
+    e.preventDefault();
+    if (!newCategoryName.trim()) {
+      toast({ title: "Validation Error", description: "Category name is required.", variant: "destructive" });
+      return;
+    }
+    if (!ADMIN_API_KEY) {
+      toast({ title: "Error", description: "Admin API key not configured.", variant: "destructive" });
+      return;
+    }
+
+    setIsSubmitting(true);
+    setError(null);
+
+    const payload: any = {
+      name: newCategoryName.trim(),
+      description: newCategoryDescription.trim() || null,
+    };
+    if (newCategoryParentId && newCategoryParentId !== '') { // Check for empty string instead of 'none'
+      payload.parent_category_id = parseInt(newCategoryParentId, 10);
+    } else {
+      payload.parent_category_id = null; // Explicitly set to null if no parent
+    }
+
+    let url = '/api/admin/categories';
+    let method = 'POST';
+
+    if (editingCategory) {
+      url = `/api/admin/categories/${editingCategory.id}`;
+      method = 'PUT';
+      // Ensure we don't send empty strings for optional fields if they weren't changed
+      // The backend PUT should handle optional fields correctly.
+      // For PUT, only send fields that are meant to be updated.
+      // However, current backend PUT expects all fields or uses refine.
+      // For simplicity, sending all, backend will ignore if not changed or use Zod .optional()
+    }
+
+    try {
+      const response = await fetch(url, {
+        method: method,
         headers: {
           'Content-Type': 'application/json',
           'X-Admin-API-Key': ADMIN_API_KEY,
         },
-        body: JSON.stringify(body),
+        body: JSON.stringify(payload),
       });
 
       const result = await response.json();
       if (!response.ok) {
-        throw new Error(result.error || result.details || `Failed to add category: ${response.statusText}`);
+        throw new Error(result.error || result.details || `Failed to ${editingCategory ? 'update' : 'add'} category: ${response.statusText}`);
       }
 
-      toast({ title: "Success", description: `Category "${result.name}" added.` });
-      setNewCategoryName('');
-      setNewCategoryDescription('');
-      setNewCategoryParentId(undefined);
+      toast({ title: "Success", description: `Category "${result.name}" ${editingCategory ? 'updated' : 'added'}.` });
+      handleCancelEdit(); // Resets form and editingCategory
       fetchCategories(viewMode === 'tree'); // Refresh list
     } catch (err: any) {
-      setError(err.message);
-      toast({ title: "Error Adding Category", description: err.message, variant: "destructive" });
+      setError(err.message); // Consider setting specific API error to state for display
+      toast({ title: `Error ${editingCategory ? 'Updating' : 'Adding'} Category`, description: err.message, variant: "destructive" });
     } finally {
-      setIsAdding(false);
+      setIsSubmitting(false);
     }
   };
 
   const renderCategoryItem = (category: Category, level = 0) => (
-    <div key={category.id} className={`p-2 border-b ${level > 0 ? `ml-${level * 4}` : ''}`}>
+    <div key={category.id} className={`p-3 border-b ${level > 0 ? `ml-${level * 6}` : ''} hover:bg-gray-50/50`}>
       <div className="flex justify-between items-center">
         <div>
           <p className="font-semibold">{category.name} <span className="text-xs text-muted-foreground">(ID: {category.id})</span></p>
-          {category.description && <p className="text-sm text-muted-foreground">{category.description}</p>}
+          {category.description && <p className="text-sm text-muted-foreground italic">{category.description}</p>}
+          {category.parent_category_id && <p className="text-xs text-blue-500">Parent ID: {category.parent_category_id}</p>}
         </div>
-        {/* Future actions: Edit, Delete */}
+        <div className="space-x-2 flex-shrink-0">
+          <Button variant="outline" size="sm" onClick={() => handleEditClick(category)} disabled={isSubmitting}>
+            <Edit className="mr-1 h-3.5 w-3.5" /> Edit
+          </Button>
+          <Button variant="destructiveOutline" size="sm" onClick={() => handleDeleteClick(category.id)} disabled={isSubmitting}>
+            <Trash2 className="mr-1 h-3.5 w-3.5" /> Delete
+          </Button>
+        </div>
       </div>
       {viewMode === 'tree' && category.children && category.children.length > 0 && (
-        <div className="mt-1 pl-4 border-l">
+        <div className="mt-2 pl-4 border-l-2 border-slate-200">
           {category.children.map(child => renderCategoryItem(child, level + 1))}
         </div>
       )}
@@ -149,16 +220,18 @@ export default function ManageCategoriesPage() {
 
   return (
     <ProtectedRoute>
-      <div className="space-y-6">
+      <div className="space-y-8">
         <Card>
           <CardHeader>
-            <CardTitle>Add New Category</CardTitle>
-            <CardDescription>Create a new category for products.</CardDescription>
+            <CardTitle>{editingCategory ? `Edit Category: ${editingCategory.name}` : 'Add New Category'}</CardTitle>
+            <CardDescription>
+              {editingCategory ? 'Update the details of this category.' : 'Create a new category for products.'}
+            </CardDescription>
           </CardHeader>
           <CardContent>
-            <form onSubmit={handleAddCategory} className="space-y-4">
+            <form onSubmit={handleSubmitCategory} className="space-y-4">
               <div>
-                <Label htmlFor="category-name">Category Name</Label>
+                <Label htmlFor="category-name">Category Name*</Label>
                 <Input
                   id="category-name"
                   value={newCategoryName}
@@ -178,24 +251,39 @@ export default function ManageCategoriesPage() {
               </div>
               <div>
                 <Label htmlFor="category-parent">Parent Category (Optional)</Label>
-                <Select value={newCategoryParentId} onValueChange={setNewCategoryParentId}>
+                <Select
+                  value={newCategoryParentId}
+                  onValueChange={setNewCategoryParentId}
+                  disabled={isSubmitting}
+                >
                   <SelectTrigger>
-                    <SelectValue placeholder="Select parent category (or none)" />
+                    <SelectValue placeholder="Select parent (or none for top-level)" />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="none">None (Top-level category)</SelectItem>
-                    {flatCategories.map((cat) => (
+                    <SelectItem value="">None (Top-level category)</SelectItem>
+                    {flatCategories
+                      .filter(cat => cat.id !== editingCategory?.id) // Prevent self-parenting in dropdown
+                      .map((cat) => (
                       <SelectItem key={cat.id} value={String(cat.id)}>
-                        {cat.name}
+                        {cat.name} (ID: {cat.id})
                       </SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
               </div>
-              <Button type="submit" disabled={isAdding || !ADMIN_API_KEY}>
-                {isAdding ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <PlusCircle className="mr-2 h-4 w-4" />}
-                Add Category
-              </Button>
+              <div className="flex space-x-2">
+                <Button type="submit" disabled={isSubmitting || !ADMIN_API_KEY}>
+                  {isSubmitting ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> :
+                    editingCategory ? <Save className="mr-2 h-4 w-4" /> : <PlusCircle className="mr-2 h-4 w-4" />
+                  }
+                  {editingCategory ? 'Update Category' : 'Add Category'}
+                </Button>
+                {editingCategory && (
+                  <Button type="button" variant="outline" onClick={handleCancelEdit} disabled={isSubmitting}>
+                    Cancel Edit
+                  </Button>
+                )}
+              </div>
             </form>
           </CardContent>
         </Card>
