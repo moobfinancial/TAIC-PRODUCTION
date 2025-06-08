@@ -9,6 +9,8 @@ import { PlusCircle, Gem, Eye, Sparkles, Heart } from 'lucide-react';
 import type { Product } from '@/lib/types';
 import { useCart } from '@/hooks/useCart';
 import { useWishlist } from '@/hooks/useWishlist';
+import { useAuth } from '@/contexts/AuthContext'; // Import useAuth
+import { VTOModal } from '@/components/vto/VTOModal'; // Import VTOModal
 import { useToast } from '@/hooks/use-toast';
 import { cn } from '@/lib/utils';
 import { useState, useEffect } from 'react';
@@ -24,8 +26,11 @@ export function ProductCard({ product, showVirtualTryOnButton = false, productCo
   const { addToCart } = useCart();
   const { addToWishlist, isInWishlist, removeFromWishlist } = useWishlist();
   const { toast } = useToast();
+  const { isAuthenticated } = useAuth(); // Get isAuthenticated state
+
   const [translatedName, setTranslatedName] = useState<string>('');
   const [translatedDescription, setTranslatedDescription] = useState<string>('');
+  const [isVtoModalOpen, setIsVtoModalOpen] = useState(false); // State for VTO Modal
 
 
   useEffect(() => {
@@ -53,10 +58,15 @@ export function ProductCard({ product, showVirtualTryOnButton = false, productCo
   }, [product]);
 
   const handleVirtualTryOn = () => {
-    toast({
-      title: "Virtual Try-On (Demo)",
-      description: "This feature is coming soon! It will allow you to see this item on a model or in your space.",
-    });
+    if (isAuthenticated) {
+      setIsVtoModalOpen(true);
+    } else {
+      toast({
+        title: 'Login Required',
+        description: 'Please log in or connect your wallet to use the Virtual Try-On feature.',
+        variant: 'destructive',
+      });
+    }
   };
 
   const canShowTryOnButton = () => {
@@ -155,10 +165,17 @@ export function ProductCard({ product, showVirtualTryOnButton = false, productCo
         </Button>
         {canShowTryOnButton() && (
           <Button variant="secondary" className="w-full font-semibold" onClick={handleVirtualTryOn}>
-            <Sparkles className="mr-2 h-5 w-5" /> Virtual Try-On (Demo)
+            <Sparkles className="mr-2 h-5 w-5" /> Virtual Try-On
           </Button>
         )}
       </CardFooter>
+      {isVtoModalOpen && (
+        <VTOModal
+          product={product}
+          isOpen={isVtoModalOpen}
+          onClose={() => setIsVtoModalOpen(false)}
+        />
+      )}
     </Card>
   );
 }

@@ -52,6 +52,7 @@ interface OrderWithItems {
   status: string;
   date: string; // ISO string
   items: OrderItem[];
+  cashbackAwarded?: number; // Added cashback_awarded
 }
 
 
@@ -66,9 +67,9 @@ export async function GET(request: NextRequest) {
   try {
     client = await pool.connect();
 
-    // Fetch orders for user
+    // Fetch orders for user, including cashback_awarded
     const ordersQuery = `
-      SELECT id, amount AS totalAmount, currency, status, created_at AS date
+      SELECT id, amount AS totalAmount, currency, status, created_at AS date, cashback_awarded AS "cashbackAwarded"
       FROM orders
       WHERE user_id = $1
       ORDER BY created_at DESC;
@@ -87,11 +88,12 @@ export async function GET(request: NextRequest) {
       const itemsResult = await client.query(itemsQuery, [order.id]);
       ordersWithItems.push({
         id: order.id,
-        totalAmount: parseFloat(order.totalamount), // Ensure numeric
+        totalAmount: parseFloat(order.totalamount),
         currency: order.currency,
         status: order.status,
         date: new Date(order.date).toISOString(),
         items: itemsResult.rows,
+        cashbackAwarded: order.cashbackAwarded ? parseFloat(order.cashbackAwarded) : 0, // Ensure numeric and default
       });
     }
 
@@ -114,6 +116,7 @@ const OrderItemSchema = z.object({
   quantity: z.number().int().positive(),
   price: z.number().positive(), // Price at purchase for this item
   imageUrl: z.string().optional(),
+  cashbackPercentage: z.number().min(0).optional().default(0), // Added for cashback
 });
 
 const CreateOrderInputSchema = z.object({
@@ -178,7 +181,26 @@ export async function POST(request: NextRequest) {
       await client.query(
         `INSERT INTO order_items (order_id, product_id, product_name, quantity, price_at_purchase, image_url_at_purchase)
          VALUES ($1, $2, $3, $4, $5, $6);`,
-        [newOrderId, item.productId, item.name, item.quantity, item.price, item.imageUrl]
+        [newOrderId, item.productId, item.name, item.quantity, item.price, item.imageUrl || null]
+      );
+    }
+
+    // Calculate and award cashback
+    let totalCashbackForOrder = 0;
+    for (const item of items) { // items here are from validatedData, so they have cashbackPercentage
+      const itemCashback = item.price * item.quantity * ( (item.cashbackPercentage || 0) / 100);
+      totalCashbackForOrder += itemCashback;
+    }
+    totalCashbackForOrder = parseFloat(totalCashbackForOrder.toFixed(2)); // Ensure 2 decimal places
+
+    if (totalCashbackForOrder > 0) {
+      await client.query(
+        `UPDATE orders SET cashback_awarded = $1 WHERE id = $2;`,
+        [totalCashbackForOrder, newOrderId]
+      );
+      await client.query(
+        `UPDATE users SET cashback_balance = cashback_balance + $1 WHERE id = $2;`,
+        [totalCashbackForOrder, userId]
       );
     }
 
@@ -186,11 +208,12 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json({
       id: newOrderId,
-      items, // Return the validated items back
+      items,
       totalAmount,
       date: orderDate,
       currency,
-      status: 'completed'
+      status: 'completed',
+      cashbackAwarded: totalCashbackForOrder // Include cashback awarded in response
     }, { status: 201 });
 
   } catch (error: any) {

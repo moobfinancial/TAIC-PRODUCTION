@@ -27,16 +27,20 @@ export interface CartItem extends Product {
 export interface OrderItem {
   productId: string;
   name: string;
-  price: number;
+  price: number; // This is price_at_purchase
   quantity: number;
   imageUrl?: string;
+  cashbackPercentage?: number; // To be sent to backend during order creation
 }
 
 export interface Order {
-  id: string;
+  id: number; // Changed to number to align with API response
   items: OrderItem[];
   totalAmount: number;
-  date: string;
+  date: string; // ISO String
+  currency?: string; // Added from API response
+  status?: string;   // Added from API response
+  cashbackAwarded?: number; // Added for cashback feature
 }
 
 export interface AIConversation {
@@ -75,6 +79,7 @@ export interface User {
   email?: string | null;    // Optional, as per schema and new auth
   role: string;             // e.g., 'user', 'merchant', 'admin'
   taicBalance: number;      // Numeric type from DB
+  cashbackBalance: number;  // Added cashback balance
 
   // The following fields were part of the old User type.
   // If they are still needed, they might be fetched separately or part of a different type (e.g., UserProfile).

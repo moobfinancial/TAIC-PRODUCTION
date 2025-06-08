@@ -2,20 +2,54 @@ import { NextRequest, NextResponse } from 'next/server';
 import { virtualTryOn } from '@/ai/flows/virtual-try-on';
 import { VirtualTryOnInputSchema } from '@/ai/schemas/virtual-try-on.schema';
 import { z } from 'zod';
+import jwt from 'jsonwebtoken'; // For JWT verification
+import { Pool } from 'pg'; // For database interaction
+
+// Database Pool
+const pool = new Pool({
+  connectionString: process.env.DATABASE_URL ||
+    `postgresql://${process.env.PGUSER}:${process.env.PGPASSWORD}@${process.env.PGHOST}:${process.env.PGPORT}/${process.env.PGDATABASE}`,
+});
+
+const JWT_SECRET = process.env.JWT_SECRET || 'your-fallback-jwt-secret';
+
+interface UserPayload {
+  userId: number;
+}
+
+// JWT Verification Helper
+async function verifyAuth(request: NextRequest): Promise<{ valid: boolean; userId?: number; error?: string }> {
+  const authHeader = request.headers.get('Authorization');
+  if (!authHeader || !authHeader.startsWith('Bearer ')) {
+    return { valid: false, error: 'Authorization header missing or malformed' };
+  }
+  const token = authHeader.split(' ')[1];
+  if (!token) {
+    return { valid: false, error: 'Token missing from Authorization header' };
+  }
+  try {
+    const decoded = jwt.verify(token, JWT_SECRET) as UserPayload;
+    if (!decoded.userId) {
+        return { valid: false, error: 'Invalid token payload (missing userId)' };
+    }
+    return { valid: true, userId: decoded.userId };
+  } catch (error: any) {
+    console.error('JWT verification error in virtual-try-on:', error.name, error.message);
+    return { valid: false, error: `Token verification failed: ${error.message}` };
+  }
+}
+
 
 export async function POST(request: NextRequest) {
-  // Note: Client-side authentication is handled by the client
-  // The userId should be passed in the request body from the authenticated client
-
   const requestId = Math.random().toString(36).substring(2, 10);
   const startTime = Date.now();
   
   const log = (message: string, data?: any) => {
-    console.log(`[${new Date().toISOString()}] [${requestId}] ${message}`, data || '');
+    console.log(`[${new Date().toISOString()}] [VTO:${requestId}] ${message}`, data || '');
   };
   
   const logError = (message: string, error?: any) => {
-    console.error(`[${new Date().toISOString()}] [${requestId}] ${message}`, {
+    console.error(`[${new Date().toISOString()}] [VTO:${requestId}] ${message}`, {
       error: error?.message || error,
       stack: error?.stack,
       code: error?.code,
@@ -24,14 +58,18 @@ export async function POST(request: NextRequest) {
     });
   };
   
-  log('Received request', {
-    method: request.method,
-    url: request.url,
-    headers: Object.fromEntries(request.headers.entries())
-  });
+  log('Received request');
+
+  // Authenticate user
+  const auth = await verifyAuth(request);
+  if (!auth.valid || !auth.userId) {
+    logError('Authentication failed', { reason: auth.error });
+    return NextResponse.json({ error: 'Unauthorized', details: auth.error }, { status: 401 });
+  }
+  const authenticatedUserId = auth.userId;
+  log('User authenticated', { userId: authenticatedUserId });
   
   try {
-    // Parse and validate the request body
     let body;
     try {
       body = await request.json();
@@ -71,23 +109,14 @@ export async function POST(request: NextRequest) {
 
     const inputData = validationResult.data;
     
-    // Get userId from the request body (passed from client-side)
-    const userId = body.userId || 'anonymous';
-    
-    // Log the user ID (masked for security)
-    log('Using user ID for image saving', { 
-      hasUserId: !!userId && userId !== 'anonymous',
-      userIdLength: userId?.length || 0 
-    });
-    
-    // Ensure productId is a string if it exists
+    // userId is now from JWT (authenticatedUserId), not from body.
+    // productId is still from body if provided by client.
     const productId = body.productId ? String(body.productId) : undefined;
     
-    // Add userId and productId to input data
     const enrichedInputData = {
       ...inputData,
-      userId,
-      productId
+      // userId: authenticatedUserId, // Pass authenticated userId to VTO flow if it needs it
+      // productId: productId // Pass productId if VTO flow needs it
     };
     
     log('Input validation successful, calling virtualTryOn', { 
@@ -95,101 +124,87 @@ export async function POST(request: NextRequest) {
       hasProductImage: !!enrichedInputData.productImageUrl,
       hasUserDescription: !!enrichedInputData.userDescription,
       hasProductDescription: !!enrichedInputData.productDescription,
-      hasUserId: !!enrichedInputData.userId,
-      hasProductId: !!enrichedInputData.productId
     });
+
+    const result = await virtualTryOn(enrichedInputData); // Call VTO flow
     
-    // Process the virtual try-on
-    log('Starting virtual try-on processing');
-    const result = await virtualTryOn(enrichedInputData);
+    log('Virtual try-on AI flow completed', { hasGeneratedImage: !!result.generatedImageUrl });
     
-    log('Virtual try-on completed successfully', {
-      hasGeneratedImage: !!result.generatedImageUrl,
-      hasMetadata: !!result.metadata,
-      processingTime: result.metadata?.processingTime
-    });
-    
-    // Save the generated image to Firebase Storage with metadata
     let storagePath = '';
-    let publicUrl = result.generatedImageUrl;
-    
+    let publicUrl = result.generatedImageUrl; // Use AI-generated URL if GCS save fails
+    let galleryImageId: number | null = null;
+
     if (result.generatedImageUrl) {
       try {
         const { adminStorage } = await import('@/lib/firebaseAdmin');
         const bucket = adminStorage().bucket();
-        
-        // Create a unique filename with timestamp and user ID
         const timestamp = Date.now();
-        const filename = `virtual_try_on_${timestamp}.jpg`;
-        storagePath = `user_uploads/${userId}/virtual_try_on/${filename}`;
+        const filename = `vto_result_${authenticatedUserId}_${timestamp}.jpg`;
+        // Use authenticatedUserId for storage path
+        storagePath = `user_uploads/${authenticatedUserId}/virtual_try_on_results/${filename}`;
         
-        // Download the generated image
         const imageResponse = await fetch(result.generatedImageUrl);
+        if (!imageResponse.ok) throw new Error(`Failed to fetch generated image from AI: ${imageResponse.statusText}`);
         const imageBuffer = await imageResponse.arrayBuffer();
         
-        // Upload to Firebase Storage with metadata
         const file = bucket.file(storagePath);
         await file.save(Buffer.from(imageBuffer), {
           metadata: {
-            contentType: 'image/jpeg',
-            metadata: {
-              productId: enrichedInputData.productId || '',
-              productName: body.productName || '',
-              productImage: body.productImageUrl || '',
-              userId: userId,
-              createdAt: new Date().toISOString(),
-              processingTime: result.metadata?.processingTime || 0,
-              requestId
+            contentType: 'image/jpeg', // Assuming JPEG, adjust if AI returns different
+            metadata: { // Custom metadata for GCS object
+              vtoUserId: String(authenticatedUserId),
+              vtoProductId: productId || 'N/A',
+              vtoProductName: body.productName || 'N/A',
+              vtoRequestId: requestId,
+              vtoCreatedAt: new Date().toISOString(),
             }
           }
         });
-        
-        // Make the file publicly accessible
         await file.makePublic();
-        
-        // Get the public URL
         publicUrl = `https://storage.googleapis.com/${bucket.name}/${storagePath}`;
-        
-        log('Saved generated image to storage', {
-          storagePath,
-          publicUrl,
-          size: imageBuffer.byteLength
-        });
-        
-      } catch (storageError) {
-        logError('Error saving generated image to storage', storageError);
-        // Don't fail the request if storage fails, just log it
+        log('Saved generated image to GCS', { storagePath, publicUrl });
+
+        // Save to user_gallery_images table
+        let dbClient;
+        try {
+          dbClient = await pool.connect();
+          const vtoDescription = `Virtual Try-On: ${body.productName || 'Product'}${productId ? ` (ID: ${productId})` : ''}`;
+          const galleryInsertRes = await dbClient.query(
+            `INSERT INTO user_gallery_images (user_id, image_url, image_type, description)
+             VALUES ($1, $2, 'vto_result', $3) RETURNING id;`,
+            [authenticatedUserId, publicUrl, vtoDescription]
+          );
+          if (galleryInsertRes.rows.length > 0) {
+            galleryImageId = galleryInsertRes.rows[0].id;
+            log('Saved VTO image metadata to user_gallery_images', { galleryImageId });
+          }
+        } catch (dbError: any) {
+          logError('Failed to save VTO image metadata to DB', dbError);
+          // Do not fail the entire request if DB save fails, GCS part was successful.
+        } finally {
+          if (dbClient) dbClient.release();
+        }
+
+      } catch (storageOrFetchError) {
+        logError('Error saving generated image to GCS or fetching from AI URL', storageOrFetchError);
+        // If storage fails, publicUrl remains the original AI-generated URL (if any)
+        // This is a fallback; ideally, we'd handle this more gracefully.
       }
     }
     
-    // Calculate request duration
     const duration = Date.now() - startTime;
+    log('Request processing finished', { durationMs: duration });
     
-    // Return the successful response with the generated image URL and metadata
     return NextResponse.json({
       requestId,
       success: true,
-      message: 'Virtual try-on completed successfully',
-      generatedImageUrl: publicUrl,
-      storagePath: storagePath || null,
-      metadata: {
-        ...result.metadata,
-        storagePath: storagePath || null,
-        storageUrl: publicUrl,
-        processingTime: duration
-      },
+      message: 'Virtual try-on completed successfully.',
+      generatedImageUrl: publicUrl, // This will be GCS URL if save succeeded, else original AI URL
+      galleryImageId: galleryImageId, // ID from user_gallery_images table
+      storagePath: storagePath || null, // GCS path if save succeeded
+      metadata: { ...result.metadata, processingTime: duration, storagePath, galleryImageId },
       timestamp: new Date().toISOString(),
-      duration: `${duration}ms`
-    }, { 
-      status: 200,
-      headers: { 
-        'Content-Type': 'application/json',
-        'X-Request-ID': requestId,
-        'X-Duration': `${duration}ms`
-      }
-    });
-    
-    return response;
+    }, { status: 200 });
 
   } catch (error: any) {
     const duration = Date.now() - startTime;
