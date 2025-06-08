@@ -138,39 +138,49 @@ export function OrderHistory() {
             {orders.slice().reverse().map((order: Order) => (
               <AccordionItem value={order.id} key={order.id} className="border-b">
                 <AccordionTrigger className="hover:no-underline">
-                  <div className="flex justify-between w-full pr-4">
+                  <div className="flex justify-between items-start w-full pr-4"> {/* items-start for alignment */}
                     <div className="text-left">
-                      <p className="font-medium">Order ID: {order.id.substring(order.id.length - 6)}</p>
+                      <p className="font-medium">Order ID: {order.id.toString()}</p>
                       <p className="text-sm text-muted-foreground">
                         {new Date(order.date).toLocaleDateString()} - {new Date(order.date).toLocaleTimeString()}
                       </p>
+                       <Badge variant={order.status === 'completed' ? 'success' : 'secondary'} className="mt-1">{order.status || 'N/A'}</Badge>
                     </div>
-                    <div className="flex flex-col items-end">
-                        <Badge variant="outline" className="mb-1">{order.items.length} item(s)</Badge>
+                    <div className="flex flex-col items-end text-right">
+                        <p className="text-xs text-muted-foreground">{order.items.length} item(s)</p>
                         <span className="font-semibold text-primary flex items-center">
-                            <Gem className="mr-1 h-4 w-4" /> {parseFloat(String(order.totalAmount)).toLocaleString()} {order.currency}
+                            <Gem className="mr-1 h-4 w-4" /> {parseFloat(String(order.totalAmount)).toLocaleString()} {order.currency || 'TAIC'}
                         </span>
+                        {order.cashbackAwarded && order.cashbackAwarded > 0 && (
+                          <p className="text-xs text-green-600 mt-0.5">
+                            Cashback: {order.cashbackAwarded.toFixed(2)} {order.currency || 'TAIC'}
+                          </p>
+                        )}
                     </div>
                   </div>
                 </AccordionTrigger>
                 <AccordionContent className="bg-muted/20 p-4 rounded-md">
-                  <ul className="space-y-3">
-                    {order.items.map((item: OrderItem, index: number) => ( // Ensure item has unique key if productId isn't unique across orders
-                      <li key={`${item.productId}-${index}`} className="flex items-center gap-4 p-2 rounded-md bg-background shadow-sm">
+                  <h4 className="font-medium mb-2 text-sm">Order Items ({order.items.length}):</h4>
+                  <ul className="space-y-2">
+                    {order.items.map((item: OrderItem, index: number) => (
+                      <li key={`${item.productId}-${index}`} className="flex items-center gap-3 p-2 bg-background rounded shadow-sm">
                         <Image 
                           src={item.imageUrl || 'https://placehold.co/64x64.png'} 
                           alt={item.name} 
-                          width={64} 
-                          height={64} 
-                          className="rounded object-cover aspect-square"
+                          width={40} // Reduced size for item list
+                          height={40}
+                          className="rounded aspect-square object-cover"
                           data-ai-hint="product image"
                         />
                         <div className="flex-grow">
-                          <p className="font-medium">{item.name}</p>
-                          <p className="text-sm text-muted-foreground">Qty: {item.quantity}</p>
+                          <p className="text-sm font-medium">{item.name}</p>
+                          <p className="text-xs text-muted-foreground">Qty: {item.quantity} &bull; Price: {parseFloat(String(item.price)).toLocaleString()} {order.currency || 'TAIC'}</p>
+                          {item.cashbackPercentage && item.cashbackPercentage > 0 && (
+                             <p className="text-xs text-green-600">Cashback: {item.cashbackPercentage}%</p>
+                          )}
                         </div>
                         <p className="font-medium text-sm flex items-center">
-                            <Gem className="mr-1 h-3 w-3 text-primary/70" /> {parseFloat(String(item.price * item.quantity)).toLocaleString()} {order.currency}
+                            <Gem className="mr-1 h-3 w-3 text-primary/70" /> {parseFloat(String(item.price * item.quantity)).toLocaleString()} {order.currency || 'TAIC'}
                         </p>
                       </li>
                     ))}

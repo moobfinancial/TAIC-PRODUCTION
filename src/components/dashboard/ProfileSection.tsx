@@ -220,6 +220,16 @@ export function ProfileSection() {
             <span>{user.taicBalance?.toLocaleString() || 0} TAIC</span>
           </div>
         </div>
+
+        <div className="space-y-2 pt-4 border-t">
+          <h4 className="text-lg font-medium">Available Cashback Balance</h4>
+          <div className="flex items-center text-2xl font-semibold text-green-600">
+            {/* Using Gem for now, can be changed to a more specific cashback icon if available */}
+            <Gem className="mr-2 h-6 w-6" />
+            <span>{(user?.cashbackBalance || 0).toLocaleString()} TAIC</span>
+          </div>
+        </div>
+
         {/* stakedTaicBalance is no longer part of the main User object from auth.
             If this information is still needed, it should be fetched from a separate API endpoint.
             For now, removing this section to align with the current User type.

@@ -1,9 +1,9 @@
 'use client';
 
 import { useAuth } from '@/contexts/AuthContext';
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useState, useMemo } from 'react'; // Import useMemo
 import Image from 'next/image'; // Use Next.js Image
-import { Loader2, Image as ImageIcon, ArrowLeft, UploadCloud, AlertTriangle } from 'lucide-react'; // Added UploadCloud, AlertTriangle
+import { Loader2, Image as ImageIcon, ArrowLeft, UploadCloud, AlertTriangle, Sparkles } from 'lucide-react'; // Added Sparkles for VTO section
 import Link from 'next/link';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input'; // For file input
@@ -25,7 +25,7 @@ export default function GalleryPage() {
   const [isUploading, setIsUploading] = useState(false);
 
 
-  const fetchImages = useCallback(async (filterImageType?: string) => {
+  const fetchImages = useCallback(async () => { // Removed filterImageType from parameters
     if (!isAuthenticated || !token) {
       setIsLoadingImages(false);
       setImages([]);
@@ -34,11 +34,8 @@ export default function GalleryPage() {
     setIsLoadingImages(true);
     setError(null);
     try {
-      let apiUrl = '/api/user/images';
-      if (filterImageType) {
-        apiUrl += `?imageType=${encodeURIComponent(filterImageType)}`;
-      }
-      const response = await fetch(apiUrl, {
+      // Fetch all images for the user, filtering will be done client-side
+      const response = await fetch('/api/user/images', {
         headers: { 'Authorization': `Bearer ${token}` }
       });
       
@@ -47,7 +44,7 @@ export default function GalleryPage() {
         throw new Error(errorData.error || 'Failed to fetch images');
       }
       
-      const data: UserGalleryImage[] = await response.json(); // API returns array directly
+      const data: UserGalleryImage[] = await response.json();
       setImages(data || []);
     } catch (err: any) {
       console.error('Error fetching images:', err);
@@ -59,10 +56,19 @@ export default function GalleryPage() {
   }, [isAuthenticated, token]);
 
   useEffect(() => {
-    if (!authIsLoading) { // Only fetch when auth state is resolved
-      fetchImages(); // Fetch all image types initially
+    if (!authIsLoading) {
+      fetchImages();
     }
   }, [authIsLoading, isAuthenticated, fetchImages]);
+
+  // Client-side filtering
+  const vtoImages = useMemo(() => images.filter(img => img.imageType === 'vto_result'), [images]);
+  const generalImages = useMemo(() => images.filter(img =>
+    img.imageType === 'gallery_general' ||
+    img.imageType === 'general_upload' || // Catch older uploads if any
+    !img.imageType // Catch images without a type as general
+  ), [images]);
+
 
   useEffect(() => {
     // Check for success message in URL (this logic can remain as is)
@@ -213,37 +219,87 @@ export default function GalleryPage() {
            <AlertTriangle className="mx-auto h-10 w-10 mb-3" />
           <p className="font-medium text-lg">Error loading gallery</p>
           <p className="mt-1 text-sm">{error}</p>
-          <Button onClick={() => fetchImages()} variant="outline" className="mt-4">
+          <Button onClick={fetchImages} variant="outline" className="mt-4"> {/* Removed argument from fetchImages */}
             <RefreshCw className="mr-2 h-4 w-4"/>Retry
           </Button>
         </div>
-      ) : images.length === 0 ? (
-        <div className="text-center py-16 bg-gray-50 rounded-xl border-2 border-dashed border-gray-200">
-          <ImageIcon className="h-12 w-12 mx-auto text-gray-400" />
-          <h3 className="mt-4 text-lg font-medium text-gray-900">Your gallery is empty.</h3>
-          <p className="mt-1 text-gray-500">Upload some images to see them here.</p>
-        </div>
       ) : (
-        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4 md:gap-6">
-          {images.map((image) => (
-              <Card key={image.id} className="overflow-hidden shadow-md hover:shadow-lg transition-shadow">
-                <div className="relative aspect-square w-full">
-                  <Image
-                    src={image.imageUrl}
-                    alt={image.description || `Gallery image ${image.id}`}
-                    fill
-                    sizes="(max-width: 640px) 100vw, (max-width: 1024px) 50vw, (max-width: 1280px) 33vw, 25vw"
-                    className="object-cover"
-                  />
-                </div>
-                <div className="p-3 bg-card">
-                  {image.description && <p className="text-sm text-muted-foreground truncate" title={image.description}>{image.description}</p>}
-                  <p className="text-xs text-muted-foreground">Type: {image.imageType || 'N/A'}</p>
-                  <p className="text-xs text-muted-foreground">Uploaded: {new Date(image.createdAt).toLocaleDateString()}</p>
-                </div>
-              </Card>
-            ))}
-        </div>
+        <>
+          {/* Virtual Try-Ons Section */}
+          <section className="mb-12">
+            <h2 className="text-2xl font-semibold mb-4 flex items-center"><Sparkles className="mr-2 h-6 w-6 text-purple-500" />My Virtual Try-Ons</h2>
+            {vtoImages.length === 0 && !isLoadingImages && (
+              <div className="text-center py-10 bg-gray-50 rounded-xl border-2 border-dashed border-gray-200">
+                <ImageIcon className="h-12 w-12 mx-auto text-gray-400" />
+                <p className="mt-2 text-muted-foreground">You have no Virtual Try-On images yet.</p>
+                <p className="text-sm text-muted-foreground">Try some products on using our VTO feature!</p>
+              </div>
+            )}
+            {vtoImages.length > 0 && (
+              <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4 md:gap-6">
+                {vtoImages.map((image) => (
+                  <Card key={`vto-${image.id}`} className="overflow-hidden shadow-md hover:shadow-lg transition-shadow">
+                    <div className="relative aspect-square w-full">
+                      <Image
+                        src={image.imageUrl}
+                        alt={image.description || `VTO image ${image.id}`}
+                        fill
+                        sizes="(max-width: 640px) 100vw, (max-width: 1024px) 50vw, (max-width: 1280px) 33vw, 25vw"
+                        className="object-cover"
+                      />
+                    </div>
+                    <div className="p-3 bg-card">
+                      {image.description && <p className="text-sm text-muted-foreground truncate" title={image.description}>{image.description}</p>}
+                       <p className="text-xs text-muted-foreground">Type: VTO Result</p>
+                      <p className="text-xs text-muted-foreground">Created: {new Date(image.createdAt).toLocaleDateString()}</p>
+                    </div>
+                  </Card>
+                ))}
+              </div>
+            )}
+          </section>
+
+          {/* General Uploads Section */}
+          <section>
+            <h2 className="text-2xl font-semibold mb-4 flex items-center"><ImageIcon className="mr-2 h-6 w-6 text-blue-500" />My General Uploads</h2>
+            {generalImages.length === 0 && !isLoadingImages && (
+              <div className="text-center py-10 bg-gray-50 rounded-xl border-2 border-dashed border-gray-200">
+                <ImageIcon className="h-12 w-12 mx-auto text-gray-400" />
+                <p className="mt-2 text-muted-foreground">You haven&apos;t uploaded any general images yet.</p>
+              </div>
+            )}
+            {generalImages.length > 0 && (
+              <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4 md:gap-6">
+                {generalImages.map((image) => (
+                  <Card key={`general-${image.id}`} className="overflow-hidden shadow-md hover:shadow-lg transition-shadow">
+                    <div className="relative aspect-square w-full">
+                      <Image
+                        src={image.imageUrl}
+                        alt={image.description || `Gallery image ${image.id}`}
+                        fill
+                        sizes="(max-width: 640px) 100vw, (max-width: 1024px) 50vw, (max-width: 1280px) 33vw, 25vw"
+                        className="object-cover"
+                      />
+                    </div>
+                    <div className="p-3 bg-card">
+                      {image.description && <p className="text-sm text-muted-foreground truncate" title={image.description}>{image.description}</p>}
+                      <p className="text-xs text-muted-foreground">Type: {image.imageType || 'General'}</p>
+                      <p className="text-xs text-muted-foreground">Uploaded: {new Date(image.createdAt).toLocaleDateString()}</p>
+                    </div>
+                  </Card>
+                ))}
+              </div>
+            )}
+          </section>
+
+          {images.length === 0 && !isLoadingImages && !error && ( // Only show this if both sections would be empty
+             <div className="text-center py-16 bg-gray-50 rounded-xl border-2 border-dashed border-gray-200 mt-8">
+              <ImageIcon className="h-12 w-12 mx-auto text-gray-400" />
+              <h3 className="mt-4 text-lg font-medium text-gray-900">Your gallery is empty.</h3>
+              <p className="mt-1 text-gray-500">Upload some images or try our Virtual Try-On feature!</p>
+            </div>
+          )}
+        </>
       )}
     </div>
   );

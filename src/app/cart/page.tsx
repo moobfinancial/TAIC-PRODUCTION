@@ -88,9 +88,10 @@ export default function CartPage() {
         items: cartItems.map(item => ({
           productId: item.id,
           name: item.name,
-          price: item.price, // This should be price_at_purchase from cart item
+          price: item.price,
           quantity: item.quantity,
           imageUrl: item.imageUrl,
+          cashbackPercentage: item.cashbackPercentage || 0, // Ensure cashbackPercentage is passed
         })),
         totalAmount: currentTotalAmount,
       };

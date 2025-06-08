@@ -50,7 +50,7 @@ export async function GET(request: Request) {
 
     // Retrieve user from DB using userId from token
     const userQuery = `
-      SELECT id, wallet_address, username, email, role, taic_balance
+      SELECT id, wallet_address, username, email, role, taic_balance, cashback_balance
       FROM users
       WHERE id = $1;
     `;
@@ -70,7 +70,8 @@ export async function GET(request: Request) {
         username: user.username,
         email: user.email,
         role: user.role,
-        taicBalance: user.taic_balance, // Ensure this is numeric in DB
+        taicBalance: parseFloat(user.taic_balance),
+        cashbackBalance: parseFloat(user.cashback_balance)
       },
     });
 
