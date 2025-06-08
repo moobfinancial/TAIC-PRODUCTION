@@ -27,16 +27,20 @@ export interface CartItem extends Product {
 export interface OrderItem {
   productId: string;
   name: string;
-  price: number;
+  price: number; // This is price_at_purchase
   quantity: number;
   imageUrl?: string;
+  cashbackPercentage?: number; // To be sent to backend during order creation
 }
 
 export interface Order {
-  id: string;
+  id: number; // Changed to number to align with API response
   items: OrderItem[];
   totalAmount: number;
-  date: string;
+  date: string; // ISO String
+  currency?: string; // Added from API response
+  status?: string;   // Added from API response
+  cashbackAwarded?: number; // Added for cashback feature
 }
 
 export interface AIConversation {
@@ -67,27 +71,42 @@ export interface PaymentMethod {
   isDefault: boolean;
 }
 
+// Updated User interface for wallet-based authentication
 export interface User {
-  id: string;
-  username: string;
-  email?: string;
-  taicBalance: number;
-  stakedTaicBalance: number;
-  orders: Order[];
-  aiConversations: AIConversation[];
-  stakedWishlistGoals: StakedWishlistGoal[];
-  paymentMethods?: PaymentMethod[];
-  profileImageUrl?: string;
+  id: number; // Database ID (SERIAL)
+  walletAddress: string;
+  username?: string | null; // Optional, as per schema and new auth
+  email?: string | null;    // Optional, as per schema and new auth
+  role: string;             // e.g., 'user', 'merchant', 'admin'
+  taicBalance: number;      // Numeric type from DB
+  cashbackBalance: number;  // Added cashback balance
+
+  // The following fields were part of the old User type.
+  // If they are still needed, they might be fetched separately or part of a different type (e.g., UserProfile).
+  // For now, they are removed to align with the auth/me and auth/verify API responses.
+  // stakedTaicBalance?: number;
+  // orders?: Order[];
+  // aiConversations?: AIConversation[];
+  // stakedWishlistGoals?: StakedWishlistGoal[];
+  // paymentMethods?: PaymentMethod[];
+  // profileImageUrl?: string;
 }
 
 export interface AuthContextType {
   user: User | null;
-  userId: string | null; // Add userId to the interface
-  login: (username: string) => void;
+  // userId: string | null; // This can be derived from user.id if user is not null
+  // The login/register methods will be replaced by wallet-specific ones
+  // login: (username: string) => void;
   logout: () => void;
-  register: (username: string) => void;
-  updateUser: (updatedUser: User) => void;
-  loading?: boolean;
+  // register: (username: string) => void;
+  // updateUser: (updatedUser: User) => void; // This might be handled differently or removed
+
+  // New wallet-based auth methods will be added here by the AuthContext task
+  // For example:
+  // loginWithWallet: (walletAddress: string) => Promise<void>;
+  // isAuthenticated: boolean;
+  // token: string | null;
+  isLoading: boolean; // Renamed from 'loading' for consistency
 }
 
 export interface CartContextType {
@@ -110,4 +129,12 @@ export interface WishlistContextType {
   getWishlistTotalValue: () => number;
   getWishlistItemCount: () => number;
   clearWishlist: () => void;
+}
+
+export interface UserGalleryImage {
+  id: number;
+  imageUrl: string;
+  imageType?: string | null;
+  description?: string | null;
+  createdAt: string; // ISO string date
 }

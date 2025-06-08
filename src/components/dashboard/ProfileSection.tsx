@@ -4,7 +4,8 @@
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Gem, UserCircle2, UploadCloud, XCircle, Loader2 } from 'lucide-react';
-import { useAuth } from '@/hooks/useAuth';
+// Update useAuth import path
+import { useAuth } from '@/contexts/AuthContext';
 import { Button } from '@/components/ui/button';
 import React, { useState, useEffect, useRef } from 'react';
 import { Input } from '@/components/ui/input';
@@ -12,7 +13,8 @@ import { Label } from '@/components/ui/label';
 import { useToast } from '@/hooks/use-toast'; // Import useToast
 
 export function ProfileSection() {
-  const { user, updateUser } = useAuth(); // Assuming updateUser can handle profile image updates
+  // Get token and refreshUser from AuthContext
+  const { user, token, refreshUser } = useAuth();
   const { toast } = useToast();
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [imagePreview, setImagePreview] = useState<string | null>(user?.profileImageUrl || null); // Initialize with user's current image
@@ -79,11 +81,20 @@ export function ProfileSection() {
 
     const formData = new FormData();
     formData.append('file', selectedFile);
-    formData.append('userId', user.id); // Assuming user object has an 'id' field
+    formData.append('imageType', 'profile'); // Specify imageType
+    formData.append('description', `Profile picture for user ${user.id}`); // Optional description
+    // formData.append('userId', user.id); // No longer needed, userId comes from JWT
 
     try {
+      const headers: HeadersInit = {};
+      if (token) {
+        headers['Authorization'] = `Bearer ${token}`;
+      }
+      // Content-Type is not set for FormData, browser handles it.
+
       const response = await fetch('/api/upload-image', {
         method: 'POST',
+        headers: headers,
         body: formData,
       });
 
@@ -96,14 +107,24 @@ export function ProfileSection() {
       toast({ title: "Profile Picture Updated!", description: "Your new picture has been saved." });
 
       // Assuming updateUser can handle partial updates or specific profile image update
-      // And that user object in context will be updated, triggering re-render
-      if (updateUser) {
-         // Create a new user object with the updated profileImageUrl
-        const updatedUserDetails = { ...user, profileImageUrl: result.imageUrl };
-        updateUser(updatedUserDetails); // This should update the context
-      }
-      setImagePreview(result.imageUrl); // Show the new image from the URL
+      // The AuthContext's user object is updated by fetching /api/auth/me.
+      // For immediate UI update of the image, we set imagePreview.
+      // A full user object refresh in context would happen on next load or if a refresh function is called.
+      // For now, removing the direct call to updateUser as its previous form is gone.
+      // if (updateUser) {
+      //    const updatedUserDetails = { ...user, profileImageUrl: result.imageUrl };
+      //    updateUser(updatedUserDetails);
+      // }
+      setImagePreview(result.imageUrl); // Show the new image from the URL (this is the persisted URL)
       setSelectedFile(null); // Clear selection
+
+      // Refresh user data in AuthContext to get updated profileImageUrl if it's part of /api/auth/me response
+      if (refreshUser) {
+        await refreshUser();
+      }
+      // Also, if the user object in context doesn't directly hold profileImageUrl,
+      // but a separate user profile state does, that would need its own refresh mechanism.
+      // For now, this updates the local preview and attempts to refresh the core user auth state.
 
     } catch (error: any) {
       console.error("Upload failed:", error);
@@ -118,6 +139,9 @@ export function ProfileSection() {
 
   if (!user) return null;
 
+  const displayName = user.username || user.walletAddress.substring(0, 6) + "..." + user.walletAddress.substring(user.walletAddress.length - 4);
+  const avatarFallback = (user.username || user.walletAddress || "U").substring(0, 2).toUpperCase();
+
   return (
     <Card className="shadow-lg">
       <CardHeader>
@@ -131,8 +155,8 @@ export function ProfileSection() {
         <div className="flex flex-col sm:flex-row items-center space-y-4 sm:space-y-0 sm:space-x-6">
           <div className="relative group">
             <Avatar className="h-32 w-32 text-4xl border-2 border-primary/50 shadow-md">
-              <AvatarImage src={imagePreview || `https://avatar.vercel.sh/${user.username}.png`} alt={user.username || "User"} className="object-cover" />
-              <AvatarFallback>{user.username ? user.username.substring(0, 2).toUpperCase() : 'U'}</AvatarFallback>
+              <AvatarImage src={imagePreview || `https://avatar.vercel.sh/${displayName}.png`} alt={displayName} className="object-cover" />
+              <AvatarFallback>{avatarFallback}</AvatarFallback>
             </Avatar>
             {selectedFile && imagePreview && imagePreview.startsWith('blob:') && ( // Show remove only for new blob previews
               <Button
@@ -147,8 +171,9 @@ export function ProfileSection() {
             )}
           </div>
           <div className="text-center sm:text-left flex-grow">
-            <h3 className="text-2xl font-semibold">{user.username}</h3>
-            <p className="text-muted-foreground">TAIC Enthusiast</p>
+            <h3 className="text-2xl font-semibold">{displayName}</h3>
+            {user.email && <p className="text-sm text-muted-foreground">{user.email}</p>}
+            <p className="text-muted-foreground">TAIC Balance Holder</p> {/* Updated description */}
             <div className="mt-3 space-y-2">
               <Button
                 variant="outline"
@@ -192,10 +217,24 @@ export function ProfileSection() {
           <h4 className="text-lg font-medium">Demo TAIC Balance</h4>
           <div className="flex items-center text-3xl font-bold text-primary">
             <Gem className="mr-2 h-7 w-7" />
-            <span>{user.taicBalance.toLocaleString()} TAIC</span>
+            <span>{user.taicBalance?.toLocaleString() || 0} TAIC</span>
           </div>
         </div>
-        {user.stakedTaicBalance > 0 && (
+
+        <div className="space-y-2 pt-4 border-t">
+          <h4 className="text-lg font-medium">Available Cashback Balance</h4>
+          <div className="flex items-center text-2xl font-semibold text-green-600">
+            {/* Using Gem for now, can be changed to a more specific cashback icon if available */}
+            <Gem className="mr-2 h-6 w-6" />
+            <span>{(user?.cashbackBalance || 0).toLocaleString()} TAIC</span>
+          </div>
+        </div>
+
+        {/* stakedTaicBalance is no longer part of the main User object from auth.
+            If this information is still needed, it should be fetched from a separate API endpoint.
+            For now, removing this section to align with the current User type.
+
+        {user.stakedTaicBalance > 0 && ( // This would cause an error if stakedTaicBalance is not on user
            <div className="space-y-2">
             <h4 className="text-lg font-medium">Staked TAIC Balance (General)</h4>
             <div className="flex items-center text-2xl font-semibold text-green-600">
@@ -204,6 +243,7 @@ export function ProfileSection() {
             </div>
           </div>
         )}
+        */}
       </CardContent>
     </Card>
   );

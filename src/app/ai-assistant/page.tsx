@@ -7,8 +7,11 @@ import { Textarea } from '@/components/ui/textarea';
 import { Card, CardContent } from '@/components/ui/card';
 import { Bot, Sparkles, Send, Loader2, User, XCircle, CornerDownLeft, Mic, MicOff, Volume2, VolumeX } from 'lucide-react'; // Added MicOff, Volume2, VolumeX
 import { getProductRecommendations, type ProductForAI, type GetProductRecommendationsOutput } from '@/ai/flows/shopping-assistant';
-import { useAuth } from '@/hooks/useAuth';
-import type { AIConversation } from '@/lib/types';
+// Update useAuth import path
+import { useAuth } from '@/contexts/AuthContext';
+// AIConversation type might be an issue if it was removed from User type and not defined elsewhere.
+// For now, we are removing the logic that uses it.
+// import type { AIConversation } from '@/lib/types';
 import { useToast } from '@/hooks/use-toast';
 import useWebSpeech from '@/hooks/useWebSpeech'; // Import the hook
 import { ProductCanvas } from '@/components/products/ProductCanvas';
@@ -26,7 +29,8 @@ export default function AIAssistantPage() {
   const [query, setQuery] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [messages, setMessages] = useState<Message[]>([]);
-  const { user, updateUser } = useAuth();
+  // Get token and isAuthenticated for saving conversation
+  const { user, token, isAuthenticated } = useAuth();
   const { toast } = useToast();
 
   const {
@@ -63,6 +67,40 @@ export default function AIAssistantPage() {
   const [canvasProducts, setCanvasProducts] = useState<ProductForAI[]>([]);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const autoSubmitSttRef = useRef(false); // Ref to control auto-submission after STT
+
+  const saveConversation = async (queryText: string, responseText: string, imageUrlContext?: string) => {
+    if (!isAuthenticated || !token) {
+      // Not logged in, or token not available, so don't attempt to save.
+      return;
+    }
+
+    try {
+      const response = await fetch('/api/user/ai-conversations', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          type: 'shopping_assistant',
+          query: queryText,
+          response: responseText,
+          imageUrlContext: imageUrlContext || null,
+        }),
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({})); // Catch if error response isn't valid JSON
+        console.error('Failed to save shopping_assistant conversation:', response.status, errorData);
+        // Optional: Toast a silent error or log to an error tracking service
+      } else {
+        console.log('Shopping_assistant conversation saved successfully.');
+        // const savedConversation = await response.json(); // if needed
+      }
+    } catch (error) {
+      console.error('Error saving shopping_assistant conversation:', error);
+    }
+  };
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -116,22 +154,20 @@ export default function AIAssistantPage() {
         setChatAreaMode('sidebar');
       } else if (result.responseType === 'clarification') {
         if (chatAreaMode === 'full') {
-          setCanvasProducts([]);
+          setCanvasProducts([]); // Keep canvas empty or as is if AI is just talking
         }
       } else if (result.responseType === 'error') {
-        setCanvasProducts([]);
+        setCanvasProducts([]); // Clear products on error
       }
       
-      if (user) {
-        const newConversation: AIConversation = {
-          id: Date.now().toString(),
-          type: 'shopping_assistant',
-          query: userMessage.content as string,
-          response: result.responseText || "AI response",
-          timestamp: new Date().toISOString(),
-        };
-        updateUser({ ...user, aiConversations: [...(user.aiConversations || []), newConversation] });
+      // Save conversation after processing AI response and before showing specific toasts
+      if (userMessage.content && assistantMessage.content) {
+        // This page currently does not seem to send image context to getProductRecommendations,
+        // so imageUrlContext will be undefined here. If it did, it would be passed.
+        await saveConversation(userMessage.content, assistantMessage.content);
       }
+
+      // Removed updateUser logic (already done in previous step)
 
       if (result.responseType === 'no_results') {
          toast({ title: "No products found", description: result.responseText });

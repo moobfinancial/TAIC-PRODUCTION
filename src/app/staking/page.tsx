@@ -7,10 +7,12 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Button } from '@/components/ui/button';
 import { useEffect, useState, useMemo } from 'react';
-import { ShoppingBag, BotIcon, Sparkles, Gift, TrendingUp, Gem, PiggyBank, Landmark, MinusCircle, PlusCircle, Target, Clock, PartyPopper, ThumbsUp, Info, Calculator } from 'lucide-react';
-import { useAuth } from '@/hooks/useAuth';
+import { ShoppingBag, BotIcon, Sparkles, Gift, TrendingUp, Gem, PiggyBank, Landmark, MinusCircle, PlusCircle, Target, Clock, PartyPopper, ThumbsUp, Info, Calculator, ShieldAlert } from 'lucide-react'; // Added ShieldAlert
+// Update useAuth import path
+import { useAuth } from '@/contexts/AuthContext';
 import { useToast } from '@/hooks/use-toast';
 import { cn } from '@/lib/utils';
+import Link from 'next/link'; // Import Link for login prompt
 import { SIMULATED_APY } from '@/lib/constants';
 import { StakeToShopCalculator } from '@/components/staking/StakeToShopCalculator';
 
@@ -20,61 +22,160 @@ const Placeholder = ({ children }: { children: React.ReactNode }) => (
 
 export default function StakingPage() {
   const [currentYear, setCurrentYear] = useState(new Date().getFullYear());
-  const { user, updateUser } = useAuth();
+  // Use new auth context values. updateUser is removed.
+  const { user, isAuthenticated, isLoading: authIsLoading, token, refreshUser } = useAuth();
   const { toast } = useToast();
 
-  const [stakeAmount, setStakeAmount] = useState<number | string>('');
-  const [unstakeAmount, setUnstakeAmount] = useState<number | string>('');
+  // State for general stake/unstake inputs
+  const [stakeInputAmount, setStakeInputAmount] = useState<number | string>('');
+  // const [unstakeInputAmount, setUnstakeInputAmount] = useState<number | string>(''); // For general unstake by amount - not used with individual stakes
+
+  // State for staking summary
+  const [totalStaked, setTotalStaked] = useState<number>(0);
+  const [isLoadingSummary, setIsLoadingSummary] = useState(true);
+  const [summaryError, setSummaryError] = useState<string | null>(null);
+
+  // State for active stakes list
+  interface UserStake {
+    id: number;
+    userId: number;
+    amountStaked: number;
+    stakeDate: string; // ISO string
+    status: 'active' | 'unstaked';
+    createdAt: string;
+    updatedAt: string;
+  }
+  const [activeStakes, setActiveStakes] = useState<UserStake[]>([]);
+  const [isLoadingActiveStakes, setIsLoadingActiveStakes] = useState(true);
+  const [activeStakesError, setActiveStakesError] = useState<string | null>(null);
+  const [unstakingStakeId, setUnstakingStakeId] = useState<number | null>(null);
+
 
   useEffect(() => {
     setCurrentYear(new Date().getFullYear());
   }, []);
 
-  const handleStake = () => {
-    if (!user) {
-      toast({ title: "Login Required", description: "Please login to stake TAIC.", variant: "destructive" });
+  const fetchStakingSummary = useCallback(async () => {
+    if (!isAuthenticated || !token) {
+      setIsLoadingSummary(false);
+      setTotalStaked(0);
       return;
     }
-    const amount = parseFloat(String(stakeAmount));
+    setIsLoadingSummary(true);
+    setSummaryError(null);
+    try {
+      const response = await fetch('/api/user/staking/summary', {
+        headers: { 'Authorization': `Bearer ${token}` },
+      });
+      if (!response.ok) throw new Error('Failed to fetch staking summary');
+      const data = await response.json();
+      setTotalStaked(data.totalStaked || 0);
+    } catch (err: any) {
+      setSummaryError(err.message);
+      toast({ title: "Error fetching staking summary", description: err.message, variant: "destructive" });
+    } finally {
+      setIsLoadingSummary(false);
+    }
+  }, [isAuthenticated, token, toast]);
+
+  const fetchActiveStakes = useCallback(async () => {
+    if (!isAuthenticated || !token) {
+      setIsLoadingActiveStakes(false);
+      setActiveStakes([]);
+      return;
+    }
+    setIsLoadingActiveStakes(true);
+    setActiveStakesError(null);
+    try {
+      const response = await fetch('/api/user/staking/stakes', { // New API endpoint
+        headers: { 'Authorization': `Bearer ${token}` },
+      });
+      if (!response.ok) throw new Error('Failed to fetch active stakes');
+      const data: UserStake[] = await response.json();
+      setActiveStakes(data || []);
+    } catch (err: any) {
+      setActiveStakesError(err.message);
+      toast({ title: "Error fetching active stakes", description: err.message, variant: "destructive" });
+    } finally {
+      setIsLoadingActiveStakes(false);
+    }
+  }, [isAuthenticated, token, toast]);
+
+  useEffect(() => {
+    if (!authIsLoading) {
+      fetchStakingSummary();
+      fetchActiveStakes();
+    }
+  }, [authIsLoading, isAuthenticated, fetchStakingSummary, fetchActiveStakes]);
+
+
+  const handleStake = async () => {
+    if (!isAuthenticated || !user || !token) {
+      toast({ title: "Login Required", description: "Please connect your wallet to stake TAIC.", variant: "destructive" });
+      return;
+    }
+    const amount = parseFloat(String(stakeInputAmount));
     if (isNaN(amount) || amount <= 0) {
       toast({ title: "Invalid Amount", description: "Please enter a positive amount to stake.", variant: "destructive" });
       return;
     }
     if (amount > (user.taicBalance || 0)) {
-      toast({ title: "Insufficient Balance", description: `You only have ${user.taicBalance || 0} TAIC available.`, variant: "destructive" });
+      toast({ title: "Insufficient Balance", description: `You only have ${(user.taicBalance || 0).toLocaleString()} TAIC available.`, variant: "destructive" });
       return;
     }
 
-    updateUser({
-      ...user,
-      taicBalance: (user.taicBalance || 0) - amount,
-      stakedTaicBalance: (user.stakedTaicBalance || 0) + amount,
-    });
-    toast({ title: "Stake Successful!", description: `${amount} TAIC staked.` });
-    setStakeAmount('');
+    setIsLoading(true); // Use general isLoading or a specific one like isStakingGeneral
+    try {
+      const response = await fetch('/api/user/staking/stake', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`,
+        },
+        body: JSON.stringify({ amount }),
+      });
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.error || 'Staking failed');
+
+      toast({ title: "Stake Successful!", description: `New Balance: ${result.newBalance.toLocaleString()} TAIC, Total Staked: ${result.totalStaked.toLocaleString()} TAIC` });
+      await refreshUser();
+      fetchStakingSummary(); // Re-fetch summary
+      fetchActiveStakes();  // Re-fetch active stakes list
+      setStakeInputAmount('');
+    } catch (err: any) {
+      toast({ title: "Staking Failed", description: err.message, variant: "destructive" });
+    } finally {
+      setIsLoading(false);
+    }
   };
 
-  const handleUnstake = () => {
-    if (!user) {
-      toast({ title: "Login Required", description: "Please login to unstake TAIC.", variant: "destructive" });
+  const handleUnstakeSingle = async (stakeId: number) => {
+    if (!isAuthenticated || !user || !token) {
+      toast({ title: "Login Required", description: "Please connect your wallet to unstake.", variant: "destructive" });
       return;
     }
-    const amount = parseFloat(String(unstakeAmount));
-    if (isNaN(amount) || amount <= 0) {
-      toast({ title: "Invalid Amount", description: "Please enter a positive amount to unstake.", variant: "destructive" });
-      return;
+    setUnstakingStakeId(stakeId);
+    try {
+      const response = await fetch('/api/user/staking/unstake', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`,
+        },
+        body: JSON.stringify({ stakeId }),
+      });
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.error || 'Unstaking failed');
+
+      toast({ title: "Unstake Successful!", description: `Unstaked ${result.unstakedAmount.toLocaleString()} TAIC. New Balance: ${result.newBalance.toLocaleString()}, Total Staked: ${result.totalStaked.toLocaleString()} TAIC` });
+      await refreshUser();
+      fetchStakingSummary();
+      fetchActiveStakes();
+    } catch (err: any) {
+      toast({ title: "Unstaking Failed", description: err.message, variant: "destructive" });
+    } finally {
+      setUnstakingStakeId(null);
     }
-    if (amount > (user.stakedTaicBalance || 0)) {
-      toast({ title: "Insufficient Staked Balance", description: `You only have ${user.stakedTaicBalance || 0} TAIC staked.`, variant: "destructive" });
-      return;
-    }
-    updateUser({
-      ...user,
-      taicBalance: (user.taicBalance || 0) + amount,
-      stakedTaicBalance: (user.stakedTaicBalance || 0) - amount,
-    });
-    toast({ title: "Unstake Successful!", description: `${amount} TAIC unstaked.` });
-    setUnstakeAmount('');
   };
 
   const benefits = [
@@ -227,14 +328,17 @@ export default function StakingPage() {
                 <div>
                   <Label className="text-muted-foreground">Available TAIC Balance</Label>
                   <p className="font-semibold text-primary flex items-center gap-1">
-                    <Gem className="h-5 w-5" /> {user && typeof user.taicBalance === 'number' ? user.taicBalance.toLocaleString() : (user ? '0' : 'N/A')} TAIC
+                    <Gem className="h-5 w-5" />
+                    {isAuthenticated && user ? `${(user.taicBalance || 0).toLocaleString()} TAIC` : 'N/A'}
                   </p>
                 </div>
                 <div>
                   <Label className="text-muted-foreground">Currently Staked TAIC (General)</Label>
                   <p className="font-semibold text-green-600 flex items-center gap-1">
-                    <Landmark className="h-5 w-5" /> {user && typeof user.stakedTaicBalance === 'number' ? user.stakedTaicBalance.toLocaleString() : (user ? '0' : 'N/A')} TAIC
+                    <Landmark className="h-5 w-5" />
+                    {isLoadingSummary ? <Loader2 className="h-4 w-4 animate-spin" /> : `${totalStaked.toLocaleString()} TAIC`}
                   </p>
+                  {summaryError && <p className="text-xs text-destructive">{summaryError}</p>}
                 </div>
                 <div>
                   <Label className="text-muted-foreground">Estimated Current Rate (APY)</Label>
@@ -255,49 +359,93 @@ export default function StakingPage() {
                   <Label htmlFor="stakeAmount" className="text-base">Amount to Stake</Label>
                   <div className="flex gap-2">
                     <Input 
-                      id="stakeAmount" 
+                      id="stakeAmount" // Renamed from stakeAmount to stakeInputAmount for clarity
                       type="number" 
                       placeholder="e.g., 100" 
-                      value={stakeAmount} 
-                      onChange={(e) => setStakeAmount(e.target.value)}
+                      value={stakeInputAmount}
+                      onChange={(e) => setStakeInputAmount(e.target.value)}
                       className="text-base flex-grow"
-                      disabled={!user}
+                      disabled={!isAuthenticated || authIsLoading || isLoading}
                     />
-                    <Button onClick={handleStake} disabled={!user || !stakeAmount} className="font-semibold">
-                      <PlusCircle className="mr-2 h-5 w-5"/>Stake
+                    <Button onClick={handleStake} disabled={!isAuthenticated || authIsLoading || isLoading || !stakeInputAmount} className="font-semibold">
+                      {isLoading && !authIsLoading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <PlusCircle className="mr-2 h-5 w-5"/>}
+                      Stake
                     </Button>
                   </div>
                 </div>
-                <div className="space-y-2">
-                  <Label htmlFor="unstakeAmount" className="text-base">Amount to Unstake</Label>
-                  <div className="flex gap-2">
-                    <Input 
-                      id="unstakeAmount" 
-                      type="number" 
-                      placeholder="e.g., 50" 
-                      value={unstakeAmount} 
-                      onChange={(e) => setUnstakeAmount(e.target.value)}
-                      className="text-base flex-grow"
-                      disabled={!user}
-                    />
-                    <Button onClick={handleUnstake} disabled={!user || !unstakeAmount} variant="outline" className="font-semibold">
-                      <MinusCircle className="mr-2 h-5 w-5"/>Unstake
-                    </Button>
-                  </div>
-                </div>
-                 { !user && <p className="text-sm text-muted-foreground text-center">Please <a href="/login" className="underline hover:text-primary">login</a> to manage your stake.</p>}
+                {/* General Unstake by amount is removed in favor of unstaking specific stakes from the list below */}
+                {/* If general unstake by amount is still desired, its handleUnstake would need to pick a stake or use a different API */}
+
+                 { (!isAuthenticated && !authIsLoading) &&
+                   <div className="text-center p-4 border-t mt-4">
+                     <ShieldAlert className="mx-auto h-10 w-10 text-amber-500 mb-2" />
+                     <p className="text-sm text-muted-foreground">
+                       Please <Link href="/?action=connectWallet" className="underline hover:text-primary font-medium">connect your wallet</Link> to manage your stake.
+                     </p>
+                   </div>
+                 }
+                 { authIsLoading && <p className="text-sm text-muted-foreground text-center">Loading user data...</p>}
               </CardContent>
             </Card>
           </section>
 
           <section id="stake-to-shop-calculator-section" className="py-12">
             <h2 className="text-3xl md:text-4xl font-bold text-gray-800 mb-10 text-center">Generic Goal Time Estimator</h2>
-            <StakeToShopCalculator context="stakingPage" />
+            <StakeToShopCalculator /> {/* Removed context prop as it's now fetched */}
             <p className="text-center text-sm text-muted-foreground mt-4">
                 <Info className="inline h-4 w-4 mr-1" />
-                Use this calculator to estimate the time to achieve any financial goal based on a principal amount and the simulated APY.
+                Use this calculator to estimate the time to achieve any financial goal based on your total staked TAIC and the simulated APY.
             </p>
           </section>
+
+          {/* Active Stakes List Section */}
+          {isAuthenticated && (
+            <section id="active-stakes-list" className="py-12">
+              <h2 className="text-3xl md:text-4xl font-bold text-gray-800 mb-6 text-center">Your Active Stakes</h2>
+              {isLoadingActiveStakes && <div className="flex justify-center"><Loader2 className="h-8 w-8 animate-spin text-primary" /></div>}
+              {activeStakesError && <p className="text-center text-destructive">{activeStakesError}</p>}
+              {!isLoadingActiveStakes && !activeStakesError && activeStakes.length === 0 && (
+                <p className="text-center text-muted-foreground">You have no active stakes.</p>
+              )}
+              {!isLoadingActiveStakes && !activeStakesError && activeStakes.length > 0 && (
+                <Card className="shadow-xl">
+                  <CardContent className="p-0">
+                    <div className="overflow-x-auto">
+                      <table className="min-w-full divide-y divide-gray-200">
+                        <thead className="bg-gray-50">
+                          <tr>
+                            <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Stake ID</th>
+                            <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Amount Staked</th>
+                            <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Stake Date</th>
+                            <th scope="col" className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Action</th>
+                          </tr>
+                        </thead>
+                        <tbody className="bg-white divide-y divide-gray-200">
+                          {activeStakes.map(stake => (
+                            <tr key={stake.id}>
+                              <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">{stake.id}</td>
+                              <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{stake.amountStaked.toLocaleString()} TAIC</td>
+                              <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{new Date(stake.stakeDate).toLocaleDateString()}</td>
+                              <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
+                                <Button
+                                  variant="link"
+                                  className="text-red-600 hover:text-red-800 p-0 h-auto"
+                                  onClick={() => handleUnstakeSingle(stake.id)}
+                                  disabled={unstakingStakeId === stake.id}
+                                >
+                                  {unstakingStakeId === stake.id ? <Loader2 className="h-4 w-4 animate-spin"/> : "Unstake"}
+                                </Button>
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </CardContent>
+                </Card>
+              )}
+            </section>
+          )}
 
           <section id="reward-sourcing" className="py-12 bg-gray-50 rounded-xl">
             <h2 className="text-4xl font-bold text-gray-800 mb-4 text-center">Reward Sourcing & APY Philosophy</h2>

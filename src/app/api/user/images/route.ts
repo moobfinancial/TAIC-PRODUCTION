@@ -1,85 +1,73 @@
-import { NextResponse } from 'next/server';
-import { adminStorage } from '@/lib/firebaseAdmin';
-import { headers } from 'next/headers';
+import { NextRequest, NextResponse } from 'next/server';
+import { Pool } from 'pg';
+import jwt from 'jsonwebtoken';
 
-// Helper to get user ID from headers
-function getUserIdFromHeaders(headers: Headers): string | null {
-  // In a real implementation, you would validate the session token
-  // For now, we'll just get the user ID from the headers
-  const userId = headers.get('x-user-id');
-  return userId || null;
+const pool = new Pool({
+  connectionString: process.env.DATABASE_URL ||
+    `postgresql://${process.env.PGUSER}:${process.env.PGPASSWORD}@${process.env.PGHOST}:${process.env.PGPORT}/${process.env.PGDATABASE}`,
+});
+
+const JWT_SECRET = process.env.JWT_SECRET || 'your-fallback-jwt-secret';
+
+interface UserPayload {
+  userId: number;
 }
 
-export async function GET(request: Request) {
+async function verifyAuth(request: NextRequest): Promise<UserPayload | null> {
+  const authHeader = request.headers.get('Authorization');
+  if (!authHeader || !authHeader.startsWith('Bearer ')) return null;
+  const token = authHeader.split(' ')[1];
+  if (!token) return null;
   try {
-    // Get user ID from headers
-    const headersList = headers();
-    const userId = getUserIdFromHeaders(headersList);
-    
-    if (!userId) {
-      return NextResponse.json(
-        { error: 'Unauthorized - No user ID provided' },
-        { status: 401 }
-      );
-    }
-    const bucket = adminStorage().bucket();
-    
-    // List all files in the user's virtual try-on directory
-    const [files] = await bucket.getFiles({
-      prefix: `user_uploads/${userId}/virtual_try_on/`
-    });
-
-    // Process each file to get its metadata and public URL
-    const images = await Promise.all(
-      files.map(async (file) => {
-        try {
-          // Get file metadata
-          const [metadata] = await file.getMetadata();
-          
-                // For now, we'll use the public URL if the file is public
-          // In production, you should use signed URLs or ensure proper access control
-          const publicUrl = `https://storage.googleapis.com/${bucket.name}/${file.name}`;
-          
-          // Extract product info from metadata
-          const productInfo = metadata.metadata?.customMetadata || {};
-          
-          return {
-            url: publicUrl,
-            name: file.name.split('/').pop(),
-            createdAt: metadata.timeCreated,
-            metadata: {
-              ...metadata.metadata,
-              productInfo: {
-                productId: productInfo.productId || 'unknown',
-                productName: productInfo.productName || 'Unknown Product',
-                productImage: productInfo.productImage || ''
-              }
-            }
-          };
-        } catch (error) {
-          console.error('Error processing file:', file.name, error);
-          return null;
-        }
-      })
-    );
-
-    // Filter out any failed file processing
-    const validImages = images.filter(Boolean);
-
-    return NextResponse.json({ 
-      success: true,
-      images: validImages 
-    });
-    
+    return jwt.verify(token, JWT_SECRET) as UserPayload;
   } catch (error) {
-    console.error('Error in GET /api/user/images:', error);
-    return NextResponse.json(
-      { 
-        success: false,
-        error: 'Failed to fetch images',
-        details: error instanceof Error ? error.message : 'Unknown error'
-      },
-      { status: 500 }
-    );
+    console.error('JWT verification error:', error);
+    return null;
+  }
+}
+
+export async function GET(request: NextRequest) {
+  const userPayload = await verifyAuth(request);
+  if (!userPayload || !userPayload.userId) {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  }
+  const userId = userPayload.userId;
+
+  const { searchParams } = new URL(request.url);
+  const imageType = searchParams.get('imageType') || null; // Get imageType from query params, default to null if not provided
+
+  let client;
+  try {
+    client = await pool.connect();
+
+    const imagesQuery = `
+      SELECT
+        id,
+        image_url AS "imageUrl",
+        image_type AS "imageType",
+        description,
+        created_at AS "createdAt"
+      FROM user_gallery_images
+      WHERE user_id = $1
+        AND ($2::VARCHAR IS NULL OR image_type = $2)
+      ORDER BY created_at DESC;
+    `;
+    // Parameters: userId, imageType (or null if no filter)
+    const result = await client.query(imagesQuery, [userId, imageType]);
+    
+    const images = result.rows.map(img => ({
+      ...img,
+      createdAt: new Date(img.createdAt).toISOString(), // Ensure ISO format
+    }));
+
+    return NextResponse.json(images); // Return array directly as per common practice
+
+  } catch (error) {
+    console.error('Error fetching user gallery images:', error);
+    return NextResponse.json({ error: 'Failed to fetch user gallery images' }, { status: 500 });
+  } finally {
+    if (client) {
+      client.release();
+    }
   }
 }
