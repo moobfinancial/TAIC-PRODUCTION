@@ -29,8 +29,8 @@ export default function AIAssistantPage() {
   const [query, setQuery] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [messages, setMessages] = useState<Message[]>([]);
-  // updateUser is removed. user object might be used if auth-gated features are added later.
-  const { user } = useAuth();
+  // Get token and isAuthenticated for saving conversation
+  const { user, token, isAuthenticated } = useAuth();
   const { toast } = useToast();
 
   const {
@@ -67,6 +67,40 @@ export default function AIAssistantPage() {
   const [canvasProducts, setCanvasProducts] = useState<ProductForAI[]>([]);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const autoSubmitSttRef = useRef(false); // Ref to control auto-submission after STT
+
+  const saveConversation = async (queryText: string, responseText: string, imageUrlContext?: string) => {
+    if (!isAuthenticated || !token) {
+      // Not logged in, or token not available, so don't attempt to save.
+      return;
+    }
+
+    try {
+      const response = await fetch('/api/user/ai-conversations', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          type: 'shopping_assistant',
+          query: queryText,
+          response: responseText,
+          imageUrlContext: imageUrlContext || null,
+        }),
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({})); // Catch if error response isn't valid JSON
+        console.error('Failed to save shopping_assistant conversation:', response.status, errorData);
+        // Optional: Toast a silent error or log to an error tracking service
+      } else {
+        console.log('Shopping_assistant conversation saved successfully.');
+        // const savedConversation = await response.json(); // if needed
+      }
+    } catch (error) {
+      console.error('Error saving shopping_assistant conversation:', error);
+    }
+  };
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -126,19 +160,14 @@ export default function AIAssistantPage() {
         setCanvasProducts([]); // Clear products on error
       }
       
-      // Removed updateUser logic:
-      // AI conversations are not persisted to user object in frontend anymore.
-      // This would require backend API calls and different state management if implemented.
-      // if (user) {
-      //   const newConversation: AIConversation = {
-      //     id: Date.now().toString(),
-      //     type: 'shopping_assistant',
-      //     query: userMessage.content as string,
-      //     response: result.responseText || "AI response",
-      //     timestamp: new Date().toISOString(),
-      //   };
-      //   updateUser({ ...user, aiConversations: [...(user.aiConversations || []), newConversation] });
-      // }
+      // Save conversation after processing AI response and before showing specific toasts
+      if (userMessage.content && assistantMessage.content) {
+        // This page currently does not seem to send image context to getProductRecommendations,
+        // so imageUrlContext will be undefined here. If it did, it would be passed.
+        await saveConversation(userMessage.content, assistantMessage.content);
+      }
+
+      // Removed updateUser logic (already done in previous step)
 
       if (result.responseType === 'no_results') {
          toast({ title: "No products found", description: result.responseText });

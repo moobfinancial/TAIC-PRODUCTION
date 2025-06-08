@@ -125,3 +125,11 @@ export interface WishlistContextType {
   getWishlistItemCount: () => number;
   clearWishlist: () => void;
 }
+
+export interface UserGalleryImage {
+  id: number;
+  imageUrl: string;
+  imageType?: string | null;
+  description?: string | null;
+  createdAt: string; // ISO string date
+}

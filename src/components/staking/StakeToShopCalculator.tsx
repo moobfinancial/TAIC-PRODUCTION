@@ -19,9 +19,10 @@ interface StakedData {
 }
 
 export function StakeToShopCalculator() {
-  const { user, isAuthenticated, isLoading: authLoading, token } = useAuth(); // Updated import
+  const { user, isAuthenticated, isLoading: authLoading, token, refreshUser } = useAuth(); // Added refreshUser
   const { toast } = useToast();
 
+  const [isSubmittingStake, setIsSubmittingStake] = useState(false); // Specific loading for stake action
   const [isLoadingStakeData, setIsLoadingStakeData] = useState(true);
   const [stakeData, setStakeData] = useState<StakedData | null>(null);
   const [errorStakeData, setErrorStakeData] = useState<string | null>(null);
@@ -39,19 +40,35 @@ export function StakeToShopCalculator() {
       return;
     }
     if (isAuthenticated && token) {
-      // TODO: Replace with actual API call to fetch staking data
-      console.log('StakeToShopCalculator: Would fetch staking data with token:', token);
-      // Example: fetchUserStakingData(token).then(setStakeData).catch(setErrorStakeData).finally(() => setIsLoadingStakeData(false));
-      setTimeout(() => { // Simulate API call
-        setStakeData({ stakedTaicBalance: 0 }); // Simulate empty response for now
-        setStakeAmount(0); // Set current stake amount from fetched data
+      setIsLoadingStakeData(true);
+      setErrorStakeData(null);
+      fetch(`/api/user/staking/summary`, {
+        headers: { 'Authorization': `Bearer ${token}` },
+      })
+      .then(async (response) => {
+        if (!response.ok) {
+          const errData = await response.json().catch(() => ({}));
+          throw new Error(errData.error || `Failed to fetch staking summary: ${response.statusText}`);
+        }
+        return response.json();
+      })
+      .then(data => {
+        setStakeData({ stakedTaicBalance: data.totalStaked || 0 });
+        setStakeAmount(data.totalStaked || 0);
+      })
+      .catch(err => {
+        setErrorStakeData(err.message || 'Could not load staking data.');
+        setStakeData(null); // Clear data on error
+        setStakeAmount(0);
+      })
+      .finally(() => {
         setIsLoadingStakeData(false);
-      }, 1000);
+      });
     } else if (!isAuthenticated && !authLoading) {
       setStakeData(null);
       setStakeAmount(0);
       setIsLoadingStakeData(false);
-      // setErrorStakeData("Please log in to manage staking.");
+      setErrorStakeData(null); // Not an error if not logged in, clear previous errors
     }
   }, [isAuthenticated, token, authLoading]);
 
@@ -77,17 +94,43 @@ export function StakeToShopCalculator() {
       toast({ title: "No Amount to Stake", description: "Please enter an amount to stake.", variant: "destructive" });
       return;
     }
-    // TODO: Implement actual API call to stake TAIC tokens
-    console.log(`Staking ${additionalStake} TAIC for user ${user?.id} with token ${token}`);
-    toast({ title: "Staking (Simulated)", description: `Simulating staking of ${additionalStake} TAIC. In a real app, this would call an API.`});
-    // Example: await stakeTokens(token, additionalStake);
-    // After successful API call, refresh stakeData and user's taicBalance
-    // For now, just a placeholder:
-    // setStakeAmount(prev => prev + additionalStake);
-    // updateUser({ ...user, taicBalance: availableTaicBalance - additionalStake }); // This needs to be an API call now
-    setAdditionalStake(0);
-    // Need to re-fetch user balance and stake data from APIs.
-    alert("Staking functionality is simulated. API call would be made here.");
+    if (additionalStake > availableTaicBalance) {
+      toast({ title: "Insufficient Balance", description: `You only have ${availableTaicBalance.toLocaleString()} TAIC available to stake.`, variant: "destructive" });
+      return;
+    }
+
+    setIsSubmittingStake(true);
+    try {
+      const response = await fetch('/api/user/staking/stake', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`,
+        },
+        body: JSON.stringify({ amount: additionalStake }),
+      });
+
+      const result = await response.json();
+
+      if (!response.ok) {
+        throw new Error(result.error || `Staking failed: ${response.statusText}`);
+      }
+
+      toast({
+        title: "Stake Successful!",
+        description: `New Balance: ${result.newBalance.toLocaleString()} TAIC, Total Staked: ${result.totalStaked.toLocaleString()} TAIC`
+      });
+
+      await refreshUser(); // Refresh user context (taicBalance)
+      setStakeAmount(result.totalStaked); // Update displayed total stake
+      if(stakeData) setStakeData({ ...stakeData, stakedTaicBalance: result.totalStaked }); // Update stakeData if used elsewhere
+      setAdditionalStake(0);
+
+    } catch (error: any) {
+      toast({ title: "Staking Failed", description: error.message, variant: "destructive" });
+    } finally {
+      setIsSubmittingStake(false);
+    }
   };
 
   if (authLoading || isLoadingStakeData) {
@@ -221,10 +264,11 @@ export function StakeToShopCalculator() {
 
             <Button
               onClick={handleStake}
-              disabled={!isAuthenticated || additionalStake <= 0 || additionalStake > availableTaicBalance || authLoading || isLoadingStakeData}
+              disabled={!isAuthenticated || additionalStake <= 0 || additionalStake > availableTaicBalance || authLoading || isLoadingStakeData || isSubmittingStake}
               className="w-full py-3 text-base"
             >
-              Stake {additionalStake > 0 ? additionalStake.toLocaleString() : ''} TAIC (Simulated)
+              {isSubmittingStake ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+              Stake {additionalStake > 0 ? additionalStake.toLocaleString() : ''} TAIC
             </Button>
 
             <div className="text-xs text-muted-foreground p-3 bg-background rounded-md border flex items-start">

@@ -47,8 +47,8 @@ type CheckoutStep =
 
 export default function CartPage() {
   const { cartItems, removeFromCart, updateQuantity, getCartTotal, clearCart, getCartItemCount } = useCart();
-  // Use new auth context values. updateUser is removed. userId is now user?.id
-  const { user, token, isAuthenticated, isLoading: authIsLoading } = useAuth();
+  // Use new auth context values. updateUser is removed. userId is now user?.id. Add refreshUser
+  const { user, token, isAuthenticated, isLoading: authIsLoading, refreshUser } = useAuth();
   const { toast } = useToast();
   const router = useRouter();
   
@@ -69,37 +69,61 @@ export default function CartPage() {
   };
 
   const handleTaicPayment = async () => {
-    if (!user) {
+    if (!isAuthenticated || !user || !token) { // Ensure token is also available
       toast({ title: "Authentication Error", description: "You must be logged in to pay with TAIC.", variant: "destructive" });
-      setCheckoutStep('guestCheckoutOptions'); // Or initial
+      setCheckoutStep('guestCheckoutOptions');
       return;
     }
-    const totalAmount = getCartTotal();
-    if (user.taicBalance < totalAmount) {
-        toast({ title: "Insufficient Balance", description: `You need ${totalAmount - user.taicBalance} more TAIC.`, variant: "destructive" });
+
+    const currentTotalAmount = getCartTotal();
+    if (user.taicBalance < currentTotalAmount) {
+        toast({ title: "Insufficient Balance", description: `You need ${currentTotalAmount - user.taicBalance} more TAIC.`, variant: "destructive" });
         setCheckoutStep('paymentSelection');
         return;
     }
 
-    // TODO: Replace with backend API call for TAIC payment
-    // This API should handle balance deduction and order creation.
-    // For now, we'll simulate success and move to address form.
-    console.log('Simulating TAIC payment for user:', user.id, 'amount:', totalAmount);
-    setIsLoadingCrypto(true); // Use a general loading state for this
+    setIsLoadingCrypto(true); // Use this as a general payment processing indicator for now
+    try {
+      const orderPayload = {
+        items: cartItems.map(item => ({
+          productId: item.id,
+          name: item.name,
+          price: item.price, // This should be price_at_purchase from cart item
+          quantity: item.quantity,
+          imageUrl: item.imageUrl,
+        })),
+        totalAmount: currentTotalAmount,
+      };
 
-    // Simulate API call
-    await new Promise(resolve => setTimeout(resolve, 1500));
+      const response = await fetch('/api/user/orders', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`,
+        },
+        body: JSON.stringify(orderPayload),
+      });
 
-    // Assuming payment is successful:
-    // The user's TAIC balance would be updated on the backend.
-    // The AuthContext needs to be refreshed to show the new balance.
-    // This could be done by calling a hypothetical `refreshUser()` from AuthContext,
-    // or the payment API could return the updated user object.
-    // For this subtask, we'll just proceed. The balance will be stale until next login/refresh.
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error || `Order creation failed: ${response.statusText}`);
+      }
 
-    toast({ title: "TAIC Payment (Simulated)", description: "Your payment with TAIC was successful." });
-    setIsLoadingCrypto(false);
-    setCheckoutStep('addressForm'); // Proceed to address form
+      // const newOrderData = await response.json(); // Contains created order details
+
+      toast({ title: "TAIC Payment Successful!", description: "Your order has been placed." });
+      clearCart();
+      await refreshUser(); // Refresh user data to update taicBalance
+      setCheckoutStep('addressForm'); // Or 'orderComplete' if no address needed for TAIC goods
+      // setCurrentOrderId(newOrderData.id); // If needed for address form association
+
+    } catch (error: any) {
+      console.error('TAIC Payment/Order Creation Error:', error);
+      toast({ title: "TAIC Payment Failed", description: error.message || "An unexpected error occurred.", variant: "destructive" });
+      setCheckoutStep('paymentSelection'); // Go back to payment options
+    } finally {
+      setIsLoadingCrypto(false);
+    }
   };
 
   const handleStripePaymentSuccess = (paymentIntentId: string) => {

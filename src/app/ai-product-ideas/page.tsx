@@ -36,8 +36,8 @@ export default function AIProductIdeasPage() {
   const [description, setDescription] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [messages, setMessages] = useState<Message[]>([]);
-  // updateUser is removed. user and token will be used for API calls if needed.
-  const { user, token } = useAuth();
+  // Destructure isAuthenticated as well
+  const { user, token, isAuthenticated } = useAuth();
   const { toast } = useToast();
   const [generatorMode, setGeneratorMode] = useState<GeneratorMode>('product');
 
@@ -52,6 +52,35 @@ export default function AIProductIdeasPage() {
   const [chatAreaMode, setChatAreaMode] = useState<'full' | 'sidebar'>('full');
   const [canvasProducts, setCanvasProducts] = useState<ProductForAI[]>([]);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+
+  const saveProductIdeaConversation = async (queryText: string, responseText: string, imageUrlCtx?: string | null) => {
+    if (!isAuthenticated || !token) {
+      return; // Don't save if not authenticated
+    }
+    try {
+      const response = await fetch('/api/user/ai-conversations', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          type: 'product_idea_generator',
+          query: queryText,
+          response: responseText,
+          imageUrlContext: imageUrlCtx || null,
+        }),
+      });
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        console.error('Failed to save product_idea_generator conversation:', response.status, errorData);
+      } else {
+        console.log('Product_idea_generator conversation saved successfully.');
+      }
+    } catch (error) {
+      console.error('Error saving product_idea_generator conversation:', error);
+    }
+  };
 
   const {
     isListening,
@@ -125,6 +154,8 @@ export default function AIProductIdeasPage() {
     setImageUploadError(null);
     const formData = new FormData();
     formData.append('file', selectedImageFile);
+    formData.append('imageType', 'ai_product_idea_context'); // Add imageType
+    formData.append('description', 'Context image for AI product idea generation'); // Optional description
     // if (user?.id) formData.append('userId', user.id.toString()); // No longer sending userId directly
 
     try {
@@ -218,20 +249,12 @@ export default function AIProductIdeasPage() {
       setChatAreaMode('full');
       setCanvasProducts([]);
 
-      // Removed updateUser logic for saving conversations.
-      // This would require a backend API.
-      // if (user) {
-      //   const newConversation: AIConversation = {
-      //     id: Date.now().toString(),
-      //     type: 'product_idea_generator',
-      //     query: currentDescription,
-      //     imageUrlContext: uploadedImageUrlForContext || undefined,
-      //     response: result.suggestions,
-      //     timestamp: new Date().toISOString(),
-      //   };
-      //   const updatedUserConversations = user.aiConversations ? [...user.aiConversations] : [];
-      //   updateUser({ ...user, aiConversations: [...updatedUserConversations, newConversation] });
-      // }
+      // Save the conversation
+      if (currentDescription && result.suggestions) {
+        await saveProductIdeaConversation(currentDescription, result.suggestions, uploadedImageUrlForContext);
+      }
+
+      // Removed updateUser logic (already done in previous step)
 
     } catch (error) {
       console.error('Error generating product ideas:', error);

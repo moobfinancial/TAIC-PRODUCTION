@@ -13,8 +13,7 @@ interface AuthContextValue {
   isLoading: boolean;
   loginWithWallet: (walletAddress: string) => Promise<void>;
   logout: () => void;
-  // If a function to refresh user data is needed, it could be added here
-  // fetchUser: () => Promise<void>;
+  refreshUser: () => Promise<void>; // Added refreshUser
 }
 
 // Create the context with an undefined initial value
@@ -35,42 +34,46 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   const [isAuthenticated, setIsAuthenticated] = useState<boolean>(false);
   const [isLoading, setIsLoading] = useState<boolean>(true); // Start with loading true for initial auth check
 
-  useEffect(() => {
-    const loadUserFromStorage = async () => {
-      setIsLoading(true);
-      const storedToken = localStorage.getItem('taicToken');
-      if (storedToken) {
-        try {
-          const response = await fetch('/api/auth/me', {
-            headers: {
-              'Authorization': `Bearer ${storedToken}`,
-            },
-          });
-          if (response.ok) {
-            const data = await response.json();
-            setUser(data.user);
-            setToken(storedToken);
-            setIsAuthenticated(true);
-          } else {
-            // Token is invalid or expired
-            localStorage.removeItem('taicToken');
-            setUser(null);
-            setToken(null);
-            setIsAuthenticated(false);
-            console.warn('Session token is invalid or expired. User logged out.');
-          }
-        } catch (error) {
-          console.error('Error fetching user with stored token:', error);
-          localStorage.removeItem('taicToken'); // Clear bad token
+  const refreshUser = async () => {
+    setIsLoading(true);
+    const storedToken = localStorage.getItem('taicToken');
+    if (storedToken) {
+      try {
+        const response = await fetch('/api/auth/me', {
+          headers: {
+            'Authorization': `Bearer ${storedToken}`,
+          },
+        });
+        if (response.ok) {
+          const data = await response.json();
+          setUser(data.user);
+          setToken(storedToken);
+          setIsAuthenticated(true);
+        } else {
+          localStorage.removeItem('taicToken');
           setUser(null);
           setToken(null);
           setIsAuthenticated(false);
+          console.warn('Session token is invalid or expired during refresh. User logged out.');
         }
+      } catch (error) {
+        console.error('Error refreshing user with stored token:', error);
+        localStorage.removeItem('taicToken');
+        setUser(null);
+        setToken(null);
+        setIsAuthenticated(false);
       }
-      setIsLoading(false);
-    };
+    } else {
+      // No token found, ensure user is logged out state
+      setUser(null);
+      setToken(null);
+      setIsAuthenticated(false);
+    }
+    setIsLoading(false);
+  };
 
-    loadUserFromStorage();
+  useEffect(() => {
+    refreshUser(); // Call on initial mount
   }, []);
 
   const loginWithWallet = async (walletAddress: string) => {
@@ -163,6 +166,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         isLoading,
         loginWithWallet,
         logout,
+        refreshUser, // Expose refreshUser
         // error, // Expose error if UI needs to display it
       }}
     >

@@ -13,9 +13,8 @@ import { Label } from '@/components/ui/label';
 import { useToast } from '@/hooks/use-toast'; // Import useToast
 
 export function ProfileSection() {
-  // updateUser is no longer provided by AuthContext in the same way.
-  // Profile updates would typically involve an API call and then potentially a refresh of user data.
-  const { user } = useAuth();
+  // Get token and refreshUser from AuthContext
+  const { user, token, refreshUser } = useAuth();
   const { toast } = useToast();
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [imagePreview, setImagePreview] = useState<string | null>(user?.profileImageUrl || null); // Initialize with user's current image
@@ -82,11 +81,20 @@ export function ProfileSection() {
 
     const formData = new FormData();
     formData.append('file', selectedFile);
-    formData.append('userId', user.id); // Assuming user object has an 'id' field
+    formData.append('imageType', 'profile'); // Specify imageType
+    formData.append('description', `Profile picture for user ${user.id}`); // Optional description
+    // formData.append('userId', user.id); // No longer needed, userId comes from JWT
 
     try {
+      const headers: HeadersInit = {};
+      if (token) {
+        headers['Authorization'] = `Bearer ${token}`;
+      }
+      // Content-Type is not set for FormData, browser handles it.
+
       const response = await fetch('/api/upload-image', {
         method: 'POST',
+        headers: headers,
         body: formData,
       });
 
@@ -110,9 +118,13 @@ export function ProfileSection() {
       setImagePreview(result.imageUrl); // Show the new image from the URL (this is the persisted URL)
       setSelectedFile(null); // Clear selection
 
-      // Optionally, to refresh the user data in AuthContext immediately,
-      // AuthContext would need a function like `refreshUser()`
-      // For example: if (auth.refreshUser) auth.refreshUser();
+      // Refresh user data in AuthContext to get updated profileImageUrl if it's part of /api/auth/me response
+      if (refreshUser) {
+        await refreshUser();
+      }
+      // Also, if the user object in context doesn't directly hold profileImageUrl,
+      // but a separate user profile state does, that would need its own refresh mechanism.
+      // For now, this updates the local preview and attempts to refresh the core user auth state.
 
     } catch (error: any) {
       console.error("Upload failed:", error);

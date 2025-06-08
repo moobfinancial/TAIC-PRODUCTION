@@ -15,30 +15,37 @@ export function AIConversationHistory() {
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    if (authLoading) {
-      setIsLoadingConversations(true);
-      return;
-    }
-    if (isAuthenticated && token) {
-      // TODO: Replace with actual API call to fetch conversations
-      // For now, simulate or show placeholder
-      console.log('AIConversationHistory: Would fetch conversations with token:', token);
-      // Example: fetchUserConversations(token).then(setConversations).catch(setError).finally(() => setIsLoadingConversations(false));
-      setTimeout(() => { // Simulate API call
-        setConversations([]); // Simulate empty response for now
+    const fetchConversations = async () => {
+      if (authLoading) {
+        setIsLoadingConversations(true);
+        return;
+      }
+      if (isAuthenticated && token) {
+        setIsLoadingConversations(true);
+        setError(null);
+        try {
+          const response = await fetch('/api/user/ai-conversations', {
+            headers: { 'Authorization': `Bearer ${token}` },
+          });
+          if (!response.ok) {
+            const errData = await response.json().catch(() => ({ error: "Failed to parse error from server."}));
+            throw new Error(errData.error || `Failed to fetch conversations: ${response.statusText}`);
+          }
+          const data: AIConversation[] = await response.json();
+          setConversations(data || []); // API returns an array directly
+        } catch (err: any) {
+          setError(err.message || 'Could not load AI conversations.');
+          setConversations([]);
+        } finally {
+          setIsLoadingConversations(false);
+        }
+      } else if (!isAuthenticated && !authLoading) {
+        setConversations([]);
         setIsLoadingConversations(false);
-        // To test with mock data:
-        // setConversations([
-        //   { id: '1', type: 'shopping_assistant', query: 'Hello AI', response: 'Hello User!', timestamp: new Date().toISOString() },
-        //   { id: '2', type: 'product_idea_generator', query: 'Idea for new product?', response: 'A self-watering plant pot!', timestamp: new Date().toISOString() }
-        // ]);
-      }, 1000);
-    } else if (!isAuthenticated && !authLoading) {
-      setConversations([]);
-      setIsLoadingConversations(false);
-      // Optionally set an error or message if auth is required but not present
-      // setError("Please log in to view conversation history.");
-    }
+        setError(null); // Not an error, just not logged in
+      }
+    };
+    fetchConversations();
   }, [isAuthenticated, token, authLoading]);
 
   if (authLoading || isLoadingConversations) {

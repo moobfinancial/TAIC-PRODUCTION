@@ -16,30 +16,41 @@ export function OrderHistory() {
   const [isLoadingOrders, setIsLoadingOrders] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  useEffect(() => {
-    if (authLoading) {
+  const fetchOrdersCallback = useCallback(async () => {
+    if (isAuthenticated && token) { // user?.id is not strictly needed for this API if JWT holds user ID
       setIsLoadingOrders(true);
-      return;
-    }
-    if (isAuthenticated && token) {
-      // TODO: Replace with actual API call to fetch orders
-      // For now, simulate or show placeholder
-      console.log('OrderHistory: Would fetch orders with token:', token);
-      // Example: fetchUserOrders(token).then(setOrders).catch(setError).finally(() => setIsLoadingOrders(false));
-      setTimeout(() => { // Simulate API call
-        setOrders([]); // Simulate empty response for now
+      setError(null);
+      try {
+        const response = await fetch('/api/user/orders', {
+          headers: { 'Authorization': `Bearer ${token}` },
+        });
+        if (!response.ok) {
+          const errData = await response.json().catch(() => ({ error: "Failed to parse error response." })); // Catch if error response isn't valid JSON
+          throw new Error(errData.error || `Failed to fetch orders: ${response.statusText}`);
+        }
+        const data: Order[] = await response.json();
+        setOrders(data || []); // Ensure data is an array, even if API returns null for no orders
+      } catch (err: any) {
+        console.error("Error fetching orders:", err);
+        setError(err.message || 'Could not load order history.');
+        setOrders([]); // Clear orders on error
+      } finally {
         setIsLoadingOrders(false);
-        // To test with mock data:
-        // setOrders([
-        //   { id: 'ord1', items: [{ productId: '1', name: 'Product A', price: 100, quantity: 1, imageUrl: 'https://placehold.co/64x64.png' }], totalAmount: 100, date: new Date().toISOString() }
-        // ]);
-      }, 1000);
+      }
     } else if (!isAuthenticated && !authLoading) {
+      // Not authenticated and auth is not loading anymore
       setOrders([]);
       setIsLoadingOrders(false);
-      // setError("Please log in to view order history.");
+      setError(null); // Not an error, just not logged in
     }
-  }, [isAuthenticated, token, authLoading]);
+  }, [isAuthenticated, token, authLoading]); // Removed user?.id as JWT implies user context
+
+  useEffect(() => {
+    if (!authLoading) { // Only fetch when auth state is resolved
+      fetchOrdersCallback();
+    }
+  }, [fetchOrdersCallback, authLoading]);
+
 
   if (authLoading || isLoadingOrders) {
     return (
@@ -68,6 +79,9 @@ export function OrderHistory() {
         <CardContent className="text-center py-12">
           <AlertTriangle className="mx-auto h-16 w-16 text-destructive mb-4" />
           <p className="text-destructive text-lg">{error}</p>
+          <Button onClick={fetchOrdersCallback} variant="outline" className="mt-4">
+            <RefreshCw className="mr-2 h-4 w-4"/>Retry
+          </Button>
         </CardContent>
       </Card>
     );
@@ -134,15 +148,15 @@ export function OrderHistory() {
                     <div className="flex flex-col items-end">
                         <Badge variant="outline" className="mb-1">{order.items.length} item(s)</Badge>
                         <span className="font-semibold text-primary flex items-center">
-                            <Gem className="mr-1 h-4 w-4" /> {order.totalAmount.toLocaleString()} TAIC
+                            <Gem className="mr-1 h-4 w-4" /> {parseFloat(String(order.totalAmount)).toLocaleString()} {order.currency}
                         </span>
                     </div>
                   </div>
                 </AccordionTrigger>
                 <AccordionContent className="bg-muted/20 p-4 rounded-md">
                   <ul className="space-y-3">
-                    {order.items.map(item => (
-                      <li key={item.productId} className="flex items-center gap-4 p-2 rounded-md bg-background shadow-sm">
+                    {order.items.map((item: OrderItem, index: number) => ( // Ensure item has unique key if productId isn't unique across orders
+                      <li key={`${item.productId}-${index}`} className="flex items-center gap-4 p-2 rounded-md bg-background shadow-sm">
                         <Image 
                           src={item.imageUrl || 'https://placehold.co/64x64.png'} 
                           alt={item.name} 
@@ -156,7 +170,7 @@ export function OrderHistory() {
                           <p className="text-sm text-muted-foreground">Qty: {item.quantity}</p>
                         </div>
                         <p className="font-medium text-sm flex items-center">
-                            <Gem className="mr-1 h-3 w-3 text-primary/70" /> {(item.price * item.quantity).toLocaleString()} TAIC
+                            <Gem className="mr-1 h-3 w-3 text-primary/70" /> {parseFloat(String(item.price * item.quantity)).toLocaleString()} {order.currency}
                         </p>
                       </li>
                     ))}
