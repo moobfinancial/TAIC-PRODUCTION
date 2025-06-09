@@ -49,6 +49,7 @@ export default function ProductsPage() {
       }
       
       const data = await response.json();
+      console.log('Fetched data from /api/products/cj:', JSON.stringify(data, null, 2));
       
       // Update state with the fetched products and pagination info
       setProducts(data.products);

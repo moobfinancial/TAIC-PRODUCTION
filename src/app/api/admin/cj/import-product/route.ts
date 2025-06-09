@@ -144,16 +144,9 @@ export async function POST(request: NextRequest) {
       // Begin transaction
       await client.query('BEGIN');
 
-      // Get the maximum existing ID and increment it by 1
-      const maxIdResult = await client.query(`
-        SELECT COALESCE(MAX(platform_product_id), 0) + 1 as next_id FROM cj_products;
-      `);
-      const nextId = maxIdResult.rows[0].next_id;
-
-      // Insert into cj_products table with manually generated ID
+      // Insert into cj_products table - let PostgreSQL handle the platform_product_id auto-increment
       const insertProductQuery = `
         INSERT INTO cj_products (
-          platform_product_id,
           cj_product_id,
           cj_product_data_json,
           display_name,
@@ -165,7 +158,7 @@ export async function POST(request: NextRequest) {
           additional_image_urls_json,
           variants_json,
           is_active,
-          approval_status, // Added approval_status
+          approval_status, 
           cashback_percentage,
           original_name,
           original_description,
@@ -173,25 +166,30 @@ export async function POST(request: NextRequest) {
           updated_at
         ) VALUES (
           $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11,
-          $12, -- is_active (false)
-          $13, -- approval_status ('pending')
-          $14, -- cashback_percentage (0.00)
-          $15, -- original_name
-          $16, -- original_description
+          $12, 
+          $13, 
+          $14, 
+          $15, 
+          $16, 
           NOW(), NOW()
         )
         RETURNING platform_product_id, cj_product_id, platform_category_id, selling_price, display_name, is_active, approval_status;`;
 
       // Prepare product data for insertion
-      const productImages = Array.isArray(cjProduct.productImage) 
-        ? cjProduct.productImage 
-        : cjProduct.productImage ? [cjProduct.productImage] : [];
+      const cjApiImageSource = cjProduct.productImageSet?.productImage || cjProduct.productImage;
+      let imageUrl = DEFAULT_IMAGE_URL;
+      if (Array.isArray(cjApiImageSource) && cjApiImageSource.length > 0) {
+        imageUrl = cjApiImageSource[0];
+      } else if (typeof cjApiImageSource === 'string' && cjApiImageSource.trim() !== '') {
+        imageUrl = cjApiImageSource;
+      }
+      // If still DEFAULT_IMAGE_URL, it means no valid image was found or provided.
 
       const variants = cjProduct.variants || [];
 
       // Prepare the main product image (use first image if available)
-      const mainImage = productImages.length > 0 ? productImages[0] : '';
-      
+      const mainImage = imageUrl;
+
       // Prepare additional images (all except the first one)
       const additionalImages = productImages.length > 1 ? productImages.slice(1) : [];
       
@@ -225,12 +223,10 @@ export async function POST(request: NextRequest) {
         // Continue with original text if translation fails
       }
       
-      const insertResult = await client.query(insertProductQuery, [
-        // $1: platform_product_id (manually generated)
-        nextId,
-        // $2: cj_product_id
+      const queryParams = [
+        // $1: cj_product_id
         cjProduct.pid || cjProductId,
-        // $3: cj_product_data_json (store the complete product data)
+        // $2: cj_product_data_json (store the complete product data)
         cjProduct,
         // $4: display_name
         displayName, // This has translation logic applied
@@ -258,7 +254,9 @@ export async function POST(request: NextRequest) {
         originalName,
         // $16: original_description
         originalDescription
-      ]);
+      ];
+      console.log('[CJ Import] Executing insert with params:', JSON.stringify(queryParams, null, 2));
+      const insertResult = await client.query(insertProductQuery, queryParams);
 
       // Commit the transaction
       await client.query('COMMIT');

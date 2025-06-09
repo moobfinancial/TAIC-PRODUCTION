@@ -80,6 +80,11 @@ The admin/merchant portal now includes comprehensive product management capabili
 ### Real TAIC Token Rewards
 - Implement the system for issuing actual TAIC token rewards for cashback and other incentive programs, replacing the current simulated rewards.
 
+### Newsletter Signup Functionality
+- [ ] **Backend Implementation:** Develop the backend service to handle newsletter email submissions, store email addresses securely, and manage mailing lists.
+- [ ] **Email Confirmation:** Implement a double opt-in process where users confirm their email address after subscribing.
+- [ ] **Integration with Email Marketing Service (Optional):** Consider integration with services like Mailchimp, SendGrid, etc., for managing campaigns and sending emails.
+
 ## Phase 1: Core Infrastructure & Authentication (2-3 Weeks)
 
 ### 1.1 Blockchain Integration

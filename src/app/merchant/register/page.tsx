@@ -9,6 +9,7 @@ import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle }
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
+import { Checkbox } from '@/components/ui/checkbox';
 import { useToast } from '@/hooks/use-toast';
 import { Store, UserPlus, Loader2 } from 'lucide-react';
 
@@ -21,6 +22,7 @@ export default function MerchantRegisterPage() {
   const [businessDescription, setBusinessDescription] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [agreedToTerms, setAgreedToTerms] = useState(false);
   
   const router = useRouter();
   const { toast } = useToast();
@@ -39,6 +41,16 @@ export default function MerchantRegisterPage() {
       return;
     }
     
+    // Check if agreed to terms
+    if (!agreedToTerms) {
+      toast({
+        title: 'Registration Failed',
+        description: 'You must agree to the Merchant Agreement to register.',
+        variant: 'destructive',
+      });
+      return;
+    }
+
     // Check if passwords match
     if (password !== confirmPassword) {
       toast({
@@ -181,6 +193,27 @@ export default function MerchantRegisterPage() {
                 rows={3}
                 disabled={isLoading}
               />
+            </div>
+            <div className="items-top flex space-x-2 py-2">
+              <Checkbox
+                id="terms"
+                checked={agreedToTerms}
+                onCheckedChange={(checked) => setAgreedToTerms(checked as boolean)}
+                disabled={isLoading}
+                aria-required="true"
+              />
+              <div className="grid gap-1.5 leading-none">
+                <label
+                  htmlFor="terms"
+                  className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70"
+                >
+                  I have read and agree to the{' '}
+                  <Link href="/legal/merchant-agreement" className="text-primary hover:underline" target="_blank" rel="noopener noreferrer">
+                    Merchant Agreement
+                  </Link>
+                  . *
+                </label>
+              </div>
             </div>
             
             <Button type="submit" className="w-full" disabled={isLoading}>

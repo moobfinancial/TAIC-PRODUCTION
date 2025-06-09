@@ -8,15 +8,18 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs'; // Using Tabs for filtering
 import { useToast } from '@/hooks/use-toast';
-import { Loader2, AlertTriangle, CheckCircle, XCircle, EyeOff, Eye, RefreshCw, ShieldCheck, ShieldX, ShieldAlert, Layers } from 'lucide-react'; // Added Layers
+import { Loader2, AlertTriangle, CheckCircle, XCircle, EyeOff, Eye, RefreshCw, ShieldCheck, ShieldX, ShieldAlert } from 'lucide-react';
 import Image from 'next/image'; // For product images
+import { Card, CardContent } from '@/components/ui/card';
+import { Badge } from '@/components/ui/badge';
 
-interface ImportedSupplierProduct { // Renamed from ImportedCjProduct
-  platform_product_id: number;
-  cj_product_id: string; // This ID comes from the supplier, so cj_product_id might still be descriptive if it's CJ's actual ID
+interface ImportedCjProduct {
+  id: number; // Changed from platform_product_id to match API alias
+  cj_product_id: string;
   display_name: string;
   selling_price: number;
   platform_category_id: number;
+  // platform_category_name?: string; // Assuming API provides this or we join it
   image_url?: string;
   is_active: boolean;
   approval_status: 'pending' | 'approved' | 'rejected';
@@ -24,16 +27,17 @@ interface ImportedSupplierProduct { // Renamed from ImportedCjProduct
   updated_at: string;
 }
 
-interface ImportedProductsApiResponse { // Consider renaming if it's generic enough
-  products: ImportedSupplierProduct[];
+interface ImportedProductsApiResponse {
+  products: ImportedCjProduct[];
+  // Add pagination if API supports it, otherwise client-side pagination or load all
 }
 
 
-export default function ManageSupplierProductsPage() { // Renamed component
+export default function ManageCjProductsPage() {
   const { adminApiKey, loading: adminAuthLoading } = useAdminAuth();
   const { toast } = useToast();
 
-  const [products, setProducts] = useState<ImportedSupplierProduct[]>([]); // Use renamed type
+  const [products, setProducts] = useState<ImportedCjProduct[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -43,42 +47,39 @@ export default function ManageSupplierProductsPage() { // Renamed component
   const fetchImportedProducts = useCallback(async () => {
     if (adminAuthLoading || !adminApiKey) {
       if (!adminAuthLoading) setError("Admin API Key not available.");
-      setIsLoading(false); // Ensure loading is false if returning early
       return;
     }
     setIsLoading(true);
     setError(null);
     try {
-      // Revert API path to /api/admin/cj/imported-products
       const response = await fetch('/api/admin/cj/imported-products', {
         headers: { 'X-Admin-API-Key': adminApiKey },
       });
       if (!response.ok) {
-        const errData = await response.json().catch(() => ({})); // Catch if error response not JSON
+        const errData = await response.json();
         throw new Error(errData.error || `Failed to fetch imported products: ${response.statusText}`);
       }
-      const data = await response.json(); // Type assertion might be needed if API response isn't strictly ImportedProductsApiResponse
-      setProducts((data.products as ImportedSupplierProduct[]) || []);
+      const data: ImportedProductsApiResponse = await response.json();
+      // Assuming the API returns all products and we filter client-side as per subtask description.
+      // If API supports filtering by status, add query param: ?status=${filterStatus} (for 'all', don't send param)
+      const productsWithNumericPrice = (data.data || []).map(p => ({
+        ...p,
+        selling_price: typeof p.selling_price === 'string' ? parseFloat(p.selling_price) : p.selling_price
+      }));
+      setProducts(productsWithNumericPrice);
     } catch (err: any) {
       setError(err.message);
       toast({ title: "Error Fetching Products", description: err.message, variant: "destructive" });
-      setProducts([]); // Clear products on error
     } finally {
       setIsLoading(false);
     }
   }, [adminApiKey, adminAuthLoading, toast]);
 
   useEffect(() => {
-    if(!adminAuthLoading && adminApiKey) { // Fetch only when auth is resolved and key is present
-        fetchImportedProducts();
-    } else if (!adminAuthLoading && !adminApiKey) {
-        setIsLoading(false);
-        setError("Admin API Key not configured. Cannot load products.");
-    }
-  }, [fetchImportedProducts, adminAuthLoading, adminApiKey]);
+    fetchImportedProducts();
+  }, [fetchImportedProducts]);
 
-
-  const handleSelectProduct = (productId: number, checked: boolean) => {
+  const handleSelectProduct = (productId: number, checked: boolean) => { // productId here refers to 'id'
     setSelectedProductIds(prev => {
       const newSet = new Set(prev);
       if (checked) {
@@ -97,7 +98,7 @@ export default function ManageSupplierProductsPage() { // Renamed component
 
   const handleSelectAllOnPage = (checked: boolean) => {
     if (checked) {
-      setSelectedProductIds(new Set(filteredProducts.map(p => p.platform_product_id)));
+      setSelectedProductIds(new Set(filteredProducts.map(p => p.id)));
     } else {
       setSelectedProductIds(new Set());
     }
@@ -108,16 +109,14 @@ export default function ManageSupplierProductsPage() { // Renamed component
       toast({ title: "Authentication Error", description: "Admin API Key missing.", variant: "destructive" });
       return;
     }
-    setIsLoading(true);
+    setIsLoading(true); // Indicate general loading for actions
     
-    let endpoint = '/api/admin/cj/bulk-status-update'; // Reverted API path
+    let endpoint = '/api/admin/cj/bulk-status-update';
     let payload: any = { productIds, ...newStatus };
-    let method = 'POST';
 
     if (productIds.length === 1) {
-      endpoint = `/api/admin/cj/products/${productIds[0]}/status`; // Reverted API path
-      payload = newStatus;
-      method = 'PUT';
+      endpoint = `/api/admin/cj/products/${productIds[0]}/status`;
+      payload = newStatus; // Single update API takes status directly in body
     }
 
     try {
@@ -144,27 +143,27 @@ export default function ManageSupplierProductsPage() { // Renamed component
   };
 
 
-  const renderProductActions = (product: ImportedSupplierProduct) => { // Use renamed type
+  const renderProductActions = (product: ImportedCjProduct) => {
     return (
-      <div className="space-x-1 flex justify-end">
+      <div className="space-x-2">
         {product.approval_status === 'pending' && (
-          <Button size="xs" variant="outline" onClick={() => updateProductStatus([product.platform_product_id], { approvalStatus: 'approved', isActive: true })} disabled={isLoading} title="Approve">
-            <ShieldCheck className="h-4 w-4" />
+          <Button size="sm" variant="outline" onClick={() => updateProductStatus([product.id], { approvalStatus: 'approved', isActive: true })} disabled={isLoading}>
+            <ShieldCheck className="mr-1 h-4 w-4" /> Approve
           </Button>
         )}
         {(product.approval_status === 'pending' || product.approval_status === 'approved') && (
-          <Button size="xs" variant="destructiveOutline" onClick={() => updateProductStatus([product.platform_product_id], { approvalStatus: 'rejected', isActive: false })} disabled={isLoading} title="Reject">
-            <ShieldX className="h-4 w-4" />
+          <Button size="sm" variant="destructiveOutline" onClick={() => updateProductStatus([product.id], { approvalStatus: 'rejected', isActive: false })} disabled={isLoading}>
+            <ShieldX className="mr-1 h-4 w-4" /> Reject
           </Button>
         )}
         {product.approval_status === 'approved' && product.is_active && (
-          <Button size="xs" variant="outline" onClick={() => updateProductStatus([product.platform_product_id], { isActive: false })} disabled={isLoading} title="Deactivate">
-            <EyeOff className="h-4 w-4" />
+          <Button size="sm" variant="outline" onClick={() => updateProductStatus([product.id], { isActive: false })} disabled={isLoading}>
+            <EyeOff className="mr-1 h-4 w-4" /> Deactivate
           </Button>
         )}
         {product.approval_status === 'approved' && !product.is_active && (
-          <Button size="xs" variant="outline" onClick={() => updateProductStatus([product.platform_product_id], { isActive: true })} disabled={isLoading} title="Activate">
-            <Eye className="h-4 w-4" />
+          <Button size="sm" variant="outline" onClick={() => updateProductStatus([product.id], { isActive: true })} disabled={isLoading}>
+            <Eye className="mr-1 h-4 w-4" /> Activate
           </Button>
         )}
       </div>
@@ -197,10 +196,10 @@ export default function ManageSupplierProductsPage() { // Renamed component
   return (
     <ProtectedRoute>
       <div className="space-y-6 p-4 md:p-6">
-        <h1 className="text-2xl md:text-3xl font-bold">Manage Imported Supplier Products</h1> {/* Updated title */}
+        <h1 className="text-2xl md:text-3xl font-bold">Manage Imported CJ Products</h1>
 
         <Tabs value={filterStatus} onValueChange={(value) => setFilterStatus(value as any)}>
-          <TabsList className="grid w-full grid-cols-4"> {/* Made tabs full width for better mobile */}
+          <TabsList>
             <TabsTrigger value="all">All</TabsTrigger>
             <TabsTrigger value="pending">Pending Approval</TabsTrigger>
             <TabsTrigger value="approved">Approved</TabsTrigger>
@@ -241,45 +240,58 @@ export default function ManageSupplierProductsPage() { // Renamed component
                         disabled={filteredProducts.length === 0}
                       />
                     </TableHead>
-                    <TableHead className="w-[50px] sm:w-[60px]"> {/* Checkbox column */}
-                       <Checkbox
-                        checked={filteredProducts.length > 0 && selectedProductIds.size === filteredProducts.length} // Corrected select all logic
-                        onCheckedChange={(checked) => handleSelectAllOnPage(!!checked)}
-                        aria-label="Select all on page"
-                        disabled={filteredProducts.length === 0 || isLoading}
-                      />
-                    </TableHead>
-                    <TableHead className="w-[60px] hidden sm:table-cell">Image</TableHead>
-                    <TableHead>Name & Supplier PID</TableHead> {/* Updated text */}
-                    <TableHead className="hidden md:table-cell">Price</TableHead>
+                    <TableHead className="w-[80px]">Image</TableHead>
+                    <TableHead>Name & CJ ID</TableHead>
+                    <TableHead>Price</TableHead>
                     <TableHead>Status</TableHead>
                     <TableHead className="text-right">Actions</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
                   {filteredProducts.map((product) => (
-                    <TableRow key={product.platform_product_id}>
+                    <TableRow key={product.id}>
                       <TableCell>
                         <Checkbox
-                          checked={selectedProductIds.has(product.platform_product_id)}
-                          onCheckedChange={(checked) => handleSelectProduct(product.platform_product_id, !!checked)}
-                          aria-label={`Select product ${product.platform_product_id}`}
+                          id={`select-${product.id}`}
+                          checked={selectedProductIds.has(product.id)}
+                          onCheckedChange={(checked) => handleSelectProduct(product.id, !!checked)}
                         />
                       </TableCell>
-                      <TableCell className="hidden sm:table-cell">
-                        {product.image_url ? (
-                           <Image src={product.image_url} alt={product.display_name} width={40} height={40} className="rounded object-cover aspect-square" />
-                        ) : (
-                          <div className="w-[40px] h-[40px] bg-muted rounded flex items-center justify-center text-xs text-muted-foreground">No Img</div>
-                        )}
+                      <TableCell>
+                        {(() => {
+                          let imgSrc = product.image_url;
+                          if (imgSrc && typeof imgSrc === 'string' && imgSrc.startsWith('[') && imgSrc.endsWith(']')) {
+                            try {
+                              const parsed = JSON.parse(imgSrc);
+                              if (Array.isArray(parsed) && parsed.length > 0 && typeof parsed[0] === 'string' && parsed[0].trim() !== '') {
+                                imgSrc = parsed[0];
+                              } else {
+                                imgSrc = undefined; // Malformed array, empty, or not a string element
+                              }
+                            } catch (e) {
+                              console.warn('Failed to parse image_url:', imgSrc, e);
+                              imgSrc = undefined; // Parsing failed
+                            }
+                          }
+                          // Basic check if imgSrc is now a valid-looking URL string
+                          if (imgSrc && typeof imgSrc === 'string' && !(imgSrc.startsWith('http://') || imgSrc.startsWith('https://') || imgSrc.startsWith('/'))) {
+                            console.warn('Invalid image URL format after processing:', imgSrc);
+                            imgSrc = undefined; // Not a valid scheme or relative path
+                          }
+
+                          return imgSrc ? (
+                            <Image src={imgSrc} alt={product.display_name} width={50} height={50} className="rounded object-cover aspect-square" />
+                          ) : (
+                            <div className="w-[50px] h-[50px] bg-muted rounded flex items-center justify-center text-xs text-muted-foreground">No Image</div>
+                          );
+                        })()}
                       </TableCell>
                       <TableCell>
                         <div className="font-medium">{product.display_name}</div>
-                        {/* Use cj_product_id for Supplier PID as it's the source identifier */}
-                        <div className="text-xs text-muted-foreground">Supplier PID: {product.cj_product_id}</div>
-                        <div className="text-xs text-muted-foreground">Platform ID: {product.platform_product_id}</div>
+                        <div className="text-xs text-muted-foreground">CJ ID: {product.cj_product_id}</div>
+                        <div className="text-xs text-muted-foreground">Platform ID: {product.id}</div>
                       </TableCell>
-                      <TableCell className="hidden md:table-cell">${product.selling_price.toFixed(2)}</TableCell>
+                      <TableCell>${product.selling_price.toFixed(2)}</TableCell>
                       <TableCell>{getStatusBadge(product.approval_status, product.is_active)}</TableCell>
                       <TableCell className="text-right">{renderProductActions(product)}</TableCell>
                     </TableRow>
@@ -293,4 +305,3 @@ export default function ManageSupplierProductsPage() { // Renamed component
     </ProtectedRoute>
   );
 }
-```

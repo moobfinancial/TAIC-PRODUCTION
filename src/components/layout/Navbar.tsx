@@ -8,7 +8,7 @@ import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 // Switch to the new AuthContext
 import { useAuth } from '@/contexts/AuthContext';
-import { WalletConnectButton } from '@/components/wallet/WalletConnectButton'; // Import the new button
+import WalletConnectButton from '@/components/wallet/WalletConnectButton'; // Import the new button
 import { useCart } from '@/hooks/useCart';
 import { useWishlist } from '@/hooks/useWishlist';
 import { Logo } from '@/components/Logo';

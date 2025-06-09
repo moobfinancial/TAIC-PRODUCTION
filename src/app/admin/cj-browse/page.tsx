@@ -5,6 +5,7 @@ import ProtectedRoute from '@/components/admin/ProtectedRoute';
 import { useAdminAuth } from '@/contexts/AdminAuthContext';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { Checkbox } from '@/components/ui/checkbox';
 import { Textarea } from '@/components/ui/textarea'; // For import form
 import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription, CardFooter } from '@/components/ui/card';
@@ -12,28 +13,83 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { useToast } from '@/hooks/use-toast';
 import { Search, PackageSearch, Loader2, AlertCircle, Import, XCircle, ChevronLeft, ChevronRight } from 'lucide-react';
 import Image from 'next/image'; // For displaying product images
-// Import the new helper and types from cjUtils.ts (or supplierUtils.ts if that's already renamed)
-// For now, assuming cjUtils and CjCategory are still named this way until that lib is refactored.
-// We can alias CjCategory for use in this file.
-import { fetchAndTransformCjCategories, type CjCategory as SupplierCategory } from '@/lib/cjUtils';
 
 // Temporary Admin API Key for development - replace with secure auth
 const ADMIN_API_KEY = process.env.NEXT_PUBLIC_ADMIN_API_KEY || "";
 
-interface SupplierProduct { // Renamed from CjProduct
-  pid: string; // Supplier Product ID (still 'pid' from CJ context)
-  productName: string;
+interface CjProduct {
+  // Define based on expected fields from CJ API's product list
+  // This will likely need adjustment once actual API response is known
+  pid: string; // CJ Product ID
+  productName: string; // Or productNameEn
   productImage: string;
-  productSku: string;
-  categoryName: string; // Supplier Category Name
-  sellPrice: string; // Supplier's cost price to us
+  productSku: string; // Example, might be part of variants
+  categoryName: string; // CJ Category Name
+  sellPrice: string; // CJ's price to you (string from API, convert to number)
+  // Add other fields as needed for display
 }
 
-interface SupplierProductListResponse { // Renamed from CjProductListResponse
-  list: SupplierProduct[];
+interface CjProductListResponse {
+  list: CjProduct[];
   total: number;
   pageNum: number;
   pageSize: number;
+}
+
+// Interfaces for raw CJ API category structure from their endpoint
+interface RawCjApiL3Category {
+  categoryId: string;
+  categoryName: string;
+}
+
+interface RawCjApiL2Category {
+  categorySecondName: string;
+  categorySecondList?: RawCjApiL3Category[];
+}
+
+interface RawCjApiL1Category {
+  categoryFirstName: string;
+  categoryFirstList?: RawCjApiL2Category[];
+}
+
+// Interface for CJ Category (matching the TransformedCjCategory from backend)
+interface CjCategory {
+  id: string;
+  name: string;
+  children?: CjCategory[];
+}
+
+// Transformation function
+function transformCjApiDataToCjCategories(rawCategories: RawCjApiL1Category[]): CjCategory[] {
+  if (!rawCategories || !Array.isArray(rawCategories)) {
+    return [];
+  }
+
+  const mapL3 = (l3Cat: RawCjApiL3Category): CjCategory => ({
+    id: l3Cat.categoryId, // L3 has a proper ID from CJ
+    name: l3Cat.categoryName,
+    // L3 categories typically don't have children in this CJ structure
+  });
+
+  const mapL2 = (l2Cat: RawCjApiL2Category, l1Index: number, l2Index: number): CjCategory => {
+    const children = (l2Cat.categorySecondList || []).map(mapL3);
+    return {
+      // Generate a unique ID for L2 categories as CJ API doesn't provide one
+      id: `cj-l2-${l1Index}-${l2Index}-${l2Cat.categorySecondName.replace(/[^a-zA-Z0-9]/g, '_')}`,
+      name: l2Cat.categorySecondName,
+      children: children.length > 0 ? children : undefined,
+    };
+  };
+
+  return rawCategories.map((l1Cat, l1Index) => {
+    const children = (l1Cat.categoryFirstList || []).map((l2Cat, l2Index) => mapL2(l2Cat, l1Index, l2Index));
+    return {
+      // Generate a unique ID for L1 categories
+      id: `cj-l1-${l1Index}-${l1Cat.categoryFirstName.replace(/[^a-zA-Z0-9]/g, '_')}`,
+      name: l1Cat.categoryFirstName,
+      children: children.length > 0 ? children : undefined,
+    };
+  });
 }
 
 interface PlatformCategory {
@@ -52,47 +108,39 @@ interface ImportModalState {
   displayDescription: string;
 }
 
-export default function BrowseSupplierProductsPage() { // Renamed component
+export default function BrowseCjProductsPage() {
   const { adminApiKey, loading: adminAuthLoading, isAuthenticated } = useAdminAuth();
   const { toast } = useToast();
 
   // Search and Filter State
   const [keyword, setKeyword] = useState('');
-  const [supplierCategoryId, setSupplierCategoryId] = useState(''); // Renamed from cjCategoryId
+  const [cjCategoryId, setCjCategoryId] = useState('');
   const [currentPage, setCurrentPage] = useState(1);
-  const [limitPerPage, setLimitPerPage] = useState(20);
+  const [limitPerPage, setLimitPerPage] = useState(20); // Corresponds to pageSize
 
   // API Response State
-  const [supplierProducts, setSupplierProducts] = useState<SupplierProduct[]>([]); // Renamed from cjProducts
+  const [cjProducts, setCjProducts] = useState<CjProduct[]>([]);
   const [totalPages, setTotalPages] = useState(0);
   const [totalResults, setTotalResults] = useState(0);
   const [isLoading, setIsLoading] = useState(false);
   const [searchError, setSearchError] = useState<string | null>(null);
 
   // State for product selection
-  const [selectedSupplierProductIds, setSelectedSupplierProductIds] = useState(new Set<string>()); // Renamed
+  const [selectedCjProductIds, setSelectedCjProductIds] = useState(new Set<string>());
 
-  // State for Supplier API Categories for filtering
-  const [supplierApiCategories, setSupplierApiCategories] = useState<SupplierCategory[]>([]); // Renamed & uses aliased type
-  const [isLoadingSupplierApiCategories, setIsLoadingSupplierApiCategories] = useState(false); // Renamed
+  // State for CJ API Categories for filtering
+  const [cjApiCategories, setCjApiCategories] = useState<CjCategory[]>([]);
+  const [isLoadingCjApiCategories, setIsLoadingCjApiCategories] = useState(false);
 
   // Platform Categories for Import Modal
   const [platformCategories, setPlatformCategories] = useState<PlatformCategory[]>([]);
   const [isLoadingCategories, setIsLoadingCategories] = useState(false);
 
   // Import Modal State (for single import)
-  interface SingleImportModalState { // Renamed to avoid conflict if CjProduct type was global
-    isOpen: boolean;
-    productToImport: SupplierProduct | null; // Uses renamed SupplierProduct
-    platformCategoryId: string | undefined;
-    sellingPrice: string;
-    displayName: string;
-    displayDescription: string;
-  }
-  const [importModal, setImportModal] = useState<SingleImportModalState>({ // Uses renamed type
+  const [importModal, setImportModal] = useState<ImportModalState>({
     isOpen: false,
     productToImport: null,
-    platformCategoryId: 'select-category',
+    platformCategoryId: 'select-category', // Ensure this is a string if Select expects it
     sellingPrice: '',
     displayName: '',
     displayDescription: '',
@@ -115,11 +163,11 @@ export default function BrowseSupplierProductsPage() { // Renamed component
   // Fetch Platform Categories
   useEffect(() => {
     const fetchPlatformCategories = async () => {
-      if (adminAuthLoading) {
-        console.log('[BrowseSupplierProductsPage] Admin auth is loading, skipping platform category fetch.');
+      if (adminAuthLoading) { // Check auth loading state
+        console.log('[BrowseCjProductsPage] Admin auth is loading, skipping platform category fetch.');
         return;
       }
-      if (!adminApiKey) {
+      if (!adminApiKey) { // Use reactive adminApiKey
         toast({title: "Authentication Error", description: "Admin API Key not found. Cannot load platform categories.", variant: "destructive"});
         setIsLoadingCategories(false);
         return;
@@ -127,8 +175,7 @@ export default function BrowseSupplierProductsPage() { // Renamed component
       setIsLoadingCategories(true);
       try {
         console.log('Fetching platform categories...');
-        // API path /api/admin/categories remains the same
-        const response = await fetch('/api/admin/categories?hierarchical=false', {
+        const response = await fetch('/api/admin/categories?hierarchical=false', { // Fetch flat list
           headers: { 'X-Admin-API-Key': adminApiKey },
         });
         if (!response.ok) {
@@ -146,46 +193,51 @@ export default function BrowseSupplierProductsPage() { // Renamed component
         setIsLoadingCategories(false);
       }
     };
-    if (!adminAuthLoading && adminApiKey) {
+    if (!adminAuthLoading && adminApiKey) { // Check auth loading state
       fetchPlatformCategories();
     }
-  }, [adminApiKey, adminAuthLoading, toast]);
+  }, [adminApiKey, adminAuthLoading, toast]); // Add adminAuthLoading, re-add toast for completeness 
 
-  // Fetch Supplier API Categories for the filter dropdown
+  // Fetch CJ API Categories for the filter dropdown
   useEffect(() => {
-    const loadSupplierApiCategories = async () => { // Renamed function
-      if (adminAuthLoading) {
-        console.log('[BrowseSupplierProductsPage] Admin auth is loading, skipping Supplier API category fetch.');
+    const fetchCjApiCategories = async () => {
+      if (adminAuthLoading) { // Check auth loading state
+        console.log('[BrowseCjProductsPage] Admin auth is loading, skipping CJ API category fetch.');
         return;
       }
-      if (!isAuthenticated) {
-          toast({title: "Authentication Error", description: "You must be logged in as an admin.", variant: "destructive"});
-          setIsLoadingSupplierApiCategories(false); // Use renamed state setter
-          return;
+      if (!adminApiKey) { // Use reactive adminApiKey
+        toast({title: "Authentication Error", description: "Admin API Key not found. Cannot load CJ API categories.", variant: "destructive"});
+        setIsLoadingCjApiCategories(false);
+        return;
       }
-
-      setIsLoadingSupplierApiCategories(true); // Use renamed state setter
+      setIsLoadingCjApiCategories(true);
       try {
-        const transformedCategories = await fetchAndTransformCjCategories(); // This helper fetches CJ data
-        setSupplierApiCategories(transformedCategories); // Use renamed state setter
-        console.log('[BrowseSupplierProductsPage] Fetched and transformed Supplier API Categories via helper:', transformedCategories);
+        const response = await fetch('/api/admin/cj/cj-categories-route', {
+          headers: { 'X-Admin-API-Key': adminApiKey },
+        });
+        if (!response.ok) {
+          const errorData = await response.json();
+          throw new Error(errorData.error || errorData.details || 'Failed to fetch CJ categories');
+        }
+        const data = await response.json();
+        const transformedCategories = transformCjApiDataToCjCategories(data as RawCjApiL1Category[]);
+        setCjApiCategories(transformedCategories);
+        console.log('[BrowseCjProductsPage] Fetched and transformed CJ API Categories:', transformedCategories);
       } catch (error: any) {
-        toast({ title: "Error", description: `Could not load Supplier API categories: ${error.message}`, variant: "destructive" });
+        toast({ title: "Error", description: `Could not load CJ API categories: ${error.message}`, variant: "destructive" });
       } finally {
-        setIsLoadingSupplierApiCategories(false); // Use renamed state setter
+        setIsLoadingCjApiCategories(false);
       }
     };
-    if (!adminAuthLoading && isAuthenticated) {
-      loadSupplierApiCategories();
+    if (!adminAuthLoading && adminApiKey) { // Check auth loading state
+      fetchCjApiCategories();
     }
-  }, [adminAuthLoading, isAuthenticated, toast]);
+  }, [adminApiKey, adminAuthLoading, toast]); // Add adminAuthLoading, re-add toast for completeness 
 
-  const handleSearchSupplierProducts = async (page = 1) => { // Renamed function
+  const handleSearchCjProducts = async (page = 1) => {
     if (!adminApiKey || adminAuthLoading) { // Wait for auth to settle and key to be available
       toast({title: "Configuration Error", description: "Admin API Key not found or auth loading.", variant: "destructive"});
       return;
-        toast({title: "Configuration Error", description: "Admin API Key not found or auth loading.", variant: "destructive"});
-        return;
     }
     setIsLoading(true);
     setSearchError(null);
@@ -196,35 +248,51 @@ export default function BrowseSupplierProductsPage() { // Renamed component
       limit: String(limitPerPage),
     });
     if (keyword) params.append('keyword', keyword);
-    if (supplierCategoryId) params.append('categoryId', supplierCategoryId); // Use renamed state
+    if (cjCategoryId) params.append('categoryId', cjCategoryId);
 
     try {
-      // API path will be /api/admin/supplier/list-external after directory rename
       const response = await fetch(`/api/admin/cj/list-external?${params.toString()}`, {
         headers: { 'X-Admin-API-Key': adminApiKey },
       });
 
       const result = await response.json();
       if (!response.ok) {
-        throw new Error(result.error || result.details || `Failed to fetch Supplier products: ${response.statusText}`);
+        throw new Error(result.error || result.details || `Failed to fetch CJ products: ${response.statusText}`);
       }
 
-      const supplierApiResponseData = result.data || result;
+      // Assuming result.data contains the list and pagination info as per CJ API structure
+      // This needs to be adjusted based on the actual structure returned by your /api/admin/cj/list-external
+      const cjApiResponseData = result.data || result; // Adjust if result.data is not the primary container
 
-      setSupplierProducts(supplierApiResponseData.list || []); // Use renamed state setter
-      setTotalResults(supplierApiResponseData.total || 0);
-      setTotalPages(Math.ceil((supplierApiResponseData.total || 0) / limitPerPage));
-      setSelectedSupplierProductIds(new Set()); // Use renamed state setter
+      setCjProducts(cjApiResponseData.list || []);
+      setTotalResults(cjApiResponseData.total || 0);
+      setTotalPages(Math.ceil((cjApiResponseData.total || 0) / limitPerPage));
+      setSelectedCjProductIds(new Set()); // Clear selection on new search/page
     } catch (err: any) {
       setSearchError(err.message);
-      setSupplierProducts([]); // Use renamed state setter
-      toast({ title: "Error Searching Supplier Products", description: err.message, variant: "destructive" }); // Updated toast
+      setCjProducts([]);
+      toast({ title: "Error Searching CJ Products", description: err.message, variant: "destructive" });
     } finally {
       setIsLoading(false);
     }
   };
 
-  const openImportModal = (product: SupplierProduct) => { // Parameter type uses renamed interface
+
+  const renderCjCategoryOptions = (categories: CjCategory[], level = 0): React.ReactNode[] => {
+    return categories.flatMap(category => {
+      const items: React.ReactNode[] = [
+        <SelectItem key={category.id} value={category.id} className={`pl-${level * 4}`}>
+          {category.name}
+        </SelectItem>
+      ];
+      if (category.children && category.children.length > 0) {
+        items.push(...renderCjCategoryOptions(category.children, level + 1));
+      }
+      return items;
+    });
+  };
+
+  const openImportModal = (product: CjProduct) => {
     // Handle case where productName might be a stringified array
     let productName = product.productName || '';
     try {
@@ -240,158 +308,148 @@ export default function BrowseSupplierProductsPage() { // Renamed component
       // If parsing fails, keep the original name
     }
 
-    // Suggest platform category
-    let suggestedPlatformCategoryId: string = ''; // Default to empty string (for "Select a category")
-    if (product.categoryName && platformCategories.length > 0) {
-      const cjCategoryNameLower = product.categoryName.toLowerCase().trim();
-      let matchedCategory = platformCategories.find(
-        pCat => pCat.name.toLowerCase().trim() === cjCategoryNameLower
-      );
-      if (!matchedCategory) {
-        matchedCategory = platformCategories.find(
-          pCat => cjCategoryNameLower.includes(pCat.name.toLowerCase().trim()) ||
-                  pCat.name.toLowerCase().trim().includes(cjCategoryNameLower)
-        );
-      }
-      if (matchedCategory) {
-        suggestedPlatformCategoryId = String(matchedCategory.id);
-      }
-    }
-
     setImportModal({
       isOpen: true,
       productToImport: product,
-      platformCategoryId: suggestedPlatformCategoryId,
+      platformCategoryId: '', // Empty string for initial state
       sellingPrice: parseFloat(product.sellPrice) ? (parseFloat(product.sellPrice) * 1.5).toFixed(2) : '0.00',
       displayName: productName,
-      displayDescription: `Sourced from Supplier: ${productName}`, // Updated text
+      displayDescription: `Imported from CJ: ${productName}`,
     });
   };
 
-  const handleImportProduct = async (e: FormEvent) => {
-    e.preventDefault();
+const handleImportProduct = async () => { // Removed (e: FormEvent) and e.preventDefault() as it's called directly now
+  console.log('[handleImportProduct] Triggered. Modal state:', JSON.stringify(importModal, null, 2));
 
-    if (!adminApiKey || adminAuthLoading) {
+  if (!adminApiKey || adminAuthLoading) { // Added check for adminApiKey
+    toast({
+      title: "Authentication Error",
+      description: "Admin API Key not available or authentication is still loading. Please try again.",
+      variant: "destructive",
+    });
+    return;
+  }
+
+  if (!importModal.productToImport) {
+    console.error('[handleImportProduct] Validation Error: productToImport is null.');
+    toast({
+      title: "Validation Error",
+      description: "Product to import is missing. Please select a product again.",
+      variant: "destructive",
+    });
+    return;
+  }
+
+  if (typeof importModal.platformCategoryId !== 'string' || importModal.platformCategoryId.trim() === '') {
+    console.error('[handleImportProduct] Validation Error: platformCategoryId is invalid.');
+    toast({
+      title: "Validation Error",
+      description: "Platform category ID is missing or invalid. Please select a category.",
+      variant: "destructive",
+    });
+    return;
+  }
+
+  if (typeof importModal.sellingPrice !== 'string' || importModal.sellingPrice.trim() === '') {
+      console.error('[handleImportProduct] Validation Error: sellingPrice is invalid.');
       toast({
-        title: "Authentication Error",
-        description: "Admin API Key not available or authentication is still loading. Please try again.",
-        variant: "destructive",
+          title: "Validation Error",
+          description: "Selling price is missing or invalid.",
+          variant: "destructive",
       });
       return;
+  }
+  
+  setIsImporting(true); 
+  try {
+    const platformCategoryIdNum = parseInt(importModal.platformCategoryId, 10);
+    const sellingPriceNum = parseFloat(importModal.sellingPrice);
+
+    if (isNaN(platformCategoryIdNum) || platformCategoryIdNum <= 0) {
+      console.error('[handleImportProduct] Validation Error: Parsed platformCategoryId is invalid.');
+      toast({
+          title: "Validation Error",
+          description: "Platform category ID must be a positive number.",
+          variant: "destructive",
+      });
+      throw new Error("Platform category ID must be a positive number."); // This will be caught by the main catch
     }
+
+    if (isNaN(sellingPriceNum) || sellingPriceNum < 0) { 
+      console.error('[handleImportProduct] Validation Error: Parsed sellingPrice is invalid.');
+      toast({
+          title: "Validation Error",
+          description: "Selling price must be a non-negative number.",
+          variant: "destructive",
+      });
+      throw new Error("Selling price must be a non-negative number."); // This will be caught by the main catch
+    }
+
+    const payload = {
+      cjProductId: importModal.productToImport.pid,
+      platform_category_id: platformCategoryIdNum,
+      selling_price: sellingPriceNum,
+      display_name: importModal.displayName || importModal.productToImport.productName,
+      display_description: importModal.displayDescription || '', 
+    };
+
+    console.log('[handleImportProduct] Sending import request with payload:', payload);
     
-    console.log('Form submitted with state:', {
-      productToImport: !!importModal.productToImport,
-      platformCategoryId: importModal.platformCategoryId,
-      sellingPrice: importModal.sellingPrice,
-      hasPlatformCategory: !!importModal.platformCategoryId,
-      hasSellingPrice: !!importModal.sellingPrice
+    const response = await fetch('/api/admin/cj/import-product', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Admin-API-Key': adminApiKey, 
+      },
+      body: JSON.stringify(payload),
     });
 
-    // Updated validation to ensure a category is selected (not an empty string)
-    if (!importModal.productToImport ||
-        !importModal.platformCategoryId ||
-        importModal.platformCategoryId === 'select-category' || // Explicitly check against placeholder if used
-        importModal.platformCategoryId.trim() === '' || // Check for empty string
-        !importModal.sellingPrice) {
-
-      let errorDesc = "Please make sure to:\n";
-      if (!importModal.platformCategoryId || importModal.platformCategoryId === 'select-category' || importModal.platformCategoryId.trim() === '') {
-        errorDesc += '• Select a product category\n';
+    let result;
+    if (!response.ok) {
+      const responseBodyText = await response.text();
+      let errorMessage = `Failed to import product (HTTP ${response.status}): ${response.statusText}`;
+      try {
+        const errorResult = JSON.parse(responseBodyText);
+        errorMessage = errorResult.error || errorResult.message || errorMessage;
+        console.error('[handleImportProduct] API Error:', errorMessage, errorResult.details || responseBodyText);
+      } catch (e) {
+        console.error('[handleImportProduct] API Error. Could not parse error response as JSON. Raw response:', responseBodyText);
+        errorMessage = `${errorMessage}. Server response: ${responseBodyText.substring(0, 200)}`;
       }
-      if (!importModal.sellingPrice) {
-        errorDesc += '• Set a selling price\n';
-      }
-      
-      toast({ 
-        title: "Missing Required Fields", 
-        description: errorDesc,
-        variant: "destructive"
-      });
-      return;
+      throw new Error(errorMessage); // This will be caught by the main catch
     }
+
+    result = await response.json();
+    console.log('[handleImportProduct] Import API success response:', { status: response.status, result });
     
-    setIsImporting(true);
-    try {
-      const payload = {
-        cjProductId: importModal.productToImport.pid, // This field name in API payload refers to the source ID
-        platform_category_id: parseInt(importModal.platformCategoryId, 10),
-        selling_price: parseFloat(importModal.sellingPrice),
-        display_name: importModal.displayName || importModal.productToImport.productName,
-        display_description: importModal.displayDescription,
-      };
-
-      console.log('Sending import request with payload:', payload);
-      
-      // API path will be /api/admin/supplier/import-product after directory rename
-      const response = await fetch('/api/admin/cj/import-product', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'X-Admin-API-Key': adminApiKey,
-        },
-        body: JSON.stringify(payload),
-      });
-      
-      const result = await response.json();
-      console.log('Import API response:', { status: response.status, result });
-      
-      if (!response.ok) {
-        const errorMessage = result.error || result.message || `Failed to import product: ${response.statusText}`;
-        console.error('Import failed:', errorMessage, result.details);
-        throw new Error(errorMessage);
-      }
-      
-      toast({ 
-        title: "Product Imported", 
-        description: `${result.product?.display_name || 'Product'} imported successfully with ID ${result.product?.id || 'unknown'}.`
-      });
-      
-      // Reset the form
-      setImportModal({ 
-        isOpen: false, 
-        productToImport: null, 
-        platformCategoryId: undefined, 
-        sellingPrice: '', 
-        displayName: '', 
-        displayDescription: '' 
-      });
-      
-      // Optionally refresh the product list
-      handleSearchSupplierProducts(currentPage); // Use renamed function
-      
-    } catch (error: any) {
-      console.error('Error in handleImportProduct:', error);
-      toast({ 
-        title: "Import Failed", 
-        description: error.message || 'An unknown error occurred while importing the product.', 
-        variant: 'destructive' 
-      });
-    } finally {
-      setIsImporting(false);
-    }
-  };
-
-  // Helper function to render Supplier Category options for the Select component
-  const renderSupplierCategoryOptions = (categories: SupplierCategory[], level = 0): JSX.Element[] => { // Renamed & uses aliased type
-    return categories.flatMap((category) => { // Removed index as it's not used for key
-      const itemKey = category.id;
-      const currentItem = (
-        <SelectItem key={itemKey} value={String(category.id)}>
-          <span style={{ paddingLeft: `${level * 15}px` }}>
-            {level > 0 ? '↳ ' : ''}{category.name}
-          </span>
-        </SelectItem>
-      );
-      if (category.children && category.children.length > 0) {
-        return [currentItem, ...renderSupplierCategoryOptions(category.children, level + 1)];
-      }
-      return [currentItem];
+    toast({ 
+      title: "Product Imported", 
+      description: `${result.product?.display_name || 'Product'} imported successfully with ID ${result.product?.platform_product_id || 'unknown'}.`
     });
-  };
+    
+    setImportModal({ 
+      isOpen: false, 
+      productToImport: null, 
+      platformCategoryId: undefined, 
+      sellingPrice: '', 
+      displayName: '', 
+      displayDescription: '' 
+    });
+    
+  } catch (error: any) {
+    console.error('[handleImportProduct] Error during import process:', error);
+    toast({ 
+      title: "Import Failed", 
+      description: error.message || 'An unknown error occurred while importing the product.', 
+      variant: 'destructive' 
+    });
+  } finally {
+    setIsImporting(false); 
+  }
+};
 
   const handleSelectProduct = (productId: string, checked: boolean) => {
-    setSelectedSupplierProductIds(prev => { // Use renamed state setter
+    setSelectedCjProductIds(prev => {
       const newSet = new Set(prev);
       if (checked) {
         newSet.add(productId);
@@ -403,19 +461,19 @@ export default function BrowseSupplierProductsPage() { // Renamed component
   };
 
   const handleSelectAllOnPage = () => {
-    setSelectedSupplierProductIds(prev => { // Use renamed state setter
+    setSelectedCjProductIds(prev => {
       const newSet = new Set(prev);
-      supplierProducts.forEach(p => newSet.add(p.pid)); // Use renamed product list
+      cjProducts.forEach(p => newSet.add(p.pid));
       return newSet;
     });
   };
 
   const handleClearSelection = () => {
-    setSelectedSupplierProductIds(new Set()); // Use renamed state setter
+    setSelectedCjProductIds(new Set());
   };
 
   const handleOpenBulkImportModal = () => {
-    if (selectedSupplierProductIds.size === 0) { // Use renamed state
+    if (selectedCjProductIds.size === 0) {
       toast({ title: "No Products Selected", description: "Please select products to bulk import.", variant: "destructive" });
       return;
     }
@@ -440,11 +498,10 @@ export default function BrowseSupplierProductsPage() { // Renamed component
     setIsBulkImporting(true);
     try {
       const payload = {
-        cjProductIds: Array.from(selectedSupplierProductIds), // Use renamed state
+        cjProductIds: Array.from(selectedCjProductIds),
         platformCategoryId: parseInt(bulkImportPlatformCategoryId, 10),
         pricingMarkupPercentage: markup,
       };
-      // API path will be /api/admin/supplier/bulk-import after directory rename
       const response = await fetch('/api/admin/cj/bulk-import', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'X-Admin-API-Key': adminApiKey },
@@ -458,10 +515,10 @@ export default function BrowseSupplierProductsPage() { // Renamed component
         title: "Bulk Import Processed",
         description: `${result.successfullyImported} products imported. ${result.failedImports} failed. ${result.alreadyExists} already existed.`,
       });
-      setSelectedSupplierProductIds(new Set()); // Use renamed state setter
+      setSelectedCjProductIds(new Set());
       setIsBulkImportModalOpen(false);
       // Optionally refresh current page search results
-      // handleSearchSupplierProducts(currentPage);  // Use renamed function
+      // handleSearchCjProducts(currentPage);
     } catch (error: any) {
       toast({ title: "Bulk Import Error", description: error.message, variant: "destructive" });
     } finally {
@@ -475,29 +532,29 @@ export default function BrowseSupplierProductsPage() { // Renamed component
       <div className="space-y-6">
         <Card>
           <CardHeader>
-            <CardTitle className="flex items-center"><PackageSearch className="mr-2 h-6 w-6" /> Browse Supplier Products</CardTitle>
-            <CardDescription>Search for products directly from the default supplier to import.</CardDescription>
+            <CardTitle className="flex items-center"><PackageSearch className="mr-2 h-6 w-6" /> Browse CJdropshipping Products</CardTitle>
+            <CardDescription>Search for products directly from CJdropshipping to import.</CardDescription>
           </CardHeader>
           <CardContent>
-            <form onSubmit={(e) => { e.preventDefault(); handleSearchSupplierProducts(1);}} className="grid sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-6"> {/* Use renamed handler */}
+            <form onSubmit={(e) => { e.preventDefault(); handleSearchCjProducts(1);}} className="grid sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
               <Input placeholder="Keyword (Product Name)" value={keyword} onChange={(e) => setKeyword(e.target.value)} />
               <Select
-                value={supplierCategoryId} // Use renamed state
-                onValueChange={(value) => setSupplierCategoryId(value === 'all' ? '' : value)}
-                disabled={isLoadingSupplierApiCategories || isLoading} // Use renamed state
+                value={cjCategoryId}
+                onValueChange={(value) => setCjCategoryId(value === 'all' ? '' : value)} // Allow unsetting
+                disabled={isLoadingCjApiCategories || isLoading}
               >
-                <SelectTrigger id="supplier-category-select" className="w-full"> {/* Updated ID */}
-                  <SelectValue placeholder="Select Supplier Category" /> {/* Updated placeholder */}
+                <SelectTrigger id="cj-category-select" className="w-full">
+                  <SelectValue placeholder="Select CJ Category" />
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem key="all-categories-static-key" value="all">All Categories</SelectItem>
-                  {renderSupplierCategoryOptions(supplierApiCategories)} {/* Use renamed render func & state */}
+                  {renderCjCategoryOptions(cjApiCategories)}
                 </SelectContent>
               </Select>
               {/* Add minPrice, maxPrice inputs if desired */}
               <Button type="submit" disabled={isLoading || !ADMIN_API_KEY || adminAuthLoading} className="lg:col-start-4">
                 {isLoading && searchError === null ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Search className="mr-2 h-4 w-4" />}
-                Search Products {/* This text can remain generic */}
+                Search Products
               </Button>
             </form>
             {searchError && (
@@ -510,35 +567,34 @@ export default function BrowseSupplierProductsPage() { // Renamed component
 
         {isLoading && !searchError && (
           <div className="flex items-center justify-center p-8">
-            <Loader2 className="mr-2 h-8 w-8 animate-spin text-primary" /> Loading products from Supplier...
+            <Loader2 className="mr-2 h-8 w-8 animate-spin text-primary" /> Loading products from CJ...
           </div>
         )}
 
-        {!isLoading && supplierProducts.length > 0 && ( // Use renamed product list
+        {!isLoading && cjProducts.length > 0 && (
           <div key="product-list-wrapper" className="space-y-4">
             <div className="flex items-center justify-between mb-4">
               <div className="flex items-center gap-2">
-                <Button variant="outline" size="sm" onClick={handleSelectAllOnPage} disabled={supplierProducts.length === 0}>Select Page ({supplierProducts.length})</Button>
-                <Button variant="outline" size="sm" onClick={handleClearSelection} disabled={selectedSupplierProductIds.size === 0}>Clear Selection</Button>
-                <span className="text-sm text-muted-foreground">{selectedSupplierProductIds.size} selected</span>
+                <Button variant="outline" size="sm" onClick={handleSelectAllOnPage} disabled={cjProducts.length === 0}>Select Page ({cjProducts.length})</Button>
+                <Button variant="outline" size="sm" onClick={handleClearSelection} disabled={selectedCjProductIds.size === 0}>Clear Selection</Button>
+                <span className="text-sm text-muted-foreground">{selectedCjProductIds.size} selected</span>
               </div>
-              <Button onClick={handleOpenBulkImportModal} disabled={selectedSupplierProductIds.size === 0}>
-                <Import className="mr-2 h-4 w-4"/> Import Selected ({selectedSupplierProductIds.size})
+              <Button onClick={handleOpenBulkImportModal} disabled={selectedCjProductIds.size === 0}>
+                <Import className="mr-2 h-4 w-4"/> Import Selected ({selectedCjProductIds.size})
               </Button>
             </div>
 
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-              {supplierProducts.map((product) => ( // Use renamed product list
+              {cjProducts.map((product) => (
                 <Card key={product.pid} className="flex flex-col relative">
                   <div className="absolute top-2 right-2 z-10">
-                    <Input
-                      type="checkbox"
+                    <Checkbox
                       className="h-5 w-5 cursor-pointer"
-                      checked={selectedSupplierProductIds.has(product.pid)} // Use renamed selection set
+                      checked={selectedCjProductIds.has(product.pid)}
                       onCheckedChange={(checked) => handleSelectProduct(product.pid, !!checked)}
                     />
                   </div>
-                  <CardHeader className="p-2 pt-8">
+                  <CardHeader className="p-2 pt-8"> {/* Added pt-8 for checkbox space */}
                     <div className="relative aspect-square w-full">
                       <Image 
                         src={product.productImage || '/placeholder.png'} 
@@ -552,9 +608,9 @@ export default function BrowseSupplierProductsPage() { // Renamed component
                   </CardHeader>
                   <CardContent className="p-3 flex-grow space-y-1">
                     <p className="text-sm font-medium leading-tight h-10 overflow-hidden" title={product.productName}>{product.productName}</p>
-                    <p className="text-xs text-muted-foreground">Supplier PID: {product.pid}</p> {/* Updated text */}
-                    <p className="text-xs text-muted-foreground">Supplier Category: {product.categoryName}</p> {/* Updated text */}
-                    <p className="text-sm font-semibold">Supplier Cost: ${parseFloat(product.sellPrice).toFixed(2)}</p> {/* Updated text */}
+                    <p className="text-xs text-muted-foreground">CJ ID: {product.pid}</p>
+                    <p className="text-xs text-muted-foreground">CJ Category: {product.categoryName}</p>
+                    <p className="text-sm font-semibold">CJ Price: ${parseFloat(product.sellPrice).toFixed(2)}</p>
                   </CardContent>
                   <CardFooter className="p-3">
                     <Button size="sm" className="w-full" onClick={() => openImportModal(product)} disabled={isLoadingCategories}>
@@ -567,18 +623,18 @@ export default function BrowseSupplierProductsPage() { // Renamed component
             {/* Pagination Controls */}
             {totalPages > 1 && (
               <div className="flex justify-center items-center space-x-2 mt-6">
-                <Button variant="outline" size="icon" onClick={() => handleSearchSupplierProducts(currentPage - 1)} disabled={currentPage <= 1 || isLoading}> {/* Use renamed handler */}
+                <Button variant="outline" size="icon" onClick={() => handleSearchCjProducts(currentPage - 1)} disabled={currentPage <= 1 || isLoading}>
                   <ChevronLeft className="h-4 w-4" />
                 </Button>
                 <span className="text-sm">Page {currentPage} of {totalPages} ({totalResults} results)</span>
-                <Button variant="outline" size="icon" onClick={() => handleSearchSupplierProducts(currentPage + 1)} disabled={currentPage >= totalPages || isLoading}> {/* Use renamed handler */}
+                <Button variant="outline" size="icon" onClick={() => handleSearchCjProducts(currentPage + 1)} disabled={currentPage >= totalPages || isLoading}>
                   <ChevronRight className="h-4 w-4" />
                 </Button>
               </div>
             )}
           </div>
         )}
-        {!isLoading && !searchError && supplierProducts.length === 0 && totalResults === 0 && ( // Use renamed product list
+        {!isLoading && !searchError && cjProducts.length === 0 && totalResults === 0 && (
           <p className="text-center text-muted-foreground py-8">No products found for your criteria. Try different search terms.</p>
         )}
       </div>
@@ -606,16 +662,16 @@ export default function BrowseSupplierProductsPage() { // Renamed component
                     </div>
                     <div>
                         <p className="text-sm font-semibold">{importModal.productToImport.productName}</p>
-                        <p className="text-xs text-muted-foreground">Supplier PID: {importModal.productToImport.pid}</p> {/* Updated text */}
-                        <p className="text-xs text-muted-foreground">Supplier Cost: ${parseFloat(importModal.productToImport.sellPrice).toFixed(2)}</p> {/* Updated text */}
+                        <p className="text-xs text-muted-foreground">CJ ID: {importModal.productToImport.pid}</p>
+                        <p className="text-xs text-muted-foreground">CJ Price: ${parseFloat(importModal.productToImport.sellPrice).toFixed(2)}</p>
                     </div>
                 </div>
                 <div>
-                  <Label htmlFor="singleDisplayName">Display Name (Overrides Supplier Name)</Label> {/* Updated text */}
+                  <Label htmlFor="singleDisplayName">Display Name (Overrides CJ Name)</Label>
                   <Input id="singleDisplayName" value={importModal.displayName} onChange={(e) => setImportModal(s => ({...s, displayName: e.target.value}))} />
                 </div>
                 <div>
-                  <Label htmlFor="singleDisplayDescription">Display Description (Overrides Supplier Description)</Label> {/* Updated text */}
+                  <Label htmlFor="singleDisplayDescription">Display Description (Overrides CJ Description)</Label>
                   <Textarea id="singleDisplayDescription" value={importModal.displayDescription} onChange={(e) => setImportModal(s => ({...s, displayDescription: e.target.value}))} rows={3}/>
                 </div>
                 <div>
@@ -629,8 +685,9 @@ export default function BrowseSupplierProductsPage() { // Renamed component
                       <SelectValue placeholder="Select a category" />
                     </SelectTrigger>
                     <SelectContent>
-                      {/* Ensure a placeholder or default instruction is clear if platformCategoryId can be '' initially */}
-                      <SelectItem value="" disabled>Select a platform category...</SelectItem>
+                      <SelectItem value="select-category" disabled className="text-muted-foreground">
+                        Select a category
+                      </SelectItem>
                       {platformCategories.map(cat => (
                         <SelectItem key={`single-${cat.id}`} value={String(cat.id)}>
                           {cat.name}
@@ -647,7 +704,7 @@ export default function BrowseSupplierProductsPage() { // Renamed component
                   <Button type="button" variant="outline" onClick={() => setImportModal(prev => ({...prev, isOpen: false}))} disabled={isImporting}>Cancel</Button>
                   <Button 
                     type="submit" 
-                    disabled={isImporting || !importModal.platformCategoryId || importModal.platformCategoryId.trim() === '' || !importModal.sellingPrice}
+                    disabled={isImporting || !importModal.platformCategoryId || !importModal.sellingPrice || importModal.platformCategoryId === 'select-category'}
                   >
                     {isImporting ? (
                       <Loader2 className="mr-2 h-4 w-4 animate-spin" />
@@ -680,10 +737,9 @@ export default function BrowseSupplierProductsPage() { // Renamed component
                   required
                 >
                   <SelectTrigger>
-                    <SelectValue placeholder="Assign a category to all selected products" />
+                    <SelectValue placeholder="Select a category" />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="" disabled>Select a platform category...</SelectItem>
                     {platformCategories.map(cat => (
                       <SelectItem key={`bulk-${cat.id}`} value={String(cat.id)}>
                         {cat.name}

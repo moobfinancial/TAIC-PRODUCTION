@@ -1,216 +1,104 @@
+import Link from 'next/link';
+import { Metadata } from 'next';
+// Consider adding an Image component if you have a visual for the assistant
+// import Image from 'next/image';
 
-'use client';
+export const metadata: Metadata = {
+  title: 'Meet Your AI Shopping Assistant | TAIC',
+  description: 'Discover how the TAIC AI Shopping Assistant can help you find products, get personalized recommendations, compare items, and enhance your shopping experience.',
+};
 
-import { useState, type FormEvent, useEffect, useRef } from 'react';
-import { Button } from '@/components/ui/button';
-import { Textarea } from '@/components/ui/textarea';
-import { Card, CardContent } from '@/components/ui/card';
-import { Bot, Sparkles, Send, Loader2, User, XCircle, CornerDownLeft, Mic, MicOff, Volume2, VolumeX } from 'lucide-react';
-// getProductRecommendations and related types are removed as we use FastAPI proxy
-// import { getProductRecommendations, type ProductForAI, type GetProductRecommendationsOutput } from '@/ai/flows/shopping-assistant';
-import { useAuth } from '@/contexts/AuthContext';
-import { useToast } from '@/hooks/use-toast';
-import useWebSpeech from '@/hooks/useWebSpeech';
-import { ProductCanvas } from '@/components/products/ProductCanvas'; // This component might need an update for AiSuggestedProduct
-import { cn } from '@/lib/utils';
-import type { ChatMessage, AiSuggestedProduct, ProductForAI } from '@/lib/types'; // Updated import
-import Image from 'next/image'; // Import for displaying product images
-// import Link from 'next/link'; // Import if using Links for products
+interface Feature {
+  id: number;
+  title: string;
+  description: string;
+  icon: string; // Placeholder for icon
+}
 
-export default function AIAssistantPage() {
-  const [query, setQuery] = useState('');
-  const [isLoading, setIsLoading] = useState(false);
-  const [messages, setMessages] = useState<ChatMessage[]>([]); // Use updated ChatMessage type
-  const { user, token, isAuthenticated } = useAuth();
-  const { toast } = useToast();
-
-  const {
-    isListening,
-    startListening,
-    stopListening,
-    sttError,
-    finalTranscript,
-    isSTTSupported,
-    isSpeaking,
-    speak,
-    cancelSpeaking,
-    ttsError,
-    isTTSSupported,
-  } = useWebSpeech({
-    onSTTResult: (transcript, isFinal) => {
-      if (isFinal) {
-        // Automatically set query and submit when STT provides a final result
-        // This will be handled in an effect listening to finalTranscript
-      }
+export default function AiAssistantPage() {
+  const features: Feature[] = [
+    {
+      id: 1,
+      title: 'Personalized Product Recommendations',
+      description: "Tell our AI assistant what you're looking for, your preferences, or even your mood, and get tailored product suggestions just for you.",
+      icon: '🎯',
     },
-    onSTTError: (error) => {
-      toast({ title: "Voice Input Error", description: error || "An unknown error occurred.", variant: "destructive" });
+    {
+      id: 2,
+      title: 'Smart Product Search & Discovery',
+      description: 'Go beyond simple keyword searches. Ask complex questions, describe features, or find items based on use-cases. Our AI understands natural language.',
+      icon: '🔍',
     },
-    onTTSEnd: () => {
-      // console.log("TTS Finished");
+    {
+      id: 3,
+      title: 'Effortless Product Comparison',
+      description: 'Struggling to choose between products? Ask the AI assistant to compare features, prices, and reviews side-by-side to help you make the best decision.',
+      icon: '⚖️',
     },
-    onTTSStart: () => {
-      // console.log("TTS Started");
-    }
-  });
+    {
+      id: 4,
+      title: 'Trend Spotting & Gift Ideas',
+      description: 'Not sure what to buy? Get inspired! Our AI can suggest trending products, unique gift ideas for any occasion, or help you discover items you never knew you needed.',
+      icon: '💡',
+    },
+    {
+      id: 5,
+      title: 'Instant Answers & Support',
+      description: 'Have quick questions about a product or our services? The AI assistant can provide instant answers and guide you to the right resources.',
+      icon: '💬',
+    },
+    {
+      id: 6,
+      title: 'Seamless Shopping Journey',
+      description: 'From finding the right item to adding it to your cart, our AI assistant is designed to make your shopping experience smoother and more enjoyable.',
+      icon: '🛒',
+    },
+  ];
 
-  const [chatAreaMode, setChatAreaMode] = useState<'full' | 'sidebar'>('full');
-  // canvasProducts will now hold AiSuggestedProduct if the canvas is updated,
-  // or we might need an adapter if ProductCanvas expects ProductForAI.
-  // For now, let's assume ProductCanvas can take AiSuggestedProduct or we adapt here.
-  const [canvasProducts, setCanvasProducts] = useState<AiSuggestedProduct[]>([]);
-  const messagesEndRef = useRef<HTMLDivElement>(null);
-  const autoSubmitSttRef = useRef(false); // Ref to control auto-submission after STT
+  return (
+    <div className="container mx-auto px-4 py-12 max-w-4xl">
+      <header className="text-center mb-16">
+        {/* Optional: Add an image/icon for the AI assistant here */}
+        {/* <Image src="/images/ai-assistant-hero.png" alt="AI Shopping Assistant" width={150} height={150} className="mx-auto mb-6" /> */}
+        <h1 className="text-4xl font-bold text-purple-600 mb-4">Your Smart Shopping Companion</h1>
+        <p className="text-xl text-muted-foreground">
+          Let our AI Shopping Assistant revolutionize the way you discover and buy products.
+        </p>
+      </header>
 
-  const saveConversation = async (queryText: string, responseText: string, imageUrlContext?: string) => {
-    if (!isAuthenticated || !token) {
-      // Not logged in, or token not available, so don't attempt to save.
-      return;
-    }
-
-    try {
-      const response = await fetch('/api/user/ai-conversations', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`,
-        },
-        body: JSON.stringify({
-          type: 'shopping_assistant',
-          query: queryText,
-          response: responseText,
-          imageUrlContext: imageUrlContext || null,
-        }),
-      });
-
-      if (!response.ok) {
-        const errorData = await response.json().catch(() => ({})); // Catch if error response isn't valid JSON
-        console.error('Failed to save shopping_assistant conversation:', response.status, errorData);
-        // Optional: Toast a silent error or log to an error tracking service
-      } else {
-        console.log('Shopping_assistant conversation saved successfully.');
-        // const savedConversation = await response.json(); // if needed
-      }
-    } catch (error) {
-      console.error('Error saving shopping_assistant conversation:', error);
-    }
-  };
-
-  useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [messages]);
-
-  // Effect to handle auto-submission when finalTranscript is updated by STT
-  useEffect(() => {
-    if (finalTranscript && autoSubmitSttRef.current) {
-      setQuery(finalTranscript); // Set the query input with the transcript
-      // Trigger handleSubmit after state update
-      // Using a timeout to ensure 'query' state is updated before submit
-      setTimeout(() => {
-        handleSubmit();
-        autoSubmitSttRef.current = false; // Reset auto-submit flag
-      }, 0);
-    }
-  }, [finalTranscript]); // Dependency on finalTranscript
-
-  const handleSubmit = async (e?: FormEvent) => {
-    if (e) e.preventDefault();
-    const currentQuery = query.trim();
-    if (!currentQuery) return;
-
-    if (!isAuthenticated || !token) {
-      toast({ title: "Authentication Required", description: "Please log in to use the AI Assistant.", variant: "destructive" });
-      return;
-    }
-
-    // Prepare history for API (send last N messages, excluding current query)
-    const conversationHistoryForApi = messages
-      .slice(-10) // Example: Take last 10 messages
-      .map(m => ({ role: m.role, content: m.content }));
-
-    const userMessage: ChatMessage = { id: Date.now().toString(), role: 'user', content: currentQuery };
-    setMessages(prev => [...prev, userMessage]);
-    setIsLoading(true);
-    setQuery('');
-    setCanvasProducts([]); // Clear previous products
-
-    try {
-      const response = await fetch('/api/ai/shopping-assistant/query', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`,
-        },
-        body: JSON.stringify({ query: currentQuery, conversation_history: conversationHistoryForApi }),
-      });
-
-      if (!response.ok) {
-        const errorData = await response.json().catch(() => ({ error: "Failed to parse AI response." }));
-        const detail = errorData.details ? JSON.stringify(errorData.details) : errorData.error;
-        throw new Error(detail || `AI service failed with status ${response.status}`);
-      }
+      <div className="grid md:grid-cols-2 gap-8 mb-12">
+        {features.map((feature) => (
+          <div key={feature.id} className="p-6 bg-white shadow-xl rounded-lg">
+            <div className="text-3xl mb-3">{feature.icon}</div>
+            <h2 className="text-xl font-semibold text-gray-800 mb-2">{feature.title}</h2>
+            <p className="text-gray-700 leading-relaxed">{feature.description}</p>
+          </div>
+        ))}
+      </div>
       
-      const result = await response.json(); // FastAPI response: { reply: string, suggested_products?: AiSuggestedProduct[] }
+      <section className="p-8 bg-purple-50 rounded-lg text-center mb-12">
+        <h2 className="text-2xl font-semibold text-gray-800 mb-4">Ready to Experience Smarter Shopping?</h2>
+        <p className="text-gray-700 leading-relaxed mb-6">
+          The AI Shopping Assistant is integrated directly into your browsing experience. 
+          Look for the assistant icon or prompt as you shop to get started.
+        </p>
+        {/* This link might go to a page where the assistant is prominently featured, or a general products page */}
+        <Link href="/products" 
+              className="bg-purple-600 hover:bg-purple-700 text-white font-bold py-3 px-8 rounded-lg text-lg transition duration-300">
+          Explore Products with AI Help
+        </Link>
+      </section>
 
-      const assistantMessage: ChatMessage = {
-        id: (Date.now() + 1).toString(),
-        role: 'assistant',
-        content: result.reply || "I'm not sure how to respond to that.",
-        suggestedProducts: result.suggested_products || [], // Use new field
-        // products: result.suggested_products ? result.suggested_products.map(p => ({...p, id: String(p.id), price: String(p.price) })) : [], // Adapter if ProductCanvas needs ProductForAI
-      };
-      setMessages(prev => [...prev, assistantMessage]);
+      <div className="text-center">
+        <p className="text-gray-600 mb-2">Want to learn more about the tech behind it?</p>
+        <Link href="/about#technology" className="text-purple-600 hover:text-purple-800 font-medium">
+          Our Technology &rarr;
+        </Link>
+      </div>
+    </div>
+  );
+}
 
-      if (result.reply && isTTSSupported) {
-        speak(result.reply);
-      }
-
-      // Use assistantMessage.suggestedProducts for ProductCanvas
-      if (assistantMessage.suggestedProducts && assistantMessage.suggestedProducts.length > 0) {
-        // Assuming ProductCanvas is updated or can handle AiSuggestedProduct[]
-        // If ProductCanvas strictly needs ProductForAI[], an adapter function would be needed here.
-        // For now, directly pass AiSuggestedProduct[] assuming compatibility or future update of ProductCanvas.
-        setCanvasProducts(assistantMessage.suggestedProducts);
-        setChatAreaMode('sidebar');
-      } else {
-        if (chatAreaMode === 'full') {
-            setCanvasProducts([]);
-        } else if (chatAreaMode === 'sidebar' && (!assistantMessage.suggestedProducts || assistantMessage.suggestedProducts.length === 0)) {
-            setCanvasProducts([]);
-        }
-      }
-      
-      await saveConversation(currentQuery, assistantMessage.content);
-
-    } catch (error: any) {
-      console.error('Error calling AI Assistant proxy:', error);
-      const errorResponseMessage = error.message || "Sorry, I couldn't connect to the AI assistant right now.";
-      const errorMessage: ChatMessage = {
-        id: (Date.now() + 1).toString(),
-        role: 'assistant',
-        content: `Error: ${errorResponseMessage}`,
-        // No responseType in ChatMessage, error is handled by content
-      };
-      setMessages(prev => [...prev, errorMessage]);
-      toast({ title: "Error", description: errorResponseMessage, variant: "destructive" });
-      setChatAreaMode('full'); // Revert to full chat on error
-      setCanvasProducts([]);
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-  const handleReturnToFullChat = () => {
-    setChatAreaMode('full');
-    setCanvasProducts([]);
-  };
-
-  const handleVoiceInputClick = () => {
-    if (!isSTTSupported) {
-      toast({ 
-        title: "Voice Input Not Supported", 
-        description: "Your browser does not support speech recognition.", 
-        variant: "destructive" 
       });
       return;
     }
@@ -274,44 +162,10 @@ export default function AIAssistantPage() {
                     {msg.role === 'user' && <User className="inline h-4 w-4 mr-2 align-middle" />}
                     {msg.role === 'assistant' && <Bot className="inline h-4 w-4 mr-2 align-middle" />}
                     <span className="whitespace-pre-wrap">{msg.content}</span>
-                    {/* Display Suggested Products */}
-                    {msg.role === 'assistant' && msg.suggestedProducts && msg.suggestedProducts.length > 0 && (
-                      <div className="mt-3 pt-3 border-t border-border/50">
-                        <h4 className="text-sm font-semibold mb-2 text-foreground/90">Suggested Products:</h4>
-                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                          {msg.suggestedProducts.map((product: AiSuggestedProduct) => (
-                            <div key={product.id} className="border p-2 rounded-md bg-card/80 text-xs text-card-foreground">
-                              {product.image_url && (
-                                <div className="w-full h-20 relative mb-1 rounded overflow-hidden">
-                                  <Image
-                                    src={product.image_url}
-                                    alt={product.name}
-                                    layout="fill"
-                                    objectFit="cover"
-                                    className="rounded"
-                                  />
-                                </div>
-                              )}
-                              <p className="font-semibold truncate text-foreground" title={product.name}>{product.name}</p>
-                              <p>Price: ${product.price.toFixed(2)}</p>
-                              {product.category_name && <p className="text-muted-foreground truncate">Category: {product.category_name}</p>}
-                              {/*
-                                To make it a link, we need to know if product.id (number, from cj_products.platform_product_id)
-                                can be used directly in storefront URLs like /products/[id].
-                                The main Product type has id: string. This needs careful consideration.
-                                For now, just display info.
-                                Example Link (if ID strategy is confirmed):
-                                <Link href={`/products/${product.id}`} className="text-blue-600 hover:underline">View Details</Link>
-                              */}
-                            </div>
-                          ))}
-                        </div>
-                      </div>
-                    )}
                   </div>
                 </div>
               ))}
-              {isLoading && !isListening && ( // Show thinking loader only if not listening for STT
+              {isLoading && (
                   <div className="flex justify-start">
                       <div className="p-3 rounded-lg bg-secondary flex items-center">
                           <Loader2 className="h-5 w-5 animate-spin mr-2" /> Thinking...
@@ -360,28 +214,17 @@ export default function AIAssistantPage() {
           </CardContent>
         </Card>
 
-        {/* ProductCanvas might need to be adapted or replaced if its product type is different */}
         {chatAreaMode === 'sidebar' && canvasProducts.length > 0 && (
           <div className="w-full sm:w-2/3 lg:w-3/4 overflow-hidden">
-            <h2 className="text-xl font-semibold mb-3 text-center sm:text-left">Product Visualizations</h2>
-             {/*
-              WARNING: ProductCanvas expects `products: ProductForAI[]`.
-              We are passing `canvasProducts` which is now `AiSuggestedProduct[]`.
-              This will likely cause type errors or rendering issues in ProductCanvas.
-              This needs to be addressed either by:
-              1. Updating ProductCanvas to accept AiSuggestedProduct[].
-              2. Creating an adapter function here to convert AiSuggestedProduct[] to ProductForAI[].
-              For this subtask, we are focusing on AIAssistantPage and type definitions.
-              The line below will pass the new type.
-            */}
-            <ProductCanvas products={canvasProducts as any} /> {/* Cast to any to bypass type error for now */}
+            <h2 className="text-xl font-semibold mb-3 text-center sm:text-left">Product Recommendations</h2>
+            <ProductCanvas products={canvasProducts} />
           </div>
         )}
          {chatAreaMode === 'sidebar' && canvasProducts.length === 0 && !isLoading && (
             <div className="w-full sm:w-2/3 lg:w-3/4 flex flex-col items-center justify-center text-muted-foreground p-8 border rounded-lg bg-card">
                 <XCircle size={64} className="mb-4"/>
                 <p className="text-xl text-center">No products to display for the current AI response.</p>
-                <p className="text-sm text-center mt-2">The AI might be asking for clarification, or no specific products were found for your query.</p>
+                <p className="text-sm text-center mt-2">The AI might be asking for clarification, couldn't find specific products, or an error occurred.</p>
             </div>
         )}
       </div>

@@ -16,6 +16,7 @@ const nextConfig = {
       'lh3.googleusercontent.com',
       'taic-3c401.firebasestorage.app',
       'taic-3c401.appspot.com',
+      'api.resort-accessories.shop',
       'localhost',
       'localhost:9002'
     ],
