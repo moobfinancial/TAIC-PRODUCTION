@@ -5,31 +5,22 @@ import { useState, type FormEvent, useEffect, useRef } from 'react';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { Card, CardContent } from '@/components/ui/card';
-import { Bot, Sparkles, Send, Loader2, User, XCircle, CornerDownLeft, Mic, MicOff, Volume2, VolumeX } from 'lucide-react'; // Added MicOff, Volume2, VolumeX
-import { getProductRecommendations, type ProductForAI, type GetProductRecommendationsOutput } from '@/ai/flows/shopping-assistant';
-// Update useAuth import path
+import { Bot, Sparkles, Send, Loader2, User, XCircle, CornerDownLeft, Mic, MicOff, Volume2, VolumeX } from 'lucide-react';
+// getProductRecommendations and related types are removed as we use FastAPI proxy
+// import { getProductRecommendations, type ProductForAI, type GetProductRecommendationsOutput } from '@/ai/flows/shopping-assistant';
 import { useAuth } from '@/contexts/AuthContext';
-// AIConversation type might be an issue if it was removed from User type and not defined elsewhere.
-// For now, we are removing the logic that uses it.
-// import type { AIConversation } from '@/lib/types';
 import { useToast } from '@/hooks/use-toast';
-import useWebSpeech from '@/hooks/useWebSpeech'; // Import the hook
-import { ProductCanvas } from '@/components/products/ProductCanvas';
+import useWebSpeech from '@/hooks/useWebSpeech';
+import { ProductCanvas } from '@/components/products/ProductCanvas'; // This component might need an update for AiSuggestedProduct
 import { cn } from '@/lib/utils';
-
-interface Message {
-  id: string;
-  role: 'user' | 'assistant';
-  content: string; // AI's textual response or user's query
-  products?: ProductForAI[]; // Products to display, if any
-  responseType?: GetProductRecommendationsOutput['responseType'];
-}
+import type { ChatMessage, AiSuggestedProduct, ProductForAI } from '@/lib/types'; // Updated import
+import Image from 'next/image'; // Import for displaying product images
+// import Link from 'next/link'; // Import if using Links for products
 
 export default function AIAssistantPage() {
   const [query, setQuery] = useState('');
   const [isLoading, setIsLoading] = useState(false);
-  const [messages, setMessages] = useState<Message[]>([]);
-  // Get token and isAuthenticated for saving conversation
+  const [messages, setMessages] = useState<ChatMessage[]>([]); // Use updated ChatMessage type
   const { user, token, isAuthenticated } = useAuth();
   const { toast } = useToast();
 
@@ -64,7 +55,10 @@ export default function AIAssistantPage() {
   });
 
   const [chatAreaMode, setChatAreaMode] = useState<'full' | 'sidebar'>('full');
-  const [canvasProducts, setCanvasProducts] = useState<ProductForAI[]>([]);
+  // canvasProducts will now hold AiSuggestedProduct if the canvas is updated,
+  // or we might need an adapter if ProductCanvas expects ProductForAI.
+  // For now, let's assume ProductCanvas can take AiSuggestedProduct or we adapt here.
+  const [canvasProducts, setCanvasProducts] = useState<AiSuggestedProduct[]>([]);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const autoSubmitSttRef = useRef(false); // Ref to control auto-submission after STT
 
@@ -134,7 +128,7 @@ export default function AIAssistantPage() {
       .slice(-10) // Example: Take last 10 messages
       .map(m => ({ role: m.role, content: m.content }));
 
-    const userMessage: Message = { id: Date.now().toString(), role: 'user', content: currentQuery };
+    const userMessage: ChatMessage = { id: Date.now().toString(), role: 'user', content: currentQuery };
     setMessages(prev => [...prev, userMessage]);
     setIsLoading(true);
     setQuery('');
@@ -152,22 +146,18 @@ export default function AIAssistantPage() {
 
       if (!response.ok) {
         const errorData = await response.json().catch(() => ({ error: "Failed to parse AI response." }));
-        // Use errorData.details if available from FastAPI's Zod validation, otherwise errorData.error
         const detail = errorData.details ? JSON.stringify(errorData.details) : errorData.error;
         throw new Error(detail || `AI service failed with status ${response.status}`);
       }
-
-      const result = await response.json(); // FastAPI response: { reply: string, suggested_products?: ProductModel[] }
       
-      const assistantMessage: Message = {
+      const result = await response.json(); // FastAPI response: { reply: string, suggested_products?: AiSuggestedProduct[] }
+
+      const assistantMessage: ChatMessage = {
         id: (Date.now() + 1).toString(),
         role: 'assistant',
         content: result.reply || "I'm not sure how to respond to that.",
-        products: result.suggested_products || [], // Use suggested_products from new API
-        // responseType is not directly available from the new simple API response.
-        // We can infer it or simplify the logic that uses responseType.
-        // For now, if products are returned, consider it 'products', otherwise 'clarification' or 'no_results' based on content.
-        responseType: (result.suggested_products && result.suggested_products.length > 0) ? 'products' : 'clarification',
+        suggestedProducts: result.suggested_products || [], // Use new field
+        // products: result.suggested_products ? result.suggested_products.map(p => ({...p, id: String(p.id), price: String(p.price) })) : [], // Adapter if ProductCanvas needs ProductForAI
       };
       setMessages(prev => [...prev, assistantMessage]);
 
@@ -175,33 +165,31 @@ export default function AIAssistantPage() {
         speak(result.reply);
       }
 
-      if (assistantMessage.products && assistantMessage.products.length > 0) {
-        setCanvasProducts(assistantMessage.products);
+      // Use assistantMessage.suggestedProducts for ProductCanvas
+      if (assistantMessage.suggestedProducts && assistantMessage.suggestedProducts.length > 0) {
+        // Assuming ProductCanvas is updated or can handle AiSuggestedProduct[]
+        // If ProductCanvas strictly needs ProductForAI[], an adapter function would be needed here.
+        // For now, directly pass AiSuggestedProduct[] assuming compatibility or future update of ProductCanvas.
+        setCanvasProducts(assistantMessage.suggestedProducts);
         setChatAreaMode('sidebar');
       } else {
-        // If no products, or if it's a clarification, stay in full chat or sidebar without products
-        // setCanvasProducts([]); // already cleared
         if (chatAreaMode === 'full') {
             setCanvasProducts([]);
-        } else if (chatAreaMode === 'sidebar' && assistantMessage.products?.length === 0) {
-            // Stay in sidebar, but it will show "no products to display"
+        } else if (chatAreaMode === 'sidebar' && (!assistantMessage.suggestedProducts || assistantMessage.suggestedProducts.length === 0)) {
             setCanvasProducts([]);
         }
       }
       
-      await saveConversation(currentQuery, assistantMessage.content); // Save the new turn
-
-      // Toasts for specific conditions can be added here if desired, based on result.reply or product presence
-      // e.g. if result.reply indicates no products found explicitly.
+      await saveConversation(currentQuery, assistantMessage.content);
 
     } catch (error: any) {
       console.error('Error calling AI Assistant proxy:', error);
       const errorResponseMessage = error.message || "Sorry, I couldn't connect to the AI assistant right now.";
-      const errorMessage: Message = {
+      const errorMessage: ChatMessage = {
         id: (Date.now() + 1).toString(),
         role: 'assistant',
         content: `Error: ${errorResponseMessage}`,
-        responseType: 'error'
+        // No responseType in ChatMessage, error is handled by content
       };
       setMessages(prev => [...prev, errorMessage]);
       toast({ title: "Error", description: errorResponseMessage, variant: "destructive" });
@@ -286,10 +274,44 @@ export default function AIAssistantPage() {
                     {msg.role === 'user' && <User className="inline h-4 w-4 mr-2 align-middle" />}
                     {msg.role === 'assistant' && <Bot className="inline h-4 w-4 mr-2 align-middle" />}
                     <span className="whitespace-pre-wrap">{msg.content}</span>
+                    {/* Display Suggested Products */}
+                    {msg.role === 'assistant' && msg.suggestedProducts && msg.suggestedProducts.length > 0 && (
+                      <div className="mt-3 pt-3 border-t border-border/50">
+                        <h4 className="text-sm font-semibold mb-2 text-foreground/90">Suggested Products:</h4>
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                          {msg.suggestedProducts.map((product: AiSuggestedProduct) => (
+                            <div key={product.id} className="border p-2 rounded-md bg-card/80 text-xs text-card-foreground">
+                              {product.image_url && (
+                                <div className="w-full h-20 relative mb-1 rounded overflow-hidden">
+                                  <Image
+                                    src={product.image_url}
+                                    alt={product.name}
+                                    layout="fill"
+                                    objectFit="cover"
+                                    className="rounded"
+                                  />
+                                </div>
+                              )}
+                              <p className="font-semibold truncate text-foreground" title={product.name}>{product.name}</p>
+                              <p>Price: ${product.price.toFixed(2)}</p>
+                              {product.category_name && <p className="text-muted-foreground truncate">Category: {product.category_name}</p>}
+                              {/*
+                                To make it a link, we need to know if product.id (number, from cj_products.platform_product_id)
+                                can be used directly in storefront URLs like /products/[id].
+                                The main Product type has id: string. This needs careful consideration.
+                                For now, just display info.
+                                Example Link (if ID strategy is confirmed):
+                                <Link href={`/products/${product.id}`} className="text-blue-600 hover:underline">View Details</Link>
+                              */}
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
                   </div>
                 </div>
               ))}
-              {isLoading && (
+              {isLoading && !isListening && ( // Show thinking loader only if not listening for STT
                   <div className="flex justify-start">
                       <div className="p-3 rounded-lg bg-secondary flex items-center">
                           <Loader2 className="h-5 w-5 animate-spin mr-2" /> Thinking...
@@ -338,17 +360,28 @@ export default function AIAssistantPage() {
           </CardContent>
         </Card>
 
+        {/* ProductCanvas might need to be adapted or replaced if its product type is different */}
         {chatAreaMode === 'sidebar' && canvasProducts.length > 0 && (
           <div className="w-full sm:w-2/3 lg:w-3/4 overflow-hidden">
-            <h2 className="text-xl font-semibold mb-3 text-center sm:text-left">Product Recommendations</h2>
-            <ProductCanvas products={canvasProducts} />
+            <h2 className="text-xl font-semibold mb-3 text-center sm:text-left">Product Visualizations</h2>
+             {/*
+              WARNING: ProductCanvas expects `products: ProductForAI[]`.
+              We are passing `canvasProducts` which is now `AiSuggestedProduct[]`.
+              This will likely cause type errors or rendering issues in ProductCanvas.
+              This needs to be addressed either by:
+              1. Updating ProductCanvas to accept AiSuggestedProduct[].
+              2. Creating an adapter function here to convert AiSuggestedProduct[] to ProductForAI[].
+              For this subtask, we are focusing on AIAssistantPage and type definitions.
+              The line below will pass the new type.
+            */}
+            <ProductCanvas products={canvasProducts as any} /> {/* Cast to any to bypass type error for now */}
           </div>
         )}
          {chatAreaMode === 'sidebar' && canvasProducts.length === 0 && !isLoading && (
             <div className="w-full sm:w-2/3 lg:w-3/4 flex flex-col items-center justify-center text-muted-foreground p-8 border rounded-lg bg-card">
                 <XCircle size={64} className="mb-4"/>
                 <p className="text-xl text-center">No products to display for the current AI response.</p>
-                <p className="text-sm text-center mt-2">The AI might be asking for clarification, couldn't find specific products, or an error occurred.</p>
+                <p className="text-sm text-center mt-2">The AI might be asking for clarification, or no specific products were found for your query.</p>
             </div>
         )}
       </div>

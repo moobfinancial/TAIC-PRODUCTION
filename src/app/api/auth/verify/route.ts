@@ -1,78 +1,73 @@
-import { NextResponse } from 'next/server';
-import { Pool } from 'pg';
-import { verifyMessage } from 'ethers';
+import { NextRequest, NextResponse } from 'next/server';
+import { pool } from '@/lib/db';
+import { ethers } from 'ethers';
 import jwt from 'jsonwebtoken';
 
-// Assume pool is configured in src/lib/db.ts and exported
-// For this example, I'll mock it if actual db.ts is not available
-// In a real scenario, import { pool } from '@/lib/db';
-const pool = new Pool({
-  connectionString: process.env.DATABASE_URL, // Make sure this is set in your environment
-});
-
-// Ensure you have a JWT_SECRET in your environment variables
-const JWT_SECRET = process.env.JWT_SECRET || 'your-super-secret-and-long-enough-jwt-secret';
-if (JWT_SECRET === 'your-super-secret-and-long-enough-jwt-secret') {
-  console.warn("Using default JWT_SECRET. Please set a strong secret in your environment variables.");
+interface VerifyRequest {
+  walletAddress: string;
+  signature: string;
 }
 
-export async function POST(request: Request) {
+export async function POST(req: NextRequest) {
   try {
-    const { walletAddress, signature } = await request.json();
+    const { walletAddress, signature }: VerifyRequest = await req.json();
 
-    if (!walletAddress || typeof walletAddress !== 'string') {
-      return NextResponse.json({ error: 'Wallet address is required' }, { status: 400 });
+    if (!walletAddress || !signature) {
+      return NextResponse.json({ message: 'Wallet address and signature are required' }, { status: 400 });
     }
-    if (!signature || typeof signature !== 'string') {
-      return NextResponse.json({ error: 'Signature is required' }, { status: 400 });
-    }
-
-    const lowercasedWalletAddress = walletAddress.toLowerCase();
 
     // 1. Retrieve user by walletAddress and their stored auth_nonce
-    const userQuery = 'SELECT id, wallet_address, auth_nonce, username, email, role, taic_balance FROM users WHERE wallet_address = $1';
-    const { rows: users } = await pool.query(userQuery, [lowercasedWalletAddress]);
+    const userResult = await pool.query(
+      'SELECT id, wallet_address, auth_nonce, username, email, role, taic_balance FROM users WHERE wallet_address = $1',
+      [walletAddress.toLowerCase()]
+    );
 
-    if (users.length === 0) {
-      return NextResponse.json({ error: 'User not found' }, { status: 404 });
+    if (userResult.rows.length === 0) {
+      return NextResponse.json({ message: 'User not found' }, { status: 404 });
     }
 
-    const user = users[0];
+    const user = userResult.rows[0];
+    const storedNonce = user.auth_nonce;
 
-    if (!user.auth_nonce) {
-      return NextResponse.json({ error: 'Nonce not found or already used. Please request a new challenge.' }, { status: 403 });
+    if (!storedNonce) {
+      return NextResponse.json({ message: 'No nonce found for user. Please request a challenge first.' }, { status: 403 });
     }
 
     // 2. Construct the expected signed message
-    // This message MUST match exactly what the frontend will sign
-    const message = `Logging in to TAIC: ${user.auth_nonce}`;
+    const message = `Logging in to TAIC: ${storedNonce}`;
 
     // 3. Use ethers.verifyMessage(message, signature) to get the signer's address
-    let recoveredAddress;
+    let recoveredAddress: string | null = null;
     try {
-      recoveredAddress = verifyMessage(message, signature);
-    } catch (e) {
-      console.error("Error verifying signature:", e);
-      return NextResponse.json({ error: 'Invalid signature format' }, { status: 400 });
+      recoveredAddress = ethers.verifyMessage(message, signature);
+    } catch (error) {
+      console.error('Error verifying signature:', error);
+      return NextResponse.json({ message: 'Invalid signature' }, { status: 401 });
     }
 
-
     // 4. If recovered address matches walletAddress
-    if (recoveredAddress.toLowerCase() === lowercasedWalletAddress) {
-      // Clear/update auth_nonce in the database to prevent reuse
-      const updateNonceQuery = 'UPDATE users SET auth_nonce = NULL, updated_at = CURRENT_TIMESTAMP WHERE id = $1';
-      await pool.query(updateNonceQuery, [user.id]);
+    if (recoveredAddress && recoveredAddress.toLowerCase() === walletAddress.toLowerCase()) {
+      // 5. Clear/update auth_nonce in the database
+      await pool.query('UPDATE users SET auth_nonce = NULL WHERE id = $1', [user.id]);
 
-      // Generate a JWT
-      const tokenPayload = {
-        userId: user.id,
-        walletAddress: user.wallet_address,
-        role: user.role,
-        // Add any other claims you need
-      };
-      const token = jwt.sign(tokenPayload, JWT_SECRET, { expiresIn: '1d' }); // Adjust expiration as needed
+      // 6. Generate a JWT
+      const jwtSecret = process.env.JWT_SECRET;
+      if (!jwtSecret) {
+        console.error('JWT_SECRET is not defined');
+        return NextResponse.json({ message: 'Internal server error: JWT configuration missing' }, { status: 500 });
+      }
 
-      // Return token and user info
+      const token = jwt.sign(
+        {
+          userId: user.id,
+          walletAddress: user.wallet_address,
+          role: user.role,
+        },
+        jwtSecret,
+        { expiresIn: '7d' } // Token expires in 7 days
+      );
+
+      // 7. Return token and user details
       return NextResponse.json({
         token,
         user: {
@@ -81,20 +76,17 @@ export async function POST(request: Request) {
           username: user.username,
           email: user.email,
           role: user.role,
-          taicBalance: user.taic_balance, // Ensure this is numeric in DB
+          taicBalance: user.taic_balance,
         },
       });
     } else {
-      // Signature does not match the wallet address
-      return NextResponse.json({ error: 'Signature verification failed. Wallet address mismatch.' }, { status: 403 });
+      // Signature does not match
+      return NextResponse.json({ message: 'Signature verification failed' }, { status: 401 });
     }
-
   } catch (error) {
-    console.error('Verify API error:', error);
-    // Check if it's a PG error (e.g. DB connection)
-    if (error && typeof error === 'object' && 'code' in error) {
-        return NextResponse.json({ error: `Database error: ${error.code}`}, { status: 500 });
-    }
-    return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
+    console.error('Verify error:', error);
+    // Check if error is an object and has a message property
+    const message = (error instanceof Error && error.message) ? error.message : 'Internal server error';
+    return NextResponse.json({ message }, { status: 500 });
   }
 }
