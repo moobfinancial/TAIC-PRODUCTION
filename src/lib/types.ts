@@ -96,9 +96,12 @@ export interface User {
 
 export interface AuthContextType {
   user: User | null;
-  logout: () => void;
+  token: string | null; // Added
+  isAuthenticated: boolean; // Added
   isLoading: boolean;
-  // refreshUser: () => Promise<void>; // This should be in the actual AuthContextValue if defined elsewhere
+  logout: () => void;
+  loginWithWallet: (walletAddress: string) => Promise<void>; // Added for explicitness
+  refreshUser: () => Promise<void>; // Uncommented and made active
 }
 
 export interface CartContextType {
@@ -131,9 +134,37 @@ export interface UserGalleryImage {
   createdAt: string;
 }
 
+export interface AiSuggestedProduct {
+  id: number; // From FastAPI ProductModel.id (e.g., platform_product_id from cj_products)
+  name: string;
+  description?: string | null;
+  price: number;
+  image_url?: string | null;
+  category_name?: string | null;
+  source_product_id?: string | null; // e.g., cj_product_id from cj_products
+}
+
+// This ProductForAI seems to be from a previous Genkit product tool.
+// It's different from AiSuggestedProduct from the FastAPI service.
+export interface ProductForAI {
+  id: string; // This is likely the original product ID from the main 'products' table
+  name: string;
+  description: string;
+  price: string; // Note: string price
+  imageUrl: string;
+  dataAiHint?: string;
+  category?: string;
+}
+
 export interface ChatMessage {
-  role: 'user' | 'assistant' | 'system';
+  id?: string; // For React keys
+  role: 'user' | 'assistant' | 'system' | 'tool'; // Added 'tool' role
   content: string;
+  products?: ProductForAI[]; // Existing field, potentially from Genkit product tool
+  suggestedProducts?: AiSuggestedProduct[]; // New field for FastAPI suggestions
+  name?: string; // For tool role, from Genkit
+  toolRequest?: any; // from Genkit
+  toolResponse?: any; // from Genkit
 }
 
 export interface CjOrderItemInput {

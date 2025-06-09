@@ -1,4 +1,3 @@
-
 'use client';
 
 import React from 'react';
@@ -16,7 +15,7 @@ import { Logo } from '@/components/Logo';
 
 export function Navbar() {
   // Use new state from AuthContext
-  const { user, isAuthenticated, logout } = useAuth();
+  const { user, isAuthenticated } = useAuth(); // logout removed as WalletConnectButton handles it
   const { getCartItemCount } = useCart();
   const { getWishlistItemCount } = useWishlist();
 
@@ -28,6 +27,14 @@ export function Navbar() {
     { href: '/staking', label: 'Staking', icon: <Landmark /> },
     { href: '/affiliate', label: 'Affiliate', icon: <Users /> },
   ];
+
+  // Helper function (if not already globally available or part of user model)
+  const shortenAddress = (address: string, chars = 4): string => {
+    if (!address) return "";
+    const prefix = address.substring(0, chars + 2); // 0x + chars
+    const suffix = address.substring(address.length - chars);
+    return `${prefix}...${suffix}`;
+  };
 
   return (
     <header className="sticky top-0 z-50 w-full border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
@@ -74,8 +81,7 @@ export function Navbar() {
               <DropdownMenuTrigger asChild>
                 <Button variant="ghost" className="relative h-8 w-8 rounded-full">
                   <Avatar className="h-8 w-8">
-                    {/* Use walletAddress for avatar if username is not available, or a generic icon */}
-                    <AvatarImage src={user.profileImageUrl || `https://avatar.vercel.sh/${user.username || user.walletAddress}.png`} alt={user.username || user.walletAddress} />
+                    <AvatarImage src={user.profileImageUrl || `https://avatar.vercel.sh/${user.username || user.walletAddress}.png?size=32`} alt={user.username || user.walletAddress} />
                     <AvatarFallback>{(user.username || user.walletAddress).substring(0, 2).toUpperCase()}</AvatarFallback>
                   </Avatar>
                 </Button>
@@ -83,7 +89,6 @@ export function Navbar() {
               <DropdownMenuContent className="w-56" align="end" forceMount>
                 <DropdownMenuLabel className="font-normal">
                   <div className="flex flex-col space-y-1">
-                    {/* Display username if available, otherwise wallet address */}
                     <p className="text-sm font-medium leading-none">{user.username || shortenAddress(user.walletAddress)}</p>
                     {user.email && (
                        <p className="text-xs leading-none text-muted-foreground">
@@ -92,6 +97,10 @@ export function Navbar() {
                     )}
                     <p className="text-xs leading-none text-muted-foreground flex items-center">
                       <Gem className="mr-1 h-3 w-3 text-primary" /> {user.taicBalance?.toLocaleString() || 0} TAIC
+                    </p>
+                     {/* Added Cashback Balance display */}
+                    <p className="text-xs leading-none text-muted-foreground flex items-center">
+                      <Coins className="mr-1 h-3 w-3 text-yellow-500" /> {user.cashbackBalance?.toLocaleString() || 0} Cashback
                     </p>
                   </div>
                 </DropdownMenuLabel>
@@ -114,30 +123,12 @@ export function Navbar() {
                     My Gallery
                   </Link>
                 </DropdownMenuItem>
-                {/* The WalletConnectButton now handles logout, so this can be removed or kept if preferred */}
-                {/* For simplicity, let's assume WalletConnectButton is the sole logout point for now */}
-                {/* <DropdownMenuSeparator />
-                <DropdownMenuItem onClick={logout} className="flex items-center cursor-pointer">
-                  <LogOut className="mr-2 h-4 w-4" />
-                  Log out
-                </DropdownMenuItem> */}
+                {/* Logout is handled by WalletConnectButton, so no explicit logout item here. */}
               </DropdownMenuContent>
             </DropdownMenu>
           )}
         </div>
       </div>
-    </header>
-  );
-}
-
-// Helper function (if not already globally available or part of user model)
-// Can be defined here or imported if it's a common utility
-const shortenAddress = (address: string, chars = 4): string => {
-  if (!address) return "";
-  const prefix = address.substring(0, chars + 2); // 0x + chars
-  const suffix = address.substring(address.length - chars);
-  return `${prefix}...${suffix}`;
-};
     </header>
   );
 }
