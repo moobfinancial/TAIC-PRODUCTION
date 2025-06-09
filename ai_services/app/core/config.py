@@ -7,10 +7,15 @@ class Settings(BaseSettings):
     # For sensitive defaults like passwords, it's better to ensure they are set in the env.
     DATABASE_URL: str = "postgresql://user:password@db:5432/appdb" # Example placeholder
 
+    # OpenRouter Configuration
+    OPENROUTER_API_KEY: str = "placeholder_replace_in_env_openrouter_api_key"
+    OPENROUTER_MISTRAL_MODEL_NAME: str = "mistralai/mistral-7b-instruct"
+    AI_APP_SITE_URL: str = "http://localhost:3000" # For HTTP-Referer header if needed by OpenRouter
+
     # Example for other potential settings:
     # PROJECT_NAME: str = "TAIC AI Services"
     # API_V1_STR: str = "/api/v1"
-    # OPENAI_API_KEY: str | None = None # Optional setting
+    # OPENAI_API_KEY: str | None = None # Optional setting (example if using OpenAI directly too)
 
     # Pydantic V2 (pydantic-settings) configuration
     # Loads variables from a .env file if present.
