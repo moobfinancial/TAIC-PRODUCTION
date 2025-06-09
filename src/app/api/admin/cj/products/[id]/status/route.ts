@@ -103,7 +103,7 @@ export async function PUT(request: NextRequest, { params }: { params: { id: stri
 
     return NextResponse.json({ success: true, message: 'Product status updated successfully.', product: result.rows[0] });
   } catch (error: any) {
-    console.error('[CJ Update Status] Error:', error);
+    console.error('[Supplier Product Status Update] Error:', error); // Updated log
     return NextResponse.json({ error: 'Failed to update product status.', details: error.message }, { status: 500 });
   } finally {
     if (client) client.release();

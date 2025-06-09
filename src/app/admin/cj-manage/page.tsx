@@ -8,16 +8,15 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs'; // Using Tabs for filtering
 import { useToast } from '@/hooks/use-toast';
-import { Loader2, AlertTriangle, CheckCircle, XCircle, EyeOff, Eye, RefreshCw, ShieldCheck, ShieldX, ShieldAlert } from 'lucide-react';
+import { Loader2, AlertTriangle, CheckCircle, XCircle, EyeOff, Eye, RefreshCw, ShieldCheck, ShieldX, ShieldAlert, Layers } from 'lucide-react'; // Added Layers
 import Image from 'next/image'; // For product images
 
-interface ImportedCjProduct {
+interface ImportedSupplierProduct { // Renamed from ImportedCjProduct
   platform_product_id: number;
-  cj_product_id: string;
+  cj_product_id: string; // This ID comes from the supplier, so cj_product_id might still be descriptive if it's CJ's actual ID
   display_name: string;
   selling_price: number;
   platform_category_id: number;
-  // platform_category_name?: string; // Assuming API provides this or we join it
   image_url?: string;
   is_active: boolean;
   approval_status: 'pending' | 'approved' | 'rejected';
@@ -25,17 +24,16 @@ interface ImportedCjProduct {
   updated_at: string;
 }
 
-interface ImportedProductsApiResponse {
-  products: ImportedCjProduct[];
-  // Add pagination if API supports it, otherwise client-side pagination or load all
+interface ImportedProductsApiResponse { // Consider renaming if it's generic enough
+  products: ImportedSupplierProduct[];
 }
 
 
-export default function ManageCjProductsPage() {
+export default function ManageSupplierProductsPage() { // Renamed component
   const { adminApiKey, loading: adminAuthLoading } = useAdminAuth();
   const { toast } = useToast();
 
-  const [products, setProducts] = useState<ImportedCjProduct[]>([]);
+  const [products, setProducts] = useState<ImportedSupplierProduct[]>([]); // Use renamed type
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -45,33 +43,40 @@ export default function ManageCjProductsPage() {
   const fetchImportedProducts = useCallback(async () => {
     if (adminAuthLoading || !adminApiKey) {
       if (!adminAuthLoading) setError("Admin API Key not available.");
+      setIsLoading(false); // Ensure loading is false if returning early
       return;
     }
     setIsLoading(true);
     setError(null);
     try {
+      // Revert API path to /api/admin/cj/imported-products
       const response = await fetch('/api/admin/cj/imported-products', {
         headers: { 'X-Admin-API-Key': adminApiKey },
       });
       if (!response.ok) {
-        const errData = await response.json();
+        const errData = await response.json().catch(() => ({})); // Catch if error response not JSON
         throw new Error(errData.error || `Failed to fetch imported products: ${response.statusText}`);
       }
-      const data: ImportedProductsApiResponse = await response.json();
-      // Assuming the API returns all products and we filter client-side as per subtask description.
-      // If API supports filtering by status, add query param: ?status=${filterStatus} (for 'all', don't send param)
-      setProducts(data.products || []);
+      const data = await response.json(); // Type assertion might be needed if API response isn't strictly ImportedProductsApiResponse
+      setProducts((data.products as ImportedSupplierProduct[]) || []);
     } catch (err: any) {
       setError(err.message);
       toast({ title: "Error Fetching Products", description: err.message, variant: "destructive" });
+      setProducts([]); // Clear products on error
     } finally {
       setIsLoading(false);
     }
   }, [adminApiKey, adminAuthLoading, toast]);
 
   useEffect(() => {
-    fetchImportedProducts();
-  }, [fetchImportedProducts]);
+    if(!adminAuthLoading && adminApiKey) { // Fetch only when auth is resolved and key is present
+        fetchImportedProducts();
+    } else if (!adminAuthLoading && !adminApiKey) {
+        setIsLoading(false);
+        setError("Admin API Key not configured. Cannot load products.");
+    }
+  }, [fetchImportedProducts, adminAuthLoading, adminApiKey]);
+
 
   const handleSelectProduct = (productId: number, checked: boolean) => {
     setSelectedProductIds(prev => {
@@ -103,14 +108,16 @@ export default function ManageCjProductsPage() {
       toast({ title: "Authentication Error", description: "Admin API Key missing.", variant: "destructive" });
       return;
     }
-    setIsLoading(true); // Indicate general loading for actions
+    setIsLoading(true);
     
-    let endpoint = '/api/admin/cj/bulk-status-update';
+    let endpoint = '/api/admin/cj/bulk-status-update'; // Reverted API path
     let payload: any = { productIds, ...newStatus };
+    let method = 'POST';
 
     if (productIds.length === 1) {
-      endpoint = `/api/admin/cj/products/${productIds[0]}/status`;
-      payload = newStatus; // Single update API takes status directly in body
+      endpoint = `/api/admin/cj/products/${productIds[0]}/status`; // Reverted API path
+      payload = newStatus;
+      method = 'PUT';
     }
 
     try {
@@ -137,27 +144,27 @@ export default function ManageCjProductsPage() {
   };
 
 
-  const renderProductActions = (product: ImportedCjProduct) => {
+  const renderProductActions = (product: ImportedSupplierProduct) => { // Use renamed type
     return (
-      <div className="space-x-2">
+      <div className="space-x-1 flex justify-end">
         {product.approval_status === 'pending' && (
-          <Button size="sm" variant="outline" onClick={() => updateProductStatus([product.platform_product_id], { approvalStatus: 'approved', isActive: true })} disabled={isLoading}>
-            <ShieldCheck className="mr-1 h-4 w-4" /> Approve
+          <Button size="xs" variant="outline" onClick={() => updateProductStatus([product.platform_product_id], { approvalStatus: 'approved', isActive: true })} disabled={isLoading} title="Approve">
+            <ShieldCheck className="h-4 w-4" />
           </Button>
         )}
         {(product.approval_status === 'pending' || product.approval_status === 'approved') && (
-          <Button size="sm" variant="destructiveOutline" onClick={() => updateProductStatus([product.platform_product_id], { approvalStatus: 'rejected', isActive: false })} disabled={isLoading}>
-            <ShieldX className="mr-1 h-4 w-4" /> Reject
+          <Button size="xs" variant="destructiveOutline" onClick={() => updateProductStatus([product.platform_product_id], { approvalStatus: 'rejected', isActive: false })} disabled={isLoading} title="Reject">
+            <ShieldX className="h-4 w-4" />
           </Button>
         )}
         {product.approval_status === 'approved' && product.is_active && (
-          <Button size="sm" variant="outline" onClick={() => updateProductStatus([product.platform_product_id], { isActive: false })} disabled={isLoading}>
-            <EyeOff className="mr-1 h-4 w-4" /> Deactivate
+          <Button size="xs" variant="outline" onClick={() => updateProductStatus([product.platform_product_id], { isActive: false })} disabled={isLoading} title="Deactivate">
+            <EyeOff className="h-4 w-4" />
           </Button>
         )}
         {product.approval_status === 'approved' && !product.is_active && (
-          <Button size="sm" variant="outline" onClick={() => updateProductStatus([product.platform_product_id], { isActive: true })} disabled={isLoading}>
-            <Eye className="mr-1 h-4 w-4" /> Activate
+          <Button size="xs" variant="outline" onClick={() => updateProductStatus([product.platform_product_id], { isActive: true })} disabled={isLoading} title="Activate">
+            <Eye className="h-4 w-4" />
           </Button>
         )}
       </div>
@@ -190,10 +197,10 @@ export default function ManageCjProductsPage() {
   return (
     <ProtectedRoute>
       <div className="space-y-6 p-4 md:p-6">
-        <h1 className="text-2xl md:text-3xl font-bold">Manage Imported CJ Products</h1>
+        <h1 className="text-2xl md:text-3xl font-bold">Manage Imported Supplier Products</h1> {/* Updated title */}
 
         <Tabs value={filterStatus} onValueChange={(value) => setFilterStatus(value as any)}>
-          <TabsList>
+          <TabsList className="grid w-full grid-cols-4"> {/* Made tabs full width for better mobile */}
             <TabsTrigger value="all">All</TabsTrigger>
             <TabsTrigger value="pending">Pending Approval</TabsTrigger>
             <TabsTrigger value="approved">Approved</TabsTrigger>
@@ -234,9 +241,17 @@ export default function ManageCjProductsPage() {
                         disabled={filteredProducts.length === 0}
                       />
                     </TableHead>
-                    <TableHead className="w-[80px]">Image</TableHead>
-                    <TableHead>Name & CJ ID</TableHead>
-                    <TableHead>Price</TableHead>
+                    <TableHead className="w-[50px] sm:w-[60px]"> {/* Checkbox column */}
+                       <Checkbox
+                        checked={filteredProducts.length > 0 && selectedProductIds.size === filteredProducts.length} // Corrected select all logic
+                        onCheckedChange={(checked) => handleSelectAllOnPage(!!checked)}
+                        aria-label="Select all on page"
+                        disabled={filteredProducts.length === 0 || isLoading}
+                      />
+                    </TableHead>
+                    <TableHead className="w-[60px] hidden sm:table-cell">Image</TableHead>
+                    <TableHead>Name & Supplier PID</TableHead> {/* Updated text */}
+                    <TableHead className="hidden md:table-cell">Price</TableHead>
                     <TableHead>Status</TableHead>
                     <TableHead className="text-right">Actions</TableHead>
                   </TableRow>
@@ -248,21 +263,23 @@ export default function ManageCjProductsPage() {
                         <Checkbox
                           checked={selectedProductIds.has(product.platform_product_id)}
                           onCheckedChange={(checked) => handleSelectProduct(product.platform_product_id, !!checked)}
+                          aria-label={`Select product ${product.platform_product_id}`}
                         />
                       </TableCell>
-                      <TableCell>
+                      <TableCell className="hidden sm:table-cell">
                         {product.image_url ? (
-                           <Image src={product.image_url} alt={product.display_name} width={50} height={50} className="rounded object-cover aspect-square" />
+                           <Image src={product.image_url} alt={product.display_name} width={40} height={40} className="rounded object-cover aspect-square" />
                         ) : (
-                          <div className="w-[50px] h-[50px] bg-muted rounded flex items-center justify-center text-xs text-muted-foreground">No Image</div>
+                          <div className="w-[40px] h-[40px] bg-muted rounded flex items-center justify-center text-xs text-muted-foreground">No Img</div>
                         )}
                       </TableCell>
                       <TableCell>
                         <div className="font-medium">{product.display_name}</div>
-                        <div className="text-xs text-muted-foreground">CJ ID: {product.cj_product_id}</div>
+                        {/* Use cj_product_id for Supplier PID as it's the source identifier */}
+                        <div className="text-xs text-muted-foreground">Supplier PID: {product.cj_product_id}</div>
                         <div className="text-xs text-muted-foreground">Platform ID: {product.platform_product_id}</div>
                       </TableCell>
-                      <TableCell>${product.selling_price.toFixed(2)}</TableCell>
+                      <TableCell className="hidden md:table-cell">${product.selling_price.toFixed(2)}</TableCell>
                       <TableCell>{getStatusBadge(product.approval_status, product.is_active)}</TableCell>
                       <TableCell className="text-right">{renderProductActions(product)}</TableCell>
                     </TableRow>

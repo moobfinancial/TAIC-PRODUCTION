@@ -16,12 +16,12 @@ const pool = new Pool({
     `postgresql://${process.env.PGUSER}:${process.env.PGPASSWORD}@${process.env.PGHOST}:${process.env.PGPORT}/${process.env.PGDATABASE}`,
 });
 
-// CJ Dropshipping API configuration
+// CJ Dropshipping API configuration (This URL is specific to CJ, so constant name can remain)
 const CJ_API_BASE_URL_V2 = 'https://developers.cjdropshipping.com/api2.0/v1/product';
 
 // Zod schema for input validation
 const ImportProductInputSchema = z.object({
-  cjProductId: z.string().min(1, "CJ Product ID is required."),
+  cjProductId: z.string().min(1, "Supplier Product ID is required."), // Updated description
   platform_category_id: z.number().int().positive("Platform category ID must be a positive integer."),
   selling_price: z.number().positive("Selling price must be a positive number."),
   display_name: z.string().optional(),
@@ -211,17 +211,17 @@ export async function POST(request: NextRequest) {
         if (!inputDisplayName && needsTranslation(displayName)) {
           const translatedName = await translateText(displayName, 'en');
           displayName = translatedName || displayName;
-          console.log(`[CJ Import] Translated product name from '${displayName}' to '${translatedName}'`);
+          console.log(`[Supplier Import] Translated product name from '${displayName}' to '${translatedName}'`); // Updated log
         }
         
         // Translate description if needed and not already provided as input
         if (!inputDisplayDescription && needsTranslation(displayDescription)) {
           const translatedDescription = await translateText(displayDescription, 'en');
           displayDescription = translatedDescription || displayDescription;
-          console.log(`[CJ Import] Translated product description`);
+          console.log(`[Supplier Import] Translated product description`); // Updated log
         }
       } catch (translationError) {
-        console.error('[CJ Import] Translation error:', translationError);
+        console.error('[Supplier Import] Translation error:', translationError); // Updated log
         // Continue with original text if translation fails
       }
       

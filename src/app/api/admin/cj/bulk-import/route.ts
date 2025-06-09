@@ -19,13 +19,13 @@ const pool = new Pool({
 const CJ_API_BASE_URL_V2 = 'https://developers.cjdropshipping.com/api2.0/v1/product';
 
 const BulkImportInputSchema = z.object({
-  cjProductIds: z.array(z.string().min(1)).min(1, "At least one CJ Product ID is required."),
+  cjProductIds: z.array(z.string().min(1)).min(1, "At least one Supplier Product ID is required."), // Updated description
   platformCategoryId: z.number().int().positive("Platform category ID must be a positive integer."),
   pricingMarkupPercentage: z.number().min(0, "Pricing markup percentage cannot be negative."),
 });
 
 interface ErrorDetail {
-  cjProductId: string;
+  cjProductId: string; // This ID is from the supplier (CJ), so name is okay.
   error: string;
   details?: any;
 }

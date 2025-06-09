@@ -8,7 +8,9 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/com
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { useToast } from '@/hooks/use-toast';
 import { Loader2, AlertTriangle, ListTree, CheckCircle, XCircle, RefreshCw } from 'lucide-react';
-import { CjCategory } from '@/lib/cjUtils'; // Assuming path from previous refactor
+// Assuming CjCategory might be renamed to SupplierCategory in cjUtils eventually.
+// For now, if cjUtils still exports CjCategory, we use it.
+import { CjCategory as SupplierCategory } from '@/lib/cjUtils';
 
 interface SyncResult {
   addedCount?: number;
@@ -18,11 +20,11 @@ interface SyncResult {
   message?: string;
 }
 
-export default function CjCategorySyncPage() {
+export default function SupplierCategorySyncPage() { // Renamed component
   const { adminApiKey, loading: adminAuthLoading } = useAdminAuth();
   const { toast } = useToast();
 
-  const [cjCategoriesPreview, setCjCategoriesPreview] = useState<CjCategory[]>([]);
+  const [supplierCategoriesPreview, setSupplierCategoriesPreview] = useState<SupplierCategory[]>([]); // Renamed state
   const [isLoadingPreview, setIsLoadingPreview] = useState<boolean>(false);
   const [isPreviewFetched, setIsPreviewFetched] = useState<boolean>(false);
   const [isSyncing, setIsSyncing] = useState<boolean>(false);
@@ -30,7 +32,7 @@ export default function CjCategorySyncPage() {
   const [previewError, setPreviewError] = useState<string | null>(null);
   const [syncError, setSyncError] = useState<string | null>(null);
 
-  const fetchCjCategoriesForPreview = useCallback(async () => {
+  const fetchSupplierCategoriesForPreview = useCallback(async () => { // Renamed function
     if (!adminApiKey) {
       toast({ title: "Authentication Error", description: "Admin API Key not available.", variant: "destructive" });
       setPreviewError("Admin API Key not available.");
@@ -38,21 +40,23 @@ export default function CjCategorySyncPage() {
     }
     setIsLoadingPreview(true);
     setPreviewError(null);
-    setCjCategoriesPreview([]);
+    setSupplierCategoriesPreview([]); // Use renamed state setter
     setIsPreviewFetched(false);
-    setSyncResult(null); // Clear previous sync results
+    setSyncResult(null);
     setSyncError(null);
 
     try {
+      // This API path will be updated when directory renames happen.
+      // For now, it refers to the route that fetches CJ categories.
       const response = await fetch('/api/admin/cj/cj-categories-route', {
         headers: { 'X-Admin-API-Key': adminApiKey },
       });
       if (!response.ok) {
         const errorData = await response.json().catch(() => ({}));
-        throw new Error(errorData.error || errorData.message || `Failed to fetch CJ categories: ${response.statusText}`);
+        throw new Error(errorData.error || errorData.message || `Failed to fetch Supplier categories: ${response.statusText}`); // Updated message
       }
-      const data: CjCategory[] = await response.json();
-      setCjCategoriesPreview(data || []);
+      const data: SupplierCategory[] = await response.json();
+      setSupplierCategoriesPreview(data || []); // Use renamed state setter
       setIsPreviewFetched(true);
       if (!data || data.length === 0) {
         toast({ title: "No Categories", description: "No categories were returned from the supplier.", variant: "default" });
@@ -71,7 +75,7 @@ export default function CjCategorySyncPage() {
       setSyncError("Admin API Key not available.");
       return;
     }
-    if (!isPreviewFetched || cjCategoriesPreview.length === 0) {
+    if (!isPreviewFetched || supplierCategoriesPreview.length === 0) { // Use renamed state
         toast({ title: "No Categories to Sync", description: "Please fetch categories for preview first.", variant: "warning"});
         return;
     }
@@ -81,13 +85,13 @@ export default function CjCategorySyncPage() {
     setSyncResult(null);
 
     try {
+      // This API path will be updated when directory renames happen.
       const response = await fetch('/api/admin/cj/sync-platform-categories', {
         method: 'POST',
         headers: {
           'X-Admin-API-Key': adminApiKey,
-          'Content-Type': 'application/json', // Though body is empty for this specific POST
+          'Content-Type': 'application/json',
         },
-        // Body can be empty if the API doesn't expect one for this trigger
       });
 
       const resultData: SyncResult = await response.json();
@@ -106,19 +110,19 @@ export default function CjCategorySyncPage() {
     } finally {
       setIsSyncing(false);
     }
-  }, [adminApiKey, toast, isPreviewFetched, cjCategoriesPreview]);
+  }, [adminApiKey, toast, isPreviewFetched, supplierCategoriesPreview]); // Use renamed state
 
-  const renderCjCategoryNode = (category: CjCategory, level: number = 0): JSX.Element[] => {
+  const renderSupplierCategoryNode = (category: SupplierCategory, level: number = 0): JSX.Element[] => { // Renamed function
     const items: JSX.Element[] = [];
     items.push(
       <div key={category.id} style={{ marginLeft: `${level * 20}px` }} className="py-1 text-sm">
         {level > 0 && <span className="mr-2 text-muted-foreground">↳</span>}
-        {category.name} <span className="text-xs text-muted-foreground">(ID: {category.id})</span>
+        {category.name} <span className="text-xs text-muted-foreground">(Supplier ID: {category.id})</span> {/* Updated text */}
       </div>
     );
     if (category.children && category.children.length > 0) {
       category.children.forEach(child => {
-        items.push(...renderCjCategoryNode(child, level + 1));
+        items.push(...renderSupplierCategoryNode(child, level + 1)); // Recursive call to renamed function
       });
     }
     return items;
@@ -133,12 +137,12 @@ export default function CjCategorySyncPage() {
           <CardHeader>
             <CardTitle>Step 1: Fetch & Preview Supplier Categories</CardTitle>
             <CardDescription>
-              Fetch the current category tree from the supplier (CJ Dropshipping).
+              Fetch the current category tree from the default supplier.
               This allows you to preview the categories before attempting to sync them with the platform.
             </CardDescription>
           </CardHeader>
           <CardContent>
-            <Button onClick={fetchCjCategoriesForPreview} disabled={isLoadingPreview || adminAuthLoading}>
+            <Button onClick={fetchSupplierCategoriesForPreview} disabled={isLoadingPreview || adminAuthLoading}> {/* Use renamed handler */}
               {isLoadingPreview ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <ListTree className="mr-2 h-4 w-4" />}
               Fetch & Preview Supplier Categories
             </Button>
@@ -148,10 +152,10 @@ export default function CjCategorySyncPage() {
               </div>
             )}
             {isPreviewFetched && !isLoadingPreview && !previewError && (
-              cjCategoriesPreview.length > 0 ? (
+              supplierCategoriesPreview.length > 0 ? ( // Use renamed state
                 <ScrollArea className="mt-4 h-72 w-full rounded-md border p-4">
                   <h3 className="font-semibold mb-2">Fetched Categories Preview:</h3>
-                  {cjCategoriesPreview.map(cat => renderCjCategoryNode(cat, 0))}
+                  {supplierCategoriesPreview.map(cat => renderSupplierCategoryNode(cat, 0))} {/* Use renamed render func & state */}
                 </ScrollArea>
               ) : (
                 <p className="mt-4 text-muted-foreground">No categories found or fetched from the supplier.</p>
@@ -160,7 +164,7 @@ export default function CjCategorySyncPage() {
           </CardContent>
         </Card>
 
-        {isPreviewFetched && cjCategoriesPreview.length > 0 && (
+        {isPreviewFetched && supplierCategoriesPreview.length > 0 && ( // Use renamed state
           <Card>
             <CardHeader>
               <CardTitle>Step 2: Synchronize to Platform</CardTitle>
@@ -172,7 +176,7 @@ export default function CjCategorySyncPage() {
             <CardContent>
               <Button onClick={handleSyncCategories} disabled={isSyncing || isLoadingPreview || adminAuthLoading}>
                 {isSyncing ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <RefreshCw className="mr-2 h-4 w-4" />}
-                Sync Categories to Platform
+                Sync Supplier Categories to Platform {/* Updated text */}
               </Button>
               {syncError && (
                 <div className="mt-4 p-3 bg-destructive/10 border border-destructive/30 rounded-md text-destructive text-sm flex items-center gap-2">

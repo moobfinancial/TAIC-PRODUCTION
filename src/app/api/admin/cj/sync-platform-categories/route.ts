@@ -18,8 +18,8 @@ interface SyncError {
   error: string;
 }
 
-async function sync_cj_category_to_db(
-  cjCategory: CjCategory,
+async function sync_supplier_category_to_db( // Renamed function
+  supplierCategory: CjCategory, // Parameter renamed, type CjCategory is from cjUtils for now
   parentPlatformId: number | null,
   client: PoolClient,
   counts: { addedCount: number; existedCount: number; errorCount: number; },
@@ -33,37 +33,37 @@ async function sync_cj_category_to_db(
       SELECT id FROM categories
       WHERE name = $1 AND (parent_category_id = $2 OR ($2 IS NULL AND parent_category_id IS NULL))
     `;
-    const checkResult = await client.query(checkQuery, [cjCategory.name, parentPlatformId]);
+    const checkResult = await client.query(checkQuery, [supplierCategory.name, parentPlatformId]);
 
     if (checkResult.rows.length > 0) {
       platformCategoryId = checkResult.rows[0].id;
       counts.existedCount++;
-      console.log(`[Category Sync] Category '${cjCategory.name}' (CJ ID: ${cjCategory.id}) with parent '${parentPlatformId || 'NULL'}' already exists with Platform ID: ${platformCategoryId}.`);
+      console.log(`[Category Sync] Category '${supplierCategory.name}' (Supplier ID: ${supplierCategory.id}) with parent '${parentPlatformId || 'NULL'}' already exists with Platform ID: ${platformCategoryId}.`);
     } else {
       // Insert new category
       const insertQuery = `
         INSERT INTO categories (name, parent_category_id, description, is_active)
         VALUES ($1, $2, $3, true) RETURNING id;
-        -- Assuming new categories from CJ should be active by default
-        -- Description can be enhanced, e.g., 'Synced from Supplier (CJ ID: ${cjCategory.id})'
+        -- Assuming new categories from Supplier should be active by default
+        -- Description can be enhanced, e.g., 'Synced from Supplier (Supplier ID: ${supplierCategory.id})'
       `;
-      const description = `Synced from Supplier (CJ ID: ${cjCategory.id}, Name: ${cjCategory.name})`;
-      const insertResult = await client.query(insertQuery, [cjCategory.name, parentPlatformId, description]);
+      const description = `Synced from Supplier (Supplier ID: ${supplierCategory.id}, Name: ${supplierCategory.name})`; // Source ID is still CJ's categoryId
+      const insertResult = await client.query(insertQuery, [supplierCategory.name, parentPlatformId, description]);
       platformCategoryId = insertResult.rows[0].id;
       counts.addedCount++;
-      console.log(`[Category Sync] Added category '${cjCategory.name}' (CJ ID: ${cjCategory.id}) with new Platform ID: ${platformCategoryId} under parent '${parentPlatformId || 'NULL'}'.`);
+      console.log(`[Category Sync] Added category '${supplierCategory.name}' (Supplier ID: ${supplierCategory.id}) with new Platform ID: ${platformCategoryId} under parent '${parentPlatformId || 'NULL'}'.`);
     }
   } catch (error: any) {
-    console.error(`[Category Sync] Error processing category '${cjCategory.name}' (CJ ID: ${cjCategory.id}): ${error.message}`);
+    console.error(`[Category Sync] Error processing category '${supplierCategory.name}' (Supplier ID: ${supplierCategory.id}): ${error.message}`);
     counts.errorCount++;
-    errorsList.push({ categoryName: cjCategory.name, parentId: parentPlatformId, error: error.message });
+    errorsList.push({ categoryName: supplierCategory.name, parentId: parentPlatformId, error: error.message });
     // Do not proceed with children if this category failed to insert/find
     return;
   }
 
-  if (platformCategoryId && cjCategory.children && cjCategory.children.length > 0) {
-    for (const childCjCategory of cjCategory.children) {
-      await sync_cj_category_to_db(childCjCategory, platformCategoryId, client, counts, errorsList);
+  if (platformCategoryId && supplierCategory.children && supplierCategory.children.length > 0) {
+    for (const childSupplierCategory of supplierCategory.children) { // Renamed loop variable
+      await sync_supplier_category_to_db(childSupplierCategory, platformCategoryId, client, counts, errorsList); // Recursive call with renamed function
     }
   }
 }
@@ -76,15 +76,15 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ success: false, message: 'Invalid or missing Admin API Key.' }, { status: 401 });
   }
 
-  let cjCategories: CjCategory[];
+  let supplierCategories: CjCategory[]; // Renamed variable, type CjCategory is from cjUtils for now
   try {
-    cjCategories = await fetchAndTransformCjCategories();
-    if (!cjCategories || cjCategories.length === 0) {
-      return NextResponse.json({ message: "No categories fetched from CJ or none transformed.", addedCount: 0, existedCount: 0, errorCount: 0, errorsList: [] }, { status: 200 });
+    supplierCategories = await fetchAndTransformCjCategories();
+    if (!supplierCategories || supplierCategories.length === 0) {
+      return NextResponse.json({ message: "No categories fetched from Supplier or none transformed.", addedCount: 0, existedCount: 0, errorCount: 0, errorsList: [] }, { status: 200 }); // Updated message
     }
   } catch (fetchError: any) {
-    console.error('[Category Sync] Failed to fetch/transform CJ categories:', fetchError.message);
-    return NextResponse.json({ error: 'Failed to fetch categories from Supplier API.', details: fetchError.message }, { status: 502 }); // Bad Gateway
+    console.error('[Category Sync] Failed to fetch/transform Supplier categories:', fetchError.message); // Updated log
+    return NextResponse.json({ error: 'Failed to fetch categories from Supplier API.', details: fetchError.message }, { status: 502 });
   }
 
   const counts = { addedCount: 0, existedCount: 0, errorCount: 0 };
@@ -93,9 +93,9 @@ export async function POST(request: NextRequest) {
 
   try {
     await client.query('BEGIN');
-    console.log(`[Category Sync] Starting sync for ${cjCategories.length} top-level CJ categories.`);
-    for (const topLevelCjCategory of cjCategories) {
-      await sync_cj_category_to_db(topLevelCjCategory, null, client, counts, errorsList);
+    console.log(`[Category Sync] Starting sync for ${supplierCategories.length} top-level Supplier categories.`); // Updated log
+    for (const topLevelSupplierCategory of supplierCategories) { // Renamed loop variable
+      await sync_supplier_category_to_db(topLevelSupplierCategory, null, client, counts, errorsList); // Call renamed function
     }
 
     if (counts.errorCount > 0) {
