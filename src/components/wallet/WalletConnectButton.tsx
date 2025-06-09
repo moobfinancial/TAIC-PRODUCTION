@@ -1,118 +1,119 @@
-"use client";
+'use client';
 
-import React, { useState, useEffect, useContext } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
+import { useAuth } from '@/contexts/AuthContext';
 import { ethers } from 'ethers';
-import { AuthContext } from '@/contexts/AuthContext'; // Assuming this path is correct
-
-// Helper function to shorten wallet address
-const shortenAddress = (address: string, chars = 4): string => {
-  if (!address) return "";
-  const prefix = address.substring(0, chars + 2); // 0x + chars
-  const suffix = address.substring(address.length - chars);
-  return `${prefix}...${suffix}`;
-};
 
 const WalletConnectButton: React.FC = () => {
-  // These will come from AuthContext once it's refactored
-  // For now, let's use placeholder state and functions
-  // const { user, loginWithWallet, logout, isAuthenticated, isLoading } = useContext(AuthContext);
-
-  // Placeholder AuthContext values - REMOVE WHEN AuthContext IS REFACTORED
-  const [user, setUser] = useState<{ walletAddress: string } | null>(null);
-  const [isAuthenticated, setIsAuthenticated] = useState(false);
-  const [isLoading, setIsLoading] = useState(false);
-  const loginWithWallet = async (address: string) => {
-    console.log("Attempting login with:", address);
-    setIsLoading(true);
-    // Simulate API call
-    await new Promise(resolve => setTimeout(resolve, 1000));
-    setUser({ walletAddress: address });
-    setIsAuthenticated(true);
-    setIsLoading(false);
-    console.log("Logged in with:", address);
-  };
-  const logout = () => {
-    console.log("Logging out");
-    setUser(null);
-    setIsAuthenticated(false);
-  };
-  // END OF PLACEHOLDER VALUES
-
-  const [signerAddress, setSignerAddress] = useState<string | null>(null);
+  const { user, loginWithWallet, logout, isLoading, isAuthenticated } = useAuth();
   const [error, setError] = useState<string | null>(null);
+  const [isConnecting, setIsConnecting] = useState(false); // Renamed from isLoggingIn for clarity
 
-  // This effect would ideally sync with AuthContext's user state
-  useEffect(() => {
-    if (isAuthenticated && user?.walletAddress) {
-      setSignerAddress(user.walletAddress);
-    } else {
-      setSignerAddress(null);
-    }
-  }, [isAuthenticated, user]);
-
-  const handleConnectWallet = async () => {
-    setError(null);
+  const handleConnect = async () => {
     if (typeof window.ethereum === 'undefined') {
-      setError('MetaMask is not installed. Please install MetaMask and try again.');
-      // Consider providing a link to MetaMask installation
+      setError('MetaMask is not installed. Please install it to connect your wallet.');
+      // Optionally, you could redirect to MetaMask installation page
       // window.open('https://metamask.io/download.html', '_blank');
       return;
     }
 
+    setIsConnecting(true);
+    setError(null);
+
     try {
-      setIsLoading(true); // Use AuthContext's isLoading
-
-      // Request to connect accounts
+      // It's good practice to wrap provider interactions in try/catch
       const provider = new ethers.BrowserProvider(window.ethereum);
-      await provider.send('eth_requestAccounts', []);
+
+      // Request account access if not already connected
+      // Note: eth_requestAccounts can throw if user rejects or closes MetaMask
+      const accounts = await provider.send('eth_requestAccounts', []);
+      if (!accounts || accounts.length === 0) {
+        setError('No accounts found. Please ensure MetaMask is set up correctly.');
+        setIsConnecting(false);
+        return;
+      }
+
       const signer = await provider.getSigner();
-      const address = await signer.getAddress();
+      const walletAddress = await signer.getAddress();
 
-      setSignerAddress(address); // Local state update, AuthContext will handle the source of truth
-
-      // Call loginWithWallet from AuthContext
-      // This function will handle challenge-response and token storage
-      await loginWithWallet(address);
-      // No need to setUser or setIsAuthenticated here, AuthContext will do it
+      // loginWithWallet is expected to handle its own errors and loading states
+      await loginWithWallet(walletAddress);
 
     } catch (err: any) {
-      console.error('Error connecting wallet or logging in:', err);
-      if (err.code === 4001) { // User rejected the request
-        setError('Connection request denied. Please approve in MetaMask.');
-      } else if (err.message && err.message.includes("MetaMask is not installed")) {
-        setError('MetaMask is not installed. Please install it to connect your wallet.');
-      } else {
-        setError(`Connection failed: ${err.message || 'Unknown error'}`);
+      console.error('Failed to connect wallet or login:', err);
+      // More user-friendly error messages
+      if (err.code === 4001) { // EIP-1193 userRejectedRequest error
+        setError('Connection request rejected. Please approve it in MetaMask.');
+      } else if (err.message && err.message.includes("already pending")) {
+        setError('A MetaMask request is already pending. Please check your MetaMask extension.');
       }
-      setIsLoading(false); // Use AuthContext's isLoading
+      else {
+        setError(err.message || 'Failed to connect wallet. Please try again.');
+      }
+    } finally {
+      setIsConnecting(false);
     }
   };
 
   const handleLogout = () => {
-    logout(); // Call logout from AuthContext
-    setSignerAddress(null); // Clear local state
+    logout();
   };
 
-  if (isLoading) {
+  const truncateAddress = (address: string) => {
+    if (!address) return '';
+    return `${address.slice(0, 6)}...${address.slice(-4)}`;
+  };
+
+  // Effect to listen for account changes in MetaMask
+  useEffect(() => {
+    const handleAccountsChanged = (accounts: string[]) => {
+      if (accounts.length === 0) {
+        // MetaMask is locked or user has disconnected all accounts
+        if (isAuthenticated) {
+          logout(); // Log out user if they disconnect from MetaMask
+          setError("You've been logged out as your MetaMask account is disconnected.");
+        }
+      } else if (user && accounts[0].toLowerCase() !== user.walletAddress.toLowerCase() && isAuthenticated) {
+        // New account selected in MetaMask
+        logout(); // Log out current user
+        setError("MetaMask account changed. Please connect with the new account if you wish.");
+        // Optionally, you could attempt to log in with the new account automatically:
+        // loginWithWallet(accounts[0]);
+      }
+    };
+
+    if (typeof window.ethereum !== 'undefined' && (window.ethereum as any).on) {
+      (window.ethereum as any).on('accountsChanged', handleAccountsChanged);
+    }
+
+    return () => {
+      if (typeof window.ethereum !== 'undefined' && (window.ethereum as any).removeListener) {
+        (window.ethereum as any).removeListener('accountsChanged', handleAccountsChanged);
+      }
+    };
+  }, [user, isAuthenticated, logout, loginWithWallet]);
+
+
+  if (isLoading || isConnecting) {
     return (
       <button
-        className="px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
+        className="px-4 py-2 text-sm font-medium text-white bg-indigo-500 rounded-md cursor-not-allowed"
         disabled
       >
-        Loading...
+        Processing...
       </button>
     );
   }
 
-  if (isAuthenticated && signerAddress) {
+  if (isAuthenticated && user) {
     return (
       <div className="flex items-center space-x-3">
-        <span className="text-sm text-gray-700 dark:text-gray-300">
-          Connected: {shortenAddress(signerAddress)}
+        <span className="hidden sm:inline text-sm text-gray-300 hover:text-white" title={user.walletAddress}>
+          {truncateAddress(user.walletAddress)}
         </span>
         <button
           onClick={handleLogout}
-          className="px-4 py-2 text-sm font-medium text-white bg-red-600 rounded-md hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-red-500"
+          className="px-3 py-2 text-sm font-medium text-white bg-red-600 rounded-md hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-gray-800 focus:ring-red-500"
         >
           Logout
         </button>
@@ -123,16 +124,13 @@ const WalletConnectButton: React.FC = () => {
   return (
     <>
       <button
-        onClick={handleConnectWallet}
-        className="px-4 py-2 text-sm font-medium text-white bg-green-600 rounded-md hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500"
+        onClick={handleConnect}
+        disabled={isConnecting} // Though covered by the isLoading state above, explicit disable is fine
+        className="px-4 py-2 text-sm font-medium text-white bg-indigo-600 rounded-md hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-gray-800 focus:ring-indigo-500"
       >
-        Connect Wallet
+        {isConnecting ? 'Connecting...' : 'Connect Wallet'}
       </button>
-      {error && (
-        <p className="mt-2 text-sm text-red-600 dark:text-red-400">
-          Error: {error}
-        </p>
-      )}
+      {error && <p className="absolute mt-12 text-xs text-red-400">{error}</p>}
     </>
   );
 };

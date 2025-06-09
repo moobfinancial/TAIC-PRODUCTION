@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { Pool } from 'pg';
 import { z } from 'zod';
 import { validateAdminApiKey } from '../../../../../lib/adminAuth';
-import { getCjAccessToken } from '../../../../../lib/cjAuth';
+import { getSupplierAccessToken } from '../../../../../lib/supplierAuth'; // Updated import
 import { translateText } from '../../../../../lib/translationUtils'; // Assuming this utility exists
 
 // Force this route to run in Node.js runtime instead of Edge Runtime
@@ -19,13 +19,13 @@ const pool = new Pool({
 const CJ_API_BASE_URL_V2 = 'https://developers.cjdropshipping.com/api2.0/v1/product';
 
 const BulkImportInputSchema = z.object({
-  cjProductIds: z.array(z.string().min(1)).min(1, "At least one CJ Product ID is required."),
+  cjProductIds: z.array(z.string().min(1)).min(1, "At least one Supplier Product ID is required."), // Updated description
   platformCategoryId: z.number().int().positive("Platform category ID must be a positive integer."),
   pricingMarkupPercentage: z.number().min(0, "Pricing markup percentage cannot be negative."),
 });
 
 interface ErrorDetail {
-  cjProductId: string;
+  cjProductId: string; // This ID is from the supplier (CJ), so name is okay.
   error: string;
   details?: any;
 }
@@ -37,12 +37,12 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ success: false, message: 'Invalid or missing Admin API Key.' }, { status: 401 });
   }
 
-  let cjAccessToken: string;
+  let supplierAccessToken: string; // Renamed variable
   try {
-    cjAccessToken = await getCjAccessToken();
+    supplierAccessToken = await getSupplierAccessToken(); // Updated function call
   } catch (error) {
-    console.error('[CJ Bulk Import] Failed to get access token:', error);
-    return NextResponse.json({ error: 'Failed to authenticate with CJ Dropshipping API.', details: error instanceof Error ? error.message : 'Unknown error' }, { status: 500 });
+    console.error('[Supplier Bulk Import] Failed to get access token:', error); // Updated log
+    return NextResponse.json({ error: 'Failed to authenticate with Supplier API.', details: error instanceof Error ? error.message : 'Unknown error' }, { status: 500 }); // Updated message
   }
 
   const results = {
@@ -83,27 +83,27 @@ export async function POST(request: NextRequest) {
       client = undefined;
 
 
-      // Fetch product details from CJ API
-      const cjDetailApiUrl = `${CJ_API_BASE_URL_V2}/query?pid=${encodeURIComponent(cjProductId)}`;
-      const response = await fetch(cjDetailApiUrl, {
+      // Fetch product details from Supplier API (CJ)
+      const detailApiUrl = `${CJ_API_BASE_URL_V2}/query?pid=${encodeURIComponent(cjProductId)}`; // URL is CJ specific
+      const response = await fetch(detailApiUrl, {
         method: 'GET',
-        headers: { 'CJ-Access-Token': cjAccessToken, 'Content-Type': 'application/json' },
+        headers: { 'CJ-Access-Token': supplierAccessToken, 'Content-Type': 'application/json' }, // Header key is CJ specific
       });
-      const cjProductData = await response.json();
+      const supplierProductData = await response.json(); // Renamed variable
 
-      if (!response.ok || !cjProductData || cjProductData.result !== true || String(cjProductData.code) !== "200") {
-        throw new Error(`CJ API request failed for ${cjProductId}: ${cjProductData?.message || response.statusText || 'Unknown error'}`);
+      if (!response.ok || !supplierProductData || supplierProductData.result !== true || String(supplierProductData.code) !== "200") {
+        throw new Error(`Supplier API (CJ) request failed for ${cjProductId}: ${supplierProductData?.message || response.statusText || 'Unknown error'}`); // Updated message
       }
 
-      let productData = cjProductData.data;
+      let productData = supplierProductData.data;
       if (Array.isArray(productData) && productData.length > 0) productData = productData[0];
       else if (typeof productData !== 'object' || productData === null) {
-        throw new Error(`Invalid product data format for ${cjProductId}`);
+        throw new Error(`Invalid product data format from Supplier API (CJ) for ${cjProductId}`); // Updated message
       }
-      const cjProduct = productData;
+      const supplierProduct = productData; // Renamed variable
 
-      if (cjProduct.pid !== cjProductId) {
-         throw new Error(`Product ID mismatch for ${cjProductId}. Received: ${cjProduct.pid}`);
+      if (supplierProduct.pid !== cjProductId) {
+         throw new Error(`Product ID mismatch for ${cjProductId}. Received from Supplier API (CJ): ${supplierProduct.pid}`); // Updated message
       }
 
       client = await pool.connect(); // Reconnect for this product's transaction
@@ -159,7 +159,7 @@ export async function POST(request: NextRequest) {
       if (client) await client.query('ROLLBACK').catch(rbError => console.error('Rollback error:', rbError));
       results.failedImports++;
       results.errors.push({ cjProductId, error: error.message, details: error.response?.data || error.stack });
-      console.error(`[CJ Bulk Import] Failed to import ${cjProductId}:`, error.message);
+      console.error(`[Supplier Bulk Import] Failed to import ${cjProductId}:`, error.message); // Updated log
     } finally {
       if (client) client.release();
     }

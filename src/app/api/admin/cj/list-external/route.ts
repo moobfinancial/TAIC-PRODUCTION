@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import { validateAdminApiKey } from '../../../../../lib/adminAuth';
-import { getCjAccessToken } from '../../../../../lib/cjAuth';
+import { getSupplierAccessToken } from '../../../../../lib/supplierAuth'; // Updated import
 
 // Force this route to run in Node.js runtime instead of Edge Runtime
 export const runtime = 'nodejs';
@@ -31,13 +31,13 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ success: false, message: 'Invalid or missing Admin API Key.' }, { status: 401 });
   }
   
-  // Get a valid CJ access token using our authentication flow
-  let cjAccessToken;
+  // Get a valid Supplier access token using our authentication flow
+  let supplierAccessToken; // Renamed variable
   try {
-    cjAccessToken = await getCjAccessToken();
+    supplierAccessToken = await getSupplierAccessToken(); // Updated function call
   } catch (error: any) {
-    console.error('[CJ API List] Failed to get CJ access token:', error.message);
-    return NextResponse.json({ error: 'Failed to authenticate with CJ Dropshipping. ' + error.message }, { status: 500 });
+    console.error('[Supplier API List] Failed to get Supplier access token:', error.message); // Updated log
+    return NextResponse.json({ error: 'Failed to authenticate with Supplier API. ' + error.message }, { status: 500 }); // Updated message
   }
 
   try {
@@ -72,36 +72,35 @@ export async function GET(request: NextRequest) {
     }
     // Add other parameters like minPrice, maxPrice as needed
 
-    const cjApiUrl = `${CJ_API_BASE_URL_V2}/list?${cjApiParams.toString()}`;
-    console.log(`[CJ API List] Calling CJ API: ${cjApiUrl}`);
+    const supplierApiUrl = `${CJ_API_BASE_URL_V2}/list?${cjApiParams.toString()}`; // URL is CJ specific
+    console.log(`[Supplier API List] Calling Supplier API (CJ): ${supplierApiUrl}`); // Updated log
 
-    const response = await fetch(cjApiUrl, {
+    const response = await fetch(supplierApiUrl, {
       method: 'GET',
       headers: {
-        'CJ-Access-Token': cjAccessToken,
-        'Content-Type': 'application/json', // Usually good to have, though GET might not strictly need it
+        'CJ-Access-Token': supplierAccessToken, // Header key is CJ specific
+        'Content-Type': 'application/json',
       },
     });
 
-    const cjData = await response.json();
+    const supplierData = await response.json(); // Renamed variable
 
-    // According to CJ API v2.0 docs, successful response has result: true and code: 200
-    if (!response.ok || cjData.result !== true || String(cjData.code) !== "200") {
-      console.error(`[CJ API List] CJ API request failed or returned error. Status: ${response.status}, CJ Code: ${cjData.code}, Message: ${cjData.message}`, cjData);
+    if (!response.ok || supplierData.result !== true || String(supplierData.code) !== "200") {
+      console.error(`[Supplier API List] Supplier API (CJ) request failed or returned error. Status: ${response.status}, Code: ${supplierData.code}, Message: ${supplierData.message}`, supplierData); // Updated log
       return NextResponse.json(
         {
-          error: `CJ API request failed: ${cjData.message || response.statusText}`,
-          details: cjData
+          error: `Supplier API (CJ) request failed: ${supplierData.message || response.statusText}`, // Updated message
+          details: supplierData
         },
-        { status: response.ok ? 422 : response.status } // Use 422 if CJ reports error, else original status
+        { status: response.ok ? 422 : response.status }
       );
     }
 
-    // Return the data part of the CJ response (usually cjData.data which contains list, total, etc.)
-    return NextResponse.json(cjData.data || {}); // Default to empty object if data is missing
+    // Return the data part of the Supplier (CJ) response
+    return NextResponse.json(supplierData.data || {});
 
   } catch (error: any) {
-    console.error('[CJ API List] Exception while listing products from CJ:', error);
-    return NextResponse.json({ error: 'Failed to list products from CJ Dropshipping.', details: error.message }, { status: 500 });
+    console.error('[Supplier API List] Exception while listing products from Supplier (CJ):', error); // Updated log
+    return NextResponse.json({ error: 'Failed to list products from Supplier API (CJ).', details: error.message }, { status: 500 }); // Updated message
   }
 }

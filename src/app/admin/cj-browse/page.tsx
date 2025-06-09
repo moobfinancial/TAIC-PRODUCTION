@@ -12,83 +12,28 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { useToast } from '@/hooks/use-toast';
 import { Search, PackageSearch, Loader2, AlertCircle, Import, XCircle, ChevronLeft, ChevronRight } from 'lucide-react';
 import Image from 'next/image'; // For displaying product images
+// Import the new helper and types from cjUtils.ts (or supplierUtils.ts if that's already renamed)
+// For now, assuming cjUtils and CjCategory are still named this way until that lib is refactored.
+// We can alias CjCategory for use in this file.
+import { fetchAndTransformCjCategories, type CjCategory as SupplierCategory } from '@/lib/cjUtils';
 
 // Temporary Admin API Key for development - replace with secure auth
 const ADMIN_API_KEY = process.env.NEXT_PUBLIC_ADMIN_API_KEY || "";
 
-interface CjProduct {
-  // Define based on expected fields from CJ API's product list
-  // This will likely need adjustment once actual API response is known
-  pid: string; // CJ Product ID
-  productName: string; // Or productNameEn
+interface SupplierProduct { // Renamed from CjProduct
+  pid: string; // Supplier Product ID (still 'pid' from CJ context)
+  productName: string;
   productImage: string;
-  productSku: string; // Example, might be part of variants
-  categoryName: string; // CJ Category Name
-  sellPrice: string; // CJ's price to you (string from API, convert to number)
-  // Add other fields as needed for display
+  productSku: string;
+  categoryName: string; // Supplier Category Name
+  sellPrice: string; // Supplier's cost price to us
 }
 
-interface CjProductListResponse {
-  list: CjProduct[];
+interface SupplierProductListResponse { // Renamed from CjProductListResponse
+  list: SupplierProduct[];
   total: number;
   pageNum: number;
   pageSize: number;
-}
-
-// Interfaces for raw CJ API category structure from their endpoint
-interface RawCjApiL3Category {
-  categoryId: string;
-  categoryName: string;
-}
-
-interface RawCjApiL2Category {
-  categorySecondName: string;
-  categorySecondList?: RawCjApiL3Category[];
-}
-
-interface RawCjApiL1Category {
-  categoryFirstName: string;
-  categoryFirstList?: RawCjApiL2Category[];
-}
-
-// Interface for CJ Category (matching the TransformedCjCategory from backend)
-interface CjCategory {
-  id: string;
-  name: string;
-  children?: CjCategory[];
-}
-
-// Transformation function
-function transformCjApiDataToCjCategories(rawCategories: RawCjApiL1Category[]): CjCategory[] {
-  if (!rawCategories || !Array.isArray(rawCategories)) {
-    return [];
-  }
-
-  const mapL3 = (l3Cat: RawCjApiL3Category): CjCategory => ({
-    id: l3Cat.categoryId, // L3 has a proper ID from CJ
-    name: l3Cat.categoryName,
-    // L3 categories typically don't have children in this CJ structure
-  });
-
-  const mapL2 = (l2Cat: RawCjApiL2Category, l1Index: number, l2Index: number): CjCategory => {
-    const children = (l2Cat.categorySecondList || []).map(mapL3);
-    return {
-      // Generate a unique ID for L2 categories as CJ API doesn't provide one
-      id: `cj-l2-${l1Index}-${l2Index}-${l2Cat.categorySecondName.replace(/[^a-zA-Z0-9]/g, '_')}`,
-      name: l2Cat.categorySecondName,
-      children: children.length > 0 ? children : undefined,
-    };
-  };
-
-  return rawCategories.map((l1Cat, l1Index) => {
-    const children = (l1Cat.categoryFirstList || []).map((l2Cat, l2Index) => mapL2(l2Cat, l1Index, l2Index));
-    return {
-      // Generate a unique ID for L1 categories
-      id: `cj-l1-${l1Index}-${l1Cat.categoryFirstName.replace(/[^a-zA-Z0-9]/g, '_')}`,
-      name: l1Cat.categoryFirstName,
-      children: children.length > 0 ? children : undefined,
-    };
-  });
 }
 
 interface PlatformCategory {
@@ -107,39 +52,47 @@ interface ImportModalState {
   displayDescription: string;
 }
 
-export default function BrowseCjProductsPage() {
+export default function BrowseSupplierProductsPage() { // Renamed component
   const { adminApiKey, loading: adminAuthLoading, isAuthenticated } = useAdminAuth();
   const { toast } = useToast();
 
   // Search and Filter State
   const [keyword, setKeyword] = useState('');
-  const [cjCategoryId, setCjCategoryId] = useState('');
+  const [supplierCategoryId, setSupplierCategoryId] = useState(''); // Renamed from cjCategoryId
   const [currentPage, setCurrentPage] = useState(1);
-  const [limitPerPage, setLimitPerPage] = useState(20); // Corresponds to pageSize
+  const [limitPerPage, setLimitPerPage] = useState(20);
 
   // API Response State
-  const [cjProducts, setCjProducts] = useState<CjProduct[]>([]);
+  const [supplierProducts, setSupplierProducts] = useState<SupplierProduct[]>([]); // Renamed from cjProducts
   const [totalPages, setTotalPages] = useState(0);
   const [totalResults, setTotalResults] = useState(0);
   const [isLoading, setIsLoading] = useState(false);
   const [searchError, setSearchError] = useState<string | null>(null);
 
   // State for product selection
-  const [selectedCjProductIds, setSelectedCjProductIds] = useState(new Set<string>());
+  const [selectedSupplierProductIds, setSelectedSupplierProductIds] = useState(new Set<string>()); // Renamed
 
-  // State for CJ API Categories for filtering
-  const [cjApiCategories, setCjApiCategories] = useState<CjCategory[]>([]);
-  const [isLoadingCjApiCategories, setIsLoadingCjApiCategories] = useState(false);
+  // State for Supplier API Categories for filtering
+  const [supplierApiCategories, setSupplierApiCategories] = useState<SupplierCategory[]>([]); // Renamed & uses aliased type
+  const [isLoadingSupplierApiCategories, setIsLoadingSupplierApiCategories] = useState(false); // Renamed
 
   // Platform Categories for Import Modal
   const [platformCategories, setPlatformCategories] = useState<PlatformCategory[]>([]);
   const [isLoadingCategories, setIsLoadingCategories] = useState(false);
 
   // Import Modal State (for single import)
-  const [importModal, setImportModal] = useState<ImportModalState>({
+  interface SingleImportModalState { // Renamed to avoid conflict if CjProduct type was global
+    isOpen: boolean;
+    productToImport: SupplierProduct | null; // Uses renamed SupplierProduct
+    platformCategoryId: string | undefined;
+    sellingPrice: string;
+    displayName: string;
+    displayDescription: string;
+  }
+  const [importModal, setImportModal] = useState<SingleImportModalState>({ // Uses renamed type
     isOpen: false,
     productToImport: null,
-    platformCategoryId: 'select-category', // Ensure this is a string if Select expects it
+    platformCategoryId: 'select-category',
     sellingPrice: '',
     displayName: '',
     displayDescription: '',
@@ -162,11 +115,11 @@ export default function BrowseCjProductsPage() {
   // Fetch Platform Categories
   useEffect(() => {
     const fetchPlatformCategories = async () => {
-      if (adminAuthLoading) { // Check auth loading state
-        console.log('[BrowseCjProductsPage] Admin auth is loading, skipping platform category fetch.');
+      if (adminAuthLoading) {
+        console.log('[BrowseSupplierProductsPage] Admin auth is loading, skipping platform category fetch.');
         return;
       }
-      if (!adminApiKey) { // Use reactive adminApiKey
+      if (!adminApiKey) {
         toast({title: "Authentication Error", description: "Admin API Key not found. Cannot load platform categories.", variant: "destructive"});
         setIsLoadingCategories(false);
         return;
@@ -174,7 +127,8 @@ export default function BrowseCjProductsPage() {
       setIsLoadingCategories(true);
       try {
         console.log('Fetching platform categories...');
-        const response = await fetch('/api/admin/categories?hierarchical=false', { // Fetch flat list
+        // API path /api/admin/categories remains the same
+        const response = await fetch('/api/admin/categories?hierarchical=false', {
           headers: { 'X-Admin-API-Key': adminApiKey },
         });
         if (!response.ok) {
@@ -192,48 +146,41 @@ export default function BrowseCjProductsPage() {
         setIsLoadingCategories(false);
       }
     };
-    if (!adminAuthLoading && adminApiKey) { // Check auth loading state
+    if (!adminAuthLoading && adminApiKey) {
       fetchPlatformCategories();
     }
-  }, [adminApiKey, adminAuthLoading, toast]); // Add adminAuthLoading, re-add toast for completeness 
+  }, [adminApiKey, adminAuthLoading, toast]);
 
-  // Fetch CJ API Categories for the filter dropdown
+  // Fetch Supplier API Categories for the filter dropdown
   useEffect(() => {
-    const fetchCjApiCategories = async () => {
-      if (adminAuthLoading) { // Check auth loading state
-        console.log('[BrowseCjProductsPage] Admin auth is loading, skipping CJ API category fetch.');
+    const loadSupplierApiCategories = async () => { // Renamed function
+      if (adminAuthLoading) {
+        console.log('[BrowseSupplierProductsPage] Admin auth is loading, skipping Supplier API category fetch.');
         return;
       }
-      if (!adminApiKey) { // Use reactive adminApiKey
-        toast({title: "Authentication Error", description: "Admin API Key not found. Cannot load CJ API categories.", variant: "destructive"});
-        setIsLoadingCjApiCategories(false);
-        return;
-      };
-      setIsLoadingCjApiCategories(true);
+      if (!isAuthenticated) {
+          toast({title: "Authentication Error", description: "You must be logged in as an admin.", variant: "destructive"});
+          setIsLoadingSupplierApiCategories(false); // Use renamed state setter
+          return;
+      }
+
+      setIsLoadingSupplierApiCategories(true); // Use renamed state setter
       try {
-        const response = await fetch('/api/admin/cj/cj-categories-route', {
-          headers: { 'X-Admin-API-Key': adminApiKey },
-        });
-        if (!response.ok) {
-          const errorData = await response.json();
-          throw new Error(errorData.error || errorData.details || 'Failed to fetch CJ categories');
-        }
-        const data = await response.json();
-        const transformedCategories = transformCjApiDataToCjCategories(data as RawCjApiL1Category[]);
-        setCjApiCategories(transformedCategories);
-        console.log('[BrowseCjProductsPage] Fetched and transformed CJ API Categories:', transformedCategories);
+        const transformedCategories = await fetchAndTransformCjCategories(); // This helper fetches CJ data
+        setSupplierApiCategories(transformedCategories); // Use renamed state setter
+        console.log('[BrowseSupplierProductsPage] Fetched and transformed Supplier API Categories via helper:', transformedCategories);
       } catch (error: any) {
-        toast({ title: "Error", description: `Could not load CJ API categories: ${error.message}`, variant: "destructive" });
+        toast({ title: "Error", description: `Could not load Supplier API categories: ${error.message}`, variant: "destructive" });
       } finally {
-        setIsLoadingCjApiCategories(false);
+        setIsLoadingSupplierApiCategories(false); // Use renamed state setter
       }
     };
-    if (!adminAuthLoading && adminApiKey) { // Check auth loading state
-      fetchCjApiCategories();
+    if (!adminAuthLoading && isAuthenticated) {
+      loadSupplierApiCategories();
     }
-  }, [adminApiKey, adminAuthLoading, toast]); // Add adminAuthLoading, re-add toast for completeness 
+  }, [adminAuthLoading, isAuthenticated, toast]);
 
-  const handleSearchCjProducts = async (page = 1) => {
+  const handleSearchSupplierProducts = async (page = 1) => { // Renamed function
     if (!adminApiKey || adminAuthLoading) { // Wait for auth to settle and key to be available
       toast({title: "Configuration Error", description: "Admin API Key not found or auth loading.", variant: "destructive"});
       return;
@@ -249,36 +196,35 @@ export default function BrowseCjProductsPage() {
       limit: String(limitPerPage),
     });
     if (keyword) params.append('keyword', keyword);
-    if (cjCategoryId) params.append('categoryId', cjCategoryId);
+    if (supplierCategoryId) params.append('categoryId', supplierCategoryId); // Use renamed state
 
     try {
+      // API path will be /api/admin/supplier/list-external after directory rename
       const response = await fetch(`/api/admin/cj/list-external?${params.toString()}`, {
         headers: { 'X-Admin-API-Key': adminApiKey },
       });
 
       const result = await response.json();
       if (!response.ok) {
-        throw new Error(result.error || result.details || `Failed to fetch CJ products: ${response.statusText}`);
+        throw new Error(result.error || result.details || `Failed to fetch Supplier products: ${response.statusText}`);
       }
 
-      // Assuming result.data contains the list and pagination info as per CJ API structure
-      // This needs to be adjusted based on the actual structure returned by your /api/admin/cj/list-external
-      const cjApiResponseData = result.data || result; // Adjust if result.data is not the primary container
+      const supplierApiResponseData = result.data || result;
 
-      setCjProducts(cjApiResponseData.list || []);
-      setTotalResults(cjApiResponseData.total || 0);
-      setTotalPages(Math.ceil((cjApiResponseData.total || 0) / limitPerPage));
-      setSelectedCjProductIds(new Set()); // Clear selection on new search/page
+      setSupplierProducts(supplierApiResponseData.list || []); // Use renamed state setter
+      setTotalResults(supplierApiResponseData.total || 0);
+      setTotalPages(Math.ceil((supplierApiResponseData.total || 0) / limitPerPage));
+      setSelectedSupplierProductIds(new Set()); // Use renamed state setter
     } catch (err: any) {
       setSearchError(err.message);
-      setCjProducts([]);
-      toast({ title: "Error Searching CJ Products", description: err.message, variant: "destructive" });
+      setSupplierProducts([]); // Use renamed state setter
+      toast({ title: "Error Searching Supplier Products", description: err.message, variant: "destructive" }); // Updated toast
     } finally {
       setIsLoading(false);
     }
   };
 
-  const openImportModal = (product: CjProduct) => {
+  const openImportModal = (product: SupplierProduct) => { // Parameter type uses renamed interface
     // Handle case where productName might be a stringified array
     let productName = product.productName || '';
     try {
@@ -294,13 +240,31 @@ export default function BrowseCjProductsPage() {
       // If parsing fails, keep the original name
     }
 
+    // Suggest platform category
+    let suggestedPlatformCategoryId: string = ''; // Default to empty string (for "Select a category")
+    if (product.categoryName && platformCategories.length > 0) {
+      const cjCategoryNameLower = product.categoryName.toLowerCase().trim();
+      let matchedCategory = platformCategories.find(
+        pCat => pCat.name.toLowerCase().trim() === cjCategoryNameLower
+      );
+      if (!matchedCategory) {
+        matchedCategory = platformCategories.find(
+          pCat => cjCategoryNameLower.includes(pCat.name.toLowerCase().trim()) ||
+                  pCat.name.toLowerCase().trim().includes(cjCategoryNameLower)
+        );
+      }
+      if (matchedCategory) {
+        suggestedPlatformCategoryId = String(matchedCategory.id);
+      }
+    }
+
     setImportModal({
       isOpen: true,
       productToImport: product,
-      platformCategoryId: '', // Empty string for initial state
+      platformCategoryId: suggestedPlatformCategoryId,
       sellingPrice: parseFloat(product.sellPrice) ? (parseFloat(product.sellPrice) * 1.5).toFixed(2) : '0.00',
       displayName: productName,
-      displayDescription: `Imported from CJ: ${productName}`,
+      displayDescription: `Sourced from Supplier: ${productName}`, // Updated text
     });
   };
 
@@ -324,18 +288,24 @@ export default function BrowseCjProductsPage() {
       hasSellingPrice: !!importModal.sellingPrice
     });
 
-    if (!importModal.productToImport || !importModal.platformCategoryId || !importModal.sellingPrice) {
-      console.log('Validation failed:', {
-        missingProduct: !importModal.productToImport,
-        missingCategory: !importModal.platformCategoryId,
-        missingPrice: !importModal.sellingPrice
-      });
+    // Updated validation to ensure a category is selected (not an empty string)
+    if (!importModal.productToImport ||
+        !importModal.platformCategoryId ||
+        importModal.platformCategoryId === 'select-category' || // Explicitly check against placeholder if used
+        importModal.platformCategoryId.trim() === '' || // Check for empty string
+        !importModal.sellingPrice) {
+
+      let errorDesc = "Please make sure to:\n";
+      if (!importModal.platformCategoryId || importModal.platformCategoryId === 'select-category' || importModal.platformCategoryId.trim() === '') {
+        errorDesc += '• Select a product category\n';
+      }
+      if (!importModal.sellingPrice) {
+        errorDesc += '• Set a selling price\n';
+      }
       
       toast({ 
         title: "Missing Required Fields", 
-        description: `Please make sure to:\n` +
-                   `${!importModal.platformCategoryId ? '• Select a product category\n' : ''}` +
-                   `${!importModal.sellingPrice ? '• Set a selling price\n' : ''}`,
+        description: errorDesc,
         variant: "destructive"
       });
       return;
@@ -344,7 +314,7 @@ export default function BrowseCjProductsPage() {
     setIsImporting(true);
     try {
       const payload = {
-        cjProductId: importModal.productToImport.pid,
+        cjProductId: importModal.productToImport.pid, // This field name in API payload refers to the source ID
         platform_category_id: parseInt(importModal.platformCategoryId, 10),
         selling_price: parseFloat(importModal.sellingPrice),
         display_name: importModal.displayName || importModal.productToImport.productName,
@@ -353,6 +323,7 @@ export default function BrowseCjProductsPage() {
 
       console.log('Sending import request with payload:', payload);
       
+      // API path will be /api/admin/supplier/import-product after directory rename
       const response = await fetch('/api/admin/cj/import-product', {
         method: 'POST',
         headers: {
@@ -387,7 +358,7 @@ export default function BrowseCjProductsPage() {
       });
       
       // Optionally refresh the product list
-      handleSearchCjProducts(currentPage);
+      handleSearchSupplierProducts(currentPage); // Use renamed function
       
     } catch (error: any) {
       console.error('Error in handleImportProduct:', error);
@@ -401,9 +372,9 @@ export default function BrowseCjProductsPage() {
     }
   };
 
-  // Helper function to render CJ Category options for the Select component
-  const renderCjCategoryOptions = (categories: CjCategory[], level = 0): JSX.Element[] => {
-    return categories.flatMap((category, index) => {
+  // Helper function to render Supplier Category options for the Select component
+  const renderSupplierCategoryOptions = (categories: SupplierCategory[], level = 0): JSX.Element[] => { // Renamed & uses aliased type
+    return categories.flatMap((category) => { // Removed index as it's not used for key
       const itemKey = category.id;
       const currentItem = (
         <SelectItem key={itemKey} value={String(category.id)}>
@@ -413,14 +384,14 @@ export default function BrowseCjProductsPage() {
         </SelectItem>
       );
       if (category.children && category.children.length > 0) {
-        return [currentItem, ...renderCjCategoryOptions(category.children, level + 1)];
+        return [currentItem, ...renderSupplierCategoryOptions(category.children, level + 1)];
       }
       return [currentItem];
     });
   };
 
   const handleSelectProduct = (productId: string, checked: boolean) => {
-    setSelectedCjProductIds(prev => {
+    setSelectedSupplierProductIds(prev => { // Use renamed state setter
       const newSet = new Set(prev);
       if (checked) {
         newSet.add(productId);
@@ -432,19 +403,19 @@ export default function BrowseCjProductsPage() {
   };
 
   const handleSelectAllOnPage = () => {
-    setSelectedCjProductIds(prev => {
+    setSelectedSupplierProductIds(prev => { // Use renamed state setter
       const newSet = new Set(prev);
-      cjProducts.forEach(p => newSet.add(p.pid));
+      supplierProducts.forEach(p => newSet.add(p.pid)); // Use renamed product list
       return newSet;
     });
   };
 
   const handleClearSelection = () => {
-    setSelectedCjProductIds(new Set());
+    setSelectedSupplierProductIds(new Set()); // Use renamed state setter
   };
 
   const handleOpenBulkImportModal = () => {
-    if (selectedCjProductIds.size === 0) {
+    if (selectedSupplierProductIds.size === 0) { // Use renamed state
       toast({ title: "No Products Selected", description: "Please select products to bulk import.", variant: "destructive" });
       return;
     }
@@ -469,10 +440,11 @@ export default function BrowseCjProductsPage() {
     setIsBulkImporting(true);
     try {
       const payload = {
-        cjProductIds: Array.from(selectedCjProductIds),
+        cjProductIds: Array.from(selectedSupplierProductIds), // Use renamed state
         platformCategoryId: parseInt(bulkImportPlatformCategoryId, 10),
         pricingMarkupPercentage: markup,
       };
+      // API path will be /api/admin/supplier/bulk-import after directory rename
       const response = await fetch('/api/admin/cj/bulk-import', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'X-Admin-API-Key': adminApiKey },
@@ -486,10 +458,10 @@ export default function BrowseCjProductsPage() {
         title: "Bulk Import Processed",
         description: `${result.successfullyImported} products imported. ${result.failedImports} failed. ${result.alreadyExists} already existed.`,
       });
-      setSelectedCjProductIds(new Set());
+      setSelectedSupplierProductIds(new Set()); // Use renamed state setter
       setIsBulkImportModalOpen(false);
       // Optionally refresh current page search results
-      // handleSearchCjProducts(currentPage);
+      // handleSearchSupplierProducts(currentPage);  // Use renamed function
     } catch (error: any) {
       toast({ title: "Bulk Import Error", description: error.message, variant: "destructive" });
     } finally {
@@ -503,29 +475,29 @@ export default function BrowseCjProductsPage() {
       <div className="space-y-6">
         <Card>
           <CardHeader>
-            <CardTitle className="flex items-center"><PackageSearch className="mr-2 h-6 w-6" /> Browse CJdropshipping Products</CardTitle>
-            <CardDescription>Search for products directly from CJdropshipping to import.</CardDescription>
+            <CardTitle className="flex items-center"><PackageSearch className="mr-2 h-6 w-6" /> Browse Supplier Products</CardTitle>
+            <CardDescription>Search for products directly from the default supplier to import.</CardDescription>
           </CardHeader>
           <CardContent>
-            <form onSubmit={(e) => { e.preventDefault(); handleSearchCjProducts(1);}} className="grid sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+            <form onSubmit={(e) => { e.preventDefault(); handleSearchSupplierProducts(1);}} className="grid sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-6"> {/* Use renamed handler */}
               <Input placeholder="Keyword (Product Name)" value={keyword} onChange={(e) => setKeyword(e.target.value)} />
               <Select
-                value={cjCategoryId}
-                onValueChange={(value) => setCjCategoryId(value === 'all' ? '' : value)} // Allow unsetting
-                disabled={isLoadingCjApiCategories || isLoading}
+                value={supplierCategoryId} // Use renamed state
+                onValueChange={(value) => setSupplierCategoryId(value === 'all' ? '' : value)}
+                disabled={isLoadingSupplierApiCategories || isLoading} // Use renamed state
               >
-                <SelectTrigger id="cj-category-select" className="w-full">
-                  <SelectValue placeholder="Select CJ Category" />
+                <SelectTrigger id="supplier-category-select" className="w-full"> {/* Updated ID */}
+                  <SelectValue placeholder="Select Supplier Category" /> {/* Updated placeholder */}
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem key="all-categories-static-key" value="all">All Categories</SelectItem>
-                  {renderCjCategoryOptions(cjApiCategories)}
+                  {renderSupplierCategoryOptions(supplierApiCategories)} {/* Use renamed render func & state */}
                 </SelectContent>
               </Select>
               {/* Add minPrice, maxPrice inputs if desired */}
               <Button type="submit" disabled={isLoading || !ADMIN_API_KEY || adminAuthLoading} className="lg:col-start-4">
                 {isLoading && searchError === null ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Search className="mr-2 h-4 w-4" />}
-                Search Products
+                Search Products {/* This text can remain generic */}
               </Button>
             </form>
             {searchError && (
@@ -538,35 +510,35 @@ export default function BrowseCjProductsPage() {
 
         {isLoading && !searchError && (
           <div className="flex items-center justify-center p-8">
-            <Loader2 className="mr-2 h-8 w-8 animate-spin text-primary" /> Loading products from CJ...
+            <Loader2 className="mr-2 h-8 w-8 animate-spin text-primary" /> Loading products from Supplier...
           </div>
         )}
 
-        {!isLoading && cjProducts.length > 0 && (
+        {!isLoading && supplierProducts.length > 0 && ( // Use renamed product list
           <div key="product-list-wrapper" className="space-y-4">
             <div className="flex items-center justify-between mb-4">
               <div className="flex items-center gap-2">
-                <Button variant="outline" size="sm" onClick={handleSelectAllOnPage} disabled={cjProducts.length === 0}>Select Page ({cjProducts.length})</Button>
-                <Button variant="outline" size="sm" onClick={handleClearSelection} disabled={selectedCjProductIds.size === 0}>Clear Selection</Button>
-                <span className="text-sm text-muted-foreground">{selectedCjProductIds.size} selected</span>
+                <Button variant="outline" size="sm" onClick={handleSelectAllOnPage} disabled={supplierProducts.length === 0}>Select Page ({supplierProducts.length})</Button>
+                <Button variant="outline" size="sm" onClick={handleClearSelection} disabled={selectedSupplierProductIds.size === 0}>Clear Selection</Button>
+                <span className="text-sm text-muted-foreground">{selectedSupplierProductIds.size} selected</span>
               </div>
-              <Button onClick={handleOpenBulkImportModal} disabled={selectedCjProductIds.size === 0}>
-                <Import className="mr-2 h-4 w-4"/> Import Selected ({selectedCjProductIds.size})
+              <Button onClick={handleOpenBulkImportModal} disabled={selectedSupplierProductIds.size === 0}>
+                <Import className="mr-2 h-4 w-4"/> Import Selected ({selectedSupplierProductIds.size})
               </Button>
             </div>
 
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-              {cjProducts.map((product) => (
+              {supplierProducts.map((product) => ( // Use renamed product list
                 <Card key={product.pid} className="flex flex-col relative">
                   <div className="absolute top-2 right-2 z-10">
                     <Input
                       type="checkbox"
                       className="h-5 w-5 cursor-pointer"
-                      checked={selectedCjProductIds.has(product.pid)}
+                      checked={selectedSupplierProductIds.has(product.pid)} // Use renamed selection set
                       onCheckedChange={(checked) => handleSelectProduct(product.pid, !!checked)}
                     />
                   </div>
-                  <CardHeader className="p-2 pt-8"> {/* Added pt-8 for checkbox space */}
+                  <CardHeader className="p-2 pt-8">
                     <div className="relative aspect-square w-full">
                       <Image 
                         src={product.productImage || '/placeholder.png'} 
@@ -580,9 +552,9 @@ export default function BrowseCjProductsPage() {
                   </CardHeader>
                   <CardContent className="p-3 flex-grow space-y-1">
                     <p className="text-sm font-medium leading-tight h-10 overflow-hidden" title={product.productName}>{product.productName}</p>
-                    <p className="text-xs text-muted-foreground">CJ ID: {product.pid}</p>
-                    <p className="text-xs text-muted-foreground">CJ Category: {product.categoryName}</p>
-                    <p className="text-sm font-semibold">CJ Price: ${parseFloat(product.sellPrice).toFixed(2)}</p>
+                    <p className="text-xs text-muted-foreground">Supplier PID: {product.pid}</p> {/* Updated text */}
+                    <p className="text-xs text-muted-foreground">Supplier Category: {product.categoryName}</p> {/* Updated text */}
+                    <p className="text-sm font-semibold">Supplier Cost: ${parseFloat(product.sellPrice).toFixed(2)}</p> {/* Updated text */}
                   </CardContent>
                   <CardFooter className="p-3">
                     <Button size="sm" className="w-full" onClick={() => openImportModal(product)} disabled={isLoadingCategories}>
@@ -595,18 +567,18 @@ export default function BrowseCjProductsPage() {
             {/* Pagination Controls */}
             {totalPages > 1 && (
               <div className="flex justify-center items-center space-x-2 mt-6">
-                <Button variant="outline" size="icon" onClick={() => handleSearchCjProducts(currentPage - 1)} disabled={currentPage <= 1 || isLoading}>
+                <Button variant="outline" size="icon" onClick={() => handleSearchSupplierProducts(currentPage - 1)} disabled={currentPage <= 1 || isLoading}> {/* Use renamed handler */}
                   <ChevronLeft className="h-4 w-4" />
                 </Button>
                 <span className="text-sm">Page {currentPage} of {totalPages} ({totalResults} results)</span>
-                <Button variant="outline" size="icon" onClick={() => handleSearchCjProducts(currentPage + 1)} disabled={currentPage >= totalPages || isLoading}>
+                <Button variant="outline" size="icon" onClick={() => handleSearchSupplierProducts(currentPage + 1)} disabled={currentPage >= totalPages || isLoading}> {/* Use renamed handler */}
                   <ChevronRight className="h-4 w-4" />
                 </Button>
               </div>
             )}
           </div>
         )}
-        {!isLoading && !searchError && cjProducts.length === 0 && totalResults === 0 && (
+        {!isLoading && !searchError && supplierProducts.length === 0 && totalResults === 0 && ( // Use renamed product list
           <p className="text-center text-muted-foreground py-8">No products found for your criteria. Try different search terms.</p>
         )}
       </div>
@@ -634,16 +606,16 @@ export default function BrowseCjProductsPage() {
                     </div>
                     <div>
                         <p className="text-sm font-semibold">{importModal.productToImport.productName}</p>
-                        <p className="text-xs text-muted-foreground">CJ ID: {importModal.productToImport.pid}</p>
-                        <p className="text-xs text-muted-foreground">CJ Price: ${parseFloat(importModal.productToImport.sellPrice).toFixed(2)}</p>
+                        <p className="text-xs text-muted-foreground">Supplier PID: {importModal.productToImport.pid}</p> {/* Updated text */}
+                        <p className="text-xs text-muted-foreground">Supplier Cost: ${parseFloat(importModal.productToImport.sellPrice).toFixed(2)}</p> {/* Updated text */}
                     </div>
                 </div>
                 <div>
-                  <Label htmlFor="singleDisplayName">Display Name (Overrides CJ Name)</Label>
+                  <Label htmlFor="singleDisplayName">Display Name (Overrides Supplier Name)</Label> {/* Updated text */}
                   <Input id="singleDisplayName" value={importModal.displayName} onChange={(e) => setImportModal(s => ({...s, displayName: e.target.value}))} />
                 </div>
                 <div>
-                  <Label htmlFor="singleDisplayDescription">Display Description (Overrides CJ Description)</Label>
+                  <Label htmlFor="singleDisplayDescription">Display Description (Overrides Supplier Description)</Label> {/* Updated text */}
                   <Textarea id="singleDisplayDescription" value={importModal.displayDescription} onChange={(e) => setImportModal(s => ({...s, displayDescription: e.target.value}))} rows={3}/>
                 </div>
                 <div>
@@ -657,9 +629,8 @@ export default function BrowseCjProductsPage() {
                       <SelectValue placeholder="Select a category" />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="select-category" disabled className="text-muted-foreground">
-                        Select a category
-                      </SelectItem>
+                      {/* Ensure a placeholder or default instruction is clear if platformCategoryId can be '' initially */}
+                      <SelectItem value="" disabled>Select a platform category...</SelectItem>
                       {platformCategories.map(cat => (
                         <SelectItem key={`single-${cat.id}`} value={String(cat.id)}>
                           {cat.name}
@@ -676,7 +647,7 @@ export default function BrowseCjProductsPage() {
                   <Button type="button" variant="outline" onClick={() => setImportModal(prev => ({...prev, isOpen: false}))} disabled={isImporting}>Cancel</Button>
                   <Button 
                     type="submit" 
-                    disabled={isImporting || !importModal.platformCategoryId || !importModal.sellingPrice || importModal.platformCategoryId === 'select-category'}
+                    disabled={isImporting || !importModal.platformCategoryId || importModal.platformCategoryId.trim() === '' || !importModal.sellingPrice}
                   >
                     {isImporting ? (
                       <Loader2 className="mr-2 h-4 w-4 animate-spin" />
@@ -709,9 +680,10 @@ export default function BrowseCjProductsPage() {
                   required
                 >
                   <SelectTrigger>
-                    <SelectValue placeholder="Select a category" />
+                    <SelectValue placeholder="Assign a category to all selected products" />
                   </SelectTrigger>
                   <SelectContent>
+                    <SelectItem value="" disabled>Select a platform category...</SelectItem>
                     {platformCategories.map(cat => (
                       <SelectItem key={`bulk-${cat.id}`} value={String(cat.id)}>
                         {cat.name}

@@ -2,10 +2,10 @@
 
 import type { ReactNode } from 'react';
 import React, { createContext, useState, useEffect, useContext } from 'react';
-import type { User, AuthContextType as OldAuthContextType } from '@/lib/types'; // User type is updated
+import type { User } from '@/lib/types'; // User type is updated
 import { ethers } from 'ethers';
 
-// Define the new shape of the AuthContext, aligning with User and new auth methods
+// Define the shape of the AuthContext, aligning with User and new auth methods
 interface AuthContextValue {
   user: User | null;
   token: string | null;
@@ -13,7 +13,9 @@ interface AuthContextValue {
   isLoading: boolean;
   loginWithWallet: (walletAddress: string) => Promise<void>;
   logout: () => void;
-  refreshUser: () => Promise<void>; // Added refreshUser
+  refreshUser: () => Promise<void>;
+  error: string | null; // Added error state for UI feedback
+  clearError: () => void; // Added function to clear error
 }
 
 // Create the context with an undefined initial value
@@ -32,11 +34,17 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   const [user, setUser] = useState<User | null>(null);
   const [token, setToken] = useState<string | null>(null);
   const [isAuthenticated, setIsAuthenticated] = useState<boolean>(false);
-  const [isLoading, setIsLoading] = useState<boolean>(true); // Start with loading true for initial auth check
+  const [isLoading, setIsLoading] = useState<boolean>(true);
+  const [error, setError] = useState<string | null>(null);
+
+  const clearError = () => setError(null);
 
   const refreshUser = async () => {
+    // console.log('AuthContext: refreshing user...');
     setIsLoading(true);
+    setError(null);
     const storedToken = localStorage.getItem('taicToken');
+
     if (storedToken) {
       try {
         const response = await fetch('/api/auth/me', {
@@ -49,25 +57,32 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
           setUser(data.user);
           setToken(storedToken);
           setIsAuthenticated(true);
+          // console.log('AuthContext: User refreshed successfully', data.user);
         } else {
           localStorage.removeItem('taicToken');
           setUser(null);
           setToken(null);
           setIsAuthenticated(false);
-          console.warn('Session token is invalid or expired during refresh. User logged out.');
+          if (response.status !== 401) { // Don't set error for normal expired token leading to logout
+            const errorData = await response.json().catch(() => ({})); // Catch if res not json
+            setError(errorData.message || `Session expired or invalid (status: ${response.status}). Please login again.`);
+          }
+          // console.warn('AuthContext: Session token is invalid or expired during refresh. User logged out.');
         }
-      } catch (error) {
-        console.error('Error refreshing user with stored token:', error);
+      } catch (err: any) {
+        console.error('AuthContext: Error refreshing user:', err);
         localStorage.removeItem('taicToken');
         setUser(null);
         setToken(null);
         setIsAuthenticated(false);
+        setError(err.message || 'Failed to connect to server while refreshing session.');
       }
     } else {
       // No token found, ensure user is logged out state
       setUser(null);
       setToken(null);
       setIsAuthenticated(false);
+      // console.log('AuthContext: No token found, user is logged out.');
     }
     setIsLoading(false);
   };
@@ -78,7 +93,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
 
   const loginWithWallet = async (walletAddress: string) => {
     setIsLoading(true);
-    setError(null); // Clear previous errors
+    setError(null);
 
     if (typeof window.ethereum === 'undefined') {
       setError('MetaMask is not installed. Please install MetaMask.');
@@ -95,10 +110,13 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       });
 
       if (!challengeResponse.ok) {
-        const errorData = await challengeResponse.json();
-        throw new Error(errorData.error || 'Failed to get challenge');
+        const errorData = await challengeResponse.json().catch(() => ({}));
+        throw new Error(errorData.message || `Failed to get challenge (status: ${challengeResponse.status})`);
       }
       const { nonce } = await challengeResponse.json();
+      if (!nonce) {
+        throw new Error('Received empty nonce from server.');
+      }
 
       // 2. Sign nonce
       const provider = new ethers.BrowserProvider(window.ethereum);
@@ -114,21 +132,24 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       });
 
       if (!verifyResponse.ok) {
-        const errorData = await verifyResponse.json();
-        throw new Error(errorData.error || 'Failed to verify signature');
+        const errorData = await verifyResponse.json().catch(() => ({}));
+        throw new Error(errorData.message || `Failed to verify signature (status: ${verifyResponse.status})`);
       }
 
       const { token: newToken, user: authenticatedUser } = await verifyResponse.json();
+      if (!newToken || !authenticatedUser) {
+        throw new Error('Received invalid token or user data from server.');
+      }
 
       // 4. On success
       localStorage.setItem('taicToken', newToken);
       setToken(newToken);
       setUser(authenticatedUser);
       setIsAuthenticated(true);
-      setError(null);
+      // console.log('AuthContext: Login successful', authenticatedUser);
 
     } catch (err: any) {
-      console.error('Login with wallet failed:', err);
+      console.error('AuthContext: Login with wallet failed:', err);
       setError(err.message || 'An unknown error occurred during login.');
       // Ensure state is clean if login fails
       setUser(null);
@@ -141,21 +162,15 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   };
 
   const logout = () => {
+    // console.log('AuthContext: Logging out user...');
     setUser(null);
     setToken(null);
     setIsAuthenticated(false);
     localStorage.removeItem('taicToken');
+    setError(null); // Clear any errors on logout
     // Optionally, redirect or perform other cleanup
-    console.log('User logged out');
+    // console.log('AuthContext: User logged out');
   };
-  
-  // Placeholder for error state to communicate issues to UI if needed
-  const [error, setError] = useState<string | null>(null);
-
-
-  // The old `updateUser` is removed as per instructions.
-  // If profile updates are needed, a new function like `updateUserProfile`
-  // would make API calls rather than just updating localStorage.
 
   return (
     <AuthContext.Provider
@@ -166,8 +181,9 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         isLoading,
         loginWithWallet,
         logout,
-        refreshUser, // Expose refreshUser
-        // error, // Expose error if UI needs to display it
+        refreshUser,
+        error,
+        clearError,
       }}
     >
       {children}

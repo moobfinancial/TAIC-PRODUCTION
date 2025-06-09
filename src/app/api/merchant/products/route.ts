@@ -9,9 +9,10 @@ const createProductSchema = z.object({
   description: z.string().min(10, 'Description must be at least 10 characters'),
   price: z.number().positive('Price must be positive'),
   basePrice: z.number().positive('Base price must be positive').optional(),
-  imageUrl: z.string().url('Image URL must be a valid URL'),
+  imageUrl: z.string().min(1, 'Image URL is required'), // Allow relative paths too if needed, or keep .url() if only absolute
   additionalImages: z.array(z.string().url()).optional(),
-  categoryId: z.string().uuid('Category ID must be a valid UUID').optional(),
+  // categoryId from form is string, allow empty for 'no category', parse to int in backend if not null
+  categoryId: z.string().optional().nullable(),
   stockQuantity: z.number().int().nonnegative('Stock quantity must be a non-negative integer'),
   cashbackConfig: z.object({
     type: z.enum(['percentage', 'fixed']),

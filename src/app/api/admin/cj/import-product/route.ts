@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { Pool } from 'pg';
 import { z } from 'zod';
 import { validateAdminApiKey } from '../../../../../lib/adminAuth';
-import { getCjAccessToken } from '../../../../../lib/cjAuth';
+import { getSupplierAccessToken } from '../../../../../lib/supplierAuth'; // Updated import
 import { translateText } from '../../../../../lib/translationUtils';
 
 // Force this route to run in Node.js runtime instead of Edge Runtime
@@ -16,12 +16,12 @@ const pool = new Pool({
     `postgresql://${process.env.PGUSER}:${process.env.PGPASSWORD}@${process.env.PGHOST}:${process.env.PGPORT}/${process.env.PGDATABASE}`,
 });
 
-// CJ Dropshipping API configuration
+// CJ Dropshipping API configuration (This URL is specific to CJ, so constant name can remain)
 const CJ_API_BASE_URL_V2 = 'https://developers.cjdropshipping.com/api2.0/v1/product';
 
 // Zod schema for input validation
 const ImportProductInputSchema = z.object({
-  cjProductId: z.string().min(1, "CJ Product ID is required."),
+  cjProductId: z.string().min(1, "Supplier Product ID is required."), // Updated description
   platform_category_id: z.number().int().positive("Platform category ID must be a positive integer."),
   selling_price: z.number().positive("Selling price must be a positive number."),
   display_name: z.string().optional(),
@@ -37,14 +37,14 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ success: false, message: 'Invalid or missing Admin API Key.' }, { status: 401 });
   }
 
-  // Get CJ access token using the auth module
-  let cjAccessToken: string;
+  // Get Supplier access token using the auth module
+  let supplierAccessToken: string; // Renamed variable
   try {
-    cjAccessToken = await getCjAccessToken();
+    supplierAccessToken = await getSupplierAccessToken(); // Updated function call
   } catch (error) {
-    console.error('[CJ Import] Failed to get access token:', error);
+    console.error('[Supplier Import] Failed to get access token:', error); // Updated log
     return NextResponse.json({ 
-      error: 'Failed to authenticate with CJ Dropshipping API.',
+      error: 'Failed to authenticate with Supplier API.', // Updated message
       details: error instanceof Error ? error.message : 'Unknown error'
     }, { status: 500 });
   }
@@ -69,66 +69,63 @@ export async function POST(request: NextRequest) {
       display_description: inputDisplayDescription
     } = validatedData;
 
-    // Step 1: Fetch product details from CJ API (using v2.0 product/query)
-    const cjDetailApiUrl = `${CJ_API_BASE_URL_V2}/query?pid=${encodeURIComponent(cjProductId)}`;
-    console.log(`[CJ Import] Calling CJ Product Detail API: ${cjDetailApiUrl}`);
+    // Step 1: Fetch product details from Supplier API (CJ)
+    const detailApiUrl = `${CJ_API_BASE_URL_V2}/query?pid=${encodeURIComponent(cjProductId)}`; // URL remains CJ specific
+    console.log(`[Supplier Import] Calling Supplier Product Detail API (CJ): ${detailApiUrl}`);
 
-    const response = await fetch(cjDetailApiUrl, {
+    const response = await fetch(detailApiUrl, {
       method: 'GET',
       headers: {
-        'CJ-Access-Token': cjAccessToken,
+        'CJ-Access-Token': supplierAccessToken, // Header key is CJ specific
         'Content-Type': 'application/json',
       },
     });
 
-    const cjProductData = await response.json();
-    console.log(`[CJ Import] Product detail response:`, {
+    const supplierProductData = await response.json(); // Renamed variable
+    console.log(`[Supplier Import] Product detail response:`, { // Updated log
       status: response.status,
-      cjCode: cjProductData?.code,
-      cjResult: cjProductData?.result,
-      hasData: !!cjProductData?.data,
-      dataType: cjProductData?.data ? (Array.isArray(cjProductData.data) ? 'array' : typeof cjProductData.data) : 'none'
+      code: supplierProductData?.code,
+      result: supplierProductData?.result,
+      hasData: !!supplierProductData?.data,
+      dataType: supplierProductData?.data ? (Array.isArray(supplierProductData.data) ? 'array' : typeof supplierProductData.data) : 'none'
     });
 
-    // According to CJ API v2.0 docs, successful response has result: true and code: 200
-    if (!response.ok || !cjProductData || cjProductData.result !== true || String(cjProductData.code) !== "200") {
-      console.error(`[CJ Import] CJ Product Detail API request failed. Status: ${response.status}, CJ Code: ${cjProductData?.code}, Message: ${cjProductData?.message}`, cjProductData);
+    if (!response.ok || !supplierProductData || supplierProductData.result !== true || String(supplierProductData.code) !== "200") {
+      console.error(`[Supplier Import] Supplier Product Detail API (CJ) request failed. Status: ${response.status}, Code: ${supplierProductData?.code}, Message: ${supplierProductData?.message}`, supplierProductData); // Updated log
       return NextResponse.json(
         {
-          error: `CJ API request failed: ${cjProductData?.message || response.statusText || 'Unknown error'}`,
-          details: cjProductData || {},
-          cjProductId,
+          error: `Supplier API (CJ) request failed: ${supplierProductData?.message || response.statusText || 'Unknown error'}`, // Updated message
+          details: supplierProductData || {},
+          cjProductId, // Keep cjProductId for error context as it's the input ID
         },
         { status: response.status || 500 }
       );
     }
 
-    // Handle different response formats - sometimes data is an object, sometimes an array
-    let productData = cjProductData.data;
+    let productData = supplierProductData.data;
     if (Array.isArray(productData) && productData.length > 0) {
-      productData = productData[0]; // Take first item if array
+      productData = productData[0];
     } else if (typeof productData !== 'object' || productData === null) {
-      console.error('[CJ Import] Invalid product data format:', productData);
+      console.error('[Supplier Import] Invalid product data format:', productData); // Updated log
       return NextResponse.json(
         {
-          error: 'Invalid product data format in CJ API response',
-          details: cjProductData,
+          error: 'Invalid product data format in Supplier API (CJ) response', // Updated message
+          details: supplierProductData,
           cjProductId,
         },
         { status: 422 }
       );
     }
 
-    const cjProduct = productData;
-    console.log(`[CJ Import] Processing product:`, {
-      pid: cjProduct.pid,
-      name: cjProduct.productName || cjProduct.productNameEn,
-      price: cjProduct.sellPrice || cjProduct.productPrice
+    const supplierProduct = productData; // Renamed variable
+    console.log(`[Supplier Import] Processing product:`, { // Updated log
+      pid: supplierProduct.pid,
+      name: supplierProduct.productName || supplierProduct.productNameEn,
+      price: supplierProduct.sellPrice || supplierProduct.productPrice
     });
 
-    // If we get here, we have valid product data
-    if (!cjProduct.pid || cjProduct.pid !== cjProductId) {
-      console.error('[CJ Import] Product ID mismatch:', { requested: cjProductId, received: cjProduct.pid });
+    if (!supplierProduct.pid || supplierProduct.pid !== cjProductId) {
+      console.error('[Supplier Import] Product ID mismatch:', { requested: cjProductId, received: supplierProduct.pid }); // Updated log
       return NextResponse.json(
         { 
           error: 'Product ID in response does not match requested ID',
@@ -214,17 +211,17 @@ export async function POST(request: NextRequest) {
         if (!inputDisplayName && needsTranslation(displayName)) {
           const translatedName = await translateText(displayName, 'en');
           displayName = translatedName || displayName;
-          console.log(`[CJ Import] Translated product name from '${displayName}' to '${translatedName}'`);
+          console.log(`[Supplier Import] Translated product name from '${displayName}' to '${translatedName}'`); // Updated log
         }
         
         // Translate description if needed and not already provided as input
         if (!inputDisplayDescription && needsTranslation(displayDescription)) {
           const translatedDescription = await translateText(displayDescription, 'en');
           displayDescription = translatedDescription || displayDescription;
-          console.log(`[CJ Import] Translated product description`);
+          console.log(`[Supplier Import] Translated product description`); // Updated log
         }
       } catch (translationError) {
-        console.error('[CJ Import] Translation error:', translationError);
+        console.error('[Supplier Import] Translation error:', translationError); // Updated log
         // Continue with original text if translation fails
       }
       
@@ -279,14 +276,14 @@ export async function POST(request: NextRequest) {
           selling_price: insertedProduct.selling_price,
           display_name: insertedProduct.display_name
         },
-        cjProduct: {
-          pid: cjProduct.pid,
-          sku: cjProduct.productSku || cjProduct.sku,
-          name: cjProduct.productName || cjProduct.productNameEn,
-          price: cjProduct.sellPrice,
-          original_price: cjProduct.originalPrice,
-          category_id: cjProduct.categoryId,
-          category_name: cjProduct.categoryName,
+        supplierProductDetails: { // Renamed for clarity
+          pid: supplierProduct.pid,
+          sku: supplierProduct.productSku || supplierProduct.sku,
+          name: supplierProduct.productName || supplierProduct.productNameEn,
+          price: supplierProduct.sellPrice,
+          original_price: supplierProduct.originalPrice,
+          category_id: supplierProduct.categoryId,
+          category_name: supplierProduct.categoryName,
           images: productImages,
           variants: variants
         }
@@ -296,14 +293,14 @@ export async function POST(request: NextRequest) {
       throw error;
     }
   } catch (error: any) {
-    console.error('[CJ Import] Error importing product:', error);
-    const cjIdForError = validatedData?.cjProductId || 'unknown';
+    console.error('[Supplier Import] Error importing product:', error); // Updated log
+    const cjIdForError = validatedData?.cjProductId || 'unknown'; // Keep cjIdForError as it's input context
     const catIdForError = validatedData?.platform_category_id || 'unknown';
 
-    if (error.code === '23505') { // Unique violation for cj_product_id
-      return NextResponse.json({ error: 'Product already imported.', details: `CJ Product ID ${cjIdForError} already exists in the database.` }, { status: 409 });
+    if (error.code === '23505') {
+      return NextResponse.json({ error: 'Product already imported.', details: `Supplier Product ID ${cjIdForError} already exists.` }, { status: 409 });
     }
-    if (error.code === '23503') { // Foreign key violation (e.g. platform_category_id does not exist)
+    if (error.code === '23503') {
       return NextResponse.json({ error: 'Invalid platform_category_id.', details: `Category ID ${catIdForError} does not exist.` }, { status: 400 });
     }
     return NextResponse.json({ error: 'Failed to import product.', details: error.message }, { status: 500 });
