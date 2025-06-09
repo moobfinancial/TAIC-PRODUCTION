@@ -153,7 +153,7 @@ export async function POST(request: NextRequest) {
 
   } catch (error: any) {
     await client.query('ROLLBACK').catch(rbError => console.error('Rollback error during bulk update:', rbError));
-    console.error('[CJ Bulk Update Status] Error:', error);
+    console.error('[Supplier Bulk Update Status] Error:', error); // Updated log
     return NextResponse.json({ error: 'Failed to bulk update product statuses.', details: error.message }, { status: 500 });
   } finally {
     client.release();
