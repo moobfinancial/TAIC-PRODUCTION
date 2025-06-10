@@ -36,11 +36,13 @@ EXECUTE FUNCTION update_updated_at_column();
 -- Categories Table
 CREATE TABLE categories (
     id SERIAL PRIMARY KEY,
-    name VARCHAR(255) NOT NULL UNIQUE,
+    name VARCHAR(255) NOT NULL,
     description TEXT,
-    parent_category_id INTEGER REFERENCES categories(id) ON DELETE SET NULL, -- Allow null for top-level, set null if parent deleted
+    parent_category_id INTEGER REFERENCES categories(id) ON DELETE SET NULL,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    is_active BOOLEAN DEFAULT TRUE,
+    CONSTRAINT categories_name_parent_id_unique UNIQUE (name, parent_category_id)
 );
 
 CREATE INDEX idx_categories_parent_category_id ON categories(parent_category_id);
@@ -52,7 +54,7 @@ CREATE TRIGGER update_categories_updated_at
 
 -- CJ Products Table
 CREATE TABLE cj_products (
-    platform_product_id SERIAL PRIMARY KEY,
+    platform_product_id INTEGER PRIMARY KEY GENERATED ALWAYS AS IDENTITY,
     cj_product_id VARCHAR(255) UNIQUE NOT NULL,
     cj_product_data_json JSONB,
     display_name VARCHAR(255) NOT NULL,

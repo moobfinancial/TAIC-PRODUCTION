@@ -385,6 +385,27 @@ export default function ProductForm({ productId }: ProductFormProps) {
         </div>
         
         <div className="mb-4">
+          <label htmlFor="categoryId" className="block text-gray-700 font-medium mb-2">
+            Category
+          </label>
+          <select
+            id="categoryId"
+            name="categoryId"
+            value={formData.categoryId || ''}
+            onChange={handleChange}
+            className={`w-full px-3 py-2 border rounded-md ${errors.categoryId ? 'border-red-500' : 'border-gray-300'}`}
+          >
+            <option value="">Select a category</option>
+            {categories.map(category => (
+              <option key={category.id} value={category.id}>
+                {category.name}
+              </option>
+            ))}
+          </select>
+          {errors.categoryId && <p className="text-red-500 text-sm mt-1">{errors.categoryId}</p>}
+        </div>
+
+        <div className="mb-4">
           <label className="block text-gray-700 font-medium mb-2">
             Product Image*
           </label>
@@ -436,27 +457,6 @@ export default function ProductForm({ productId }: ProductFormProps) {
         </div>
         
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
-          <div>
-            <label htmlFor="categoryId" className="block text-gray-700 font-medium mb-2">
-              Category
-            </label>
-            <select
-              id="categoryId"
-              name="categoryId"
-              value={formData.categoryId || ''}
-              onChange={handleChange}
-              className="w-full px-3 py-2 border border-gray-300 rounded-md"
-            >
-              <option value="">Select a category</option>
-              {categories.map(category => (
-                <option key={category.id} value={category.id}>
-                  {category.name}
-                </option>
-              ))}
-            </select>
-            {errors.categoryId && <p className="text-red-500 text-sm mt-1">{errors.categoryId}</p>}
-          </div>
-          
           <div>
             <label htmlFor="stockQuantity" className="block text-gray-700 font-medium mb-2">
               Stock Quantity*

@@ -108,7 +108,6 @@ async function createProduct(req: NextRequest, merchantUser: any) { // Renamed u
     const newProductId = uuidv4();
     const platformCategoryId = categoryId ? parseInt(categoryId, 10) : null;
 
-    // Insert the new product into the main 'products' table
     const result = await pool.query(
       `INSERT INTO products (
         id,

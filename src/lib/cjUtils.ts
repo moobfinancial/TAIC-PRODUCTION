@@ -1,4 +1,5 @@
-import { getSupplierAccessToken } from './supplierAuth'; // Assuming this path and function name are correct
+import { getSupplierAccessToken } from './supplierAuth';
+import { setTimeout } from 'timers/promises'; // For async delay // Assuming this path and function name are correct
 
 // Interfaces for raw CJ API category structure
 export interface RawCjApiL3Category {
@@ -61,8 +62,25 @@ export function transformCjApiDataToCjCategories(rawCategories: RawCjApiL1Catego
 
 const CJ_CATEGORY_API_URL = 'https://developers.cjdropshipping.com/api2.0/v1/product/getCategory';
 
+// --- BEGIN CACHING LOGIC ---
+interface CategoryCache {
+  categories: CjCategory[];
+  expiresAt: number;
+}
+
+let categoryCache: CategoryCache | null = null;
+const CACHE_DURATION_MS = 60 * 60 * 1000; // 1 hour
+const RETRY_DELAY_MS = 2000; // 2 seconds for retry
+// --- END CACHING LOGIC ---
+
 // New helper function to fetch and transform categories
-export async function fetchAndTransformCjCategories(): Promise<CjCategory[]> {
+export async function fetchAndTransformCjCategories(retryAttempt = 0): Promise<CjCategory[]> {
+  // --- BEGIN CACHE CHECK ---
+  if (categoryCache && categoryCache.expiresAt > Date.now()) {
+    console.log('[cjUtils] Returning categories from cache.');
+    return categoryCache.categories;
+  }
+  // --- END CACHE CHECK ---
   let supplierAccessToken;
   try {
     supplierAccessToken = await getSupplierAccessToken();
@@ -72,7 +90,7 @@ export async function fetchAndTransformCjCategories(): Promise<CjCategory[]> {
   }
 
   try {
-    console.log(`[cjUtils] Calling Supplier Category API (CJ): ${CJ_CATEGORY_API_URL}`);
+    console.log(`[cjUtils] Calling Supplier Category API (CJ): ${CJ_CATEGORY_API_URL}` + (retryAttempt > 0 ? ` (Retry attempt ${retryAttempt})` : ''));
     const response = await fetch(CJ_CATEGORY_API_URL, {
       method: 'GET',
       headers: {
@@ -84,16 +102,47 @@ export async function fetchAndTransformCjCategories(): Promise<CjCategory[]> {
     const supplierData = await response.json();
 
     if (!response.ok || supplierData.result !== true || String(supplierData.code) !== "200") {
-      console.error(`[cjUtils] Supplier API (CJ) category request failed. Status: ${response.status}, Code: ${supplierData.code}, Message: ${supplierData.message}`, supplierData);
-      throw new Error(`Supplier API (CJ) category request failed: ${supplierData.message || response.statusText}`);
+      const errorMessage = `Supplier API (CJ) category request failed: ${supplierData.message || response.statusText} (Status: ${response.status}, Code: ${supplierData.code})`;
+      console.error(`[cjUtils] ${errorMessage}`, supplierData);
+
+      // Check for rate limit error (CJ specific code or message might be needed for more accuracy)
+      // CJ's "Too much request, QPS limit is 1 time/1second" often comes with response.status 429 or a specific supplierData.code
+      if ((response.status === 429 || (supplierData.message && supplierData.message.toLowerCase().includes("too much request"))) && retryAttempt < 1) {
+        console.log(`[cjUtils] Rate limit hit. Retrying after ${RETRY_DELAY_MS}ms...`);
+        await setTimeout(RETRY_DELAY_MS); // Use setTimeout from 'timers/promises'
+        return fetchAndTransformCjCategories(retryAttempt + 1); // Recursive call for retry
+      }
+      throw new Error(errorMessage);
     }
 
     const rawCategories = supplierData.data || [];
-    return transformCjApiDataToCjCategories(rawCategories as RawCjApiL1Category[]);
+    const transformedCategories = transformCjApiDataToCjCategories(rawCategories as RawCjApiL1Category[]);
+
+    // --- BEGIN CACHE UPDATE ---
+    categoryCache = {
+      categories: transformedCategories,
+      expiresAt: Date.now() + CACHE_DURATION_MS,
+    };
+    console.log('[cjUtils] Categories fetched from API and cached.');
+    // --- END CACHE UPDATE ---
+
+    return transformedCategories;
 
   } catch (error: any) {
-    console.error('[cjUtils] Exception while fetching categories from Supplier (CJ):', error);
-    // Re-throw or handle as appropriate for the caller
-    throw new Error('Failed to fetch and transform categories from Supplier API (CJ). Details: ' + error.message);
+    // If it's an error from a retry, or not a rate limit error, re-throw
+    if (retryAttempt > 0 || !(error.message && error.message.toLowerCase().includes("too much request"))) {
+        console.error(`[cjUtils] Exception while fetching categories from Supplier (CJ)${retryAttempt > 0 ? ` on retry ${retryAttempt}` : ''}:`, error);
+        throw new Error(`Failed to fetch and transform categories from Supplier API (CJ). Details: ${error.message}`);
+    }
+    // This part should ideally be caught by the specific rate limit check above,
+    // but as a fallback for other forms of the rate limit message:
+    if (retryAttempt < 1) {
+        console.log(`[cjUtils] Rate limit likely hit (general catch). Retrying after ${RETRY_DELAY_MS}ms...`);
+        await setTimeout(RETRY_DELAY_MS);
+        return fetchAndTransformCjCategories(retryAttempt + 1);
+    }
+    // If all retries fail or it's not a recognized rate limit error
+    console.error(`[cjUtils] Final exception after retries or non-retryable error for categories from Supplier (CJ):`, error);
+    throw new Error('Failed to fetch and transform categories from Supplier API (CJ) after retries. Details: ' + error.message);
   }
 }

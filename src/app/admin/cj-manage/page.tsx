@@ -28,8 +28,13 @@ interface ImportedCjProduct {
 }
 
 interface ImportedProductsApiResponse {
-  products: ImportedCjProduct[];
-  // Add pagination if API supports it, otherwise client-side pagination or load all
+  data: ImportedCjProduct[]; // Changed from 'products' to 'data'
+  pagination: { // Added pagination info as it's part of the response
+    total: number;
+    page: number;
+    limit: number;
+    totalPages: number;
+  };
 }
 
 
@@ -62,7 +67,7 @@ export default function ManageCjProductsPage() {
       const data: ImportedProductsApiResponse = await response.json();
       // Assuming the API returns all products and we filter client-side as per subtask description.
       // If API supports filtering by status, add query param: ?status=${filterStatus} (for 'all', don't send param)
-      const productsWithNumericPrice = (data.products || []).map((p: ImportedCjProduct) => ({
+      const productsWithNumericPrice = (data.data || []).map((p: ImportedCjProduct) => ({
         ...p,
         selling_price: typeof p.selling_price === 'string' ? parseFloat(p.selling_price) : p.selling_price
       }));
@@ -258,13 +263,47 @@ export default function ManageCjProductsPage() {
                           />
                         </TableCell>
                         <TableCell>
-                          {product.image_url ? (
-                            <Image src={product.image_url} alt={product.display_name} width={50} height={50} className="rounded object-cover" />
-                          ) : (
-                            <div className="w-[50px] h-[50px] bg-muted rounded flex items-center justify-center text-xs text-muted-foreground">No Image</div>
-                          )}
-                      </TableCell>
-                      <TableCell>
+                          {(() => {
+                            let imageUrl = product.image_url;
+                            let finalSrc: string | undefined = undefined;
+
+                            if (typeof imageUrl === 'string') {
+                              if (imageUrl.startsWith('[') && imageUrl.endsWith(']')) {
+                                try {
+                                  const parsedUrls = JSON.parse(imageUrl);
+                                  if (Array.isArray(parsedUrls) && parsedUrls.length > 0 && typeof parsedUrls[0] === 'string') {
+                                    finalSrc = parsedUrls[0];
+                                  } else {
+                                    console.warn('Parsed image_url (array) was not a valid array of strings or was empty:', imageUrl);
+                                  }
+                                } catch (e) {
+                                  console.warn('Failed to parse image_url (array):', imageUrl, e);
+                                }
+                              } else if (imageUrl.trim() !== '') {
+                                finalSrc = imageUrl; // It's a non-empty string, hopefully a valid URL
+                              }
+                            }
+
+                            if (finalSrc) {
+                              return (
+                                <Image
+                                  src={finalSrc}
+                                  alt={product.display_name || 'Product image'}
+                                  width={50}
+                                  height={50}
+                                  className="rounded object-cover"
+                                  onError={() => console.warn('Failed to load image:', finalSrc)} // Optional: for better debugging
+                                />
+                              );
+                            }
+                            return (
+                              <div className="w-[50px] h-[50px] bg-muted rounded flex items-center justify-center text-xs text-muted-foreground">
+                                No Image
+                              </div>
+                            );
+                          })()}
+                        </TableCell>
+                        <TableCell>
                         <div className="font-medium">{product.display_name}</div>
                         <div className="text-xs text-muted-foreground">CJ ID: {product.cj_product_id}</div>
                         <div className="text-xs text-muted-foreground">Platform ID: {product.id}</div>

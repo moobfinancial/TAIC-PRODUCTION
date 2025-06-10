@@ -22,7 +22,7 @@ const UpdateStatusInputSchema = z.object({
 });
 
 
-export async function PUT(request: NextRequest, context: any) {
+export async function PUT(request: NextRequest, context: { params: { id: string } }) {
   const apiKey = request.headers.get('X-Admin-API-Key');
   const authResult = await validateAdminApiKey(apiKey);
   if (!authResult.valid) {

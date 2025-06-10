@@ -170,7 +170,6 @@ export async function POST(request: NextRequest) {
           $13, 
           $14, 
           $15, 
-          $16, 
           NOW(), NOW()
         )
         RETURNING platform_product_id, cj_product_id, platform_category_id, selling_price, display_name, is_active, approval_status;`;
@@ -228,31 +227,31 @@ export async function POST(request: NextRequest) {
         supplierProduct.pid || cjProductId,
         // $2: cj_product_data_json (store the complete product data)
         supplierProduct,
-        // $4: display_name
+        // $3: display_name
         displayName, // This has translation logic applied
-        // $5: display_description
+        // $4: display_description
         displayDescription, // This has translation logic applied
-        // $6: platform_category_id
+        // $5: platform_category_id
         platform_category_id,
-        // $7: selling_price
+        // $6: selling_price
         selling_price,
-        // $8: cj_base_price
+        // $7: cj_base_price
         parseFloat(supplierProduct.originalPrice) || parseFloat(supplierProduct.sellPrice) || 0,
-        // $9: image_url (main image)
+        // $8: image_url (main image)
         mainImage,
-        // $10: additional_image_urls_json
+        // $9: additional_image_urls_json
         additionalImages.length > 0 ? JSON.stringify(additionalImages) : null,
-        // $11: variants_json
+        // $10: variants_json
         variants.length > 0 ? JSON.stringify(variants) : null,
-        // $12: is_active - set to false by default
+        // $11: is_active - set to false by default
         false,
-        // $13: approval_status - set to 'pending' by default
+        // $12: approval_status - set to 'pending' by default
         'pending',
-        // $14: cashback_percentage
+        // $13: cashback_percentage
         0.00,
-        // $15: original_name
+        // $14: original_name
         originalName,
-        // $16: original_description
+        // $15: original_description
         originalDescription
       ];
       console.log('[CJ Import] Executing insert with params:', JSON.stringify(queryParams, null, 2));

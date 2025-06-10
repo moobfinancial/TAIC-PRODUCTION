@@ -322,6 +322,10 @@ export default function BrowseCjProductsPage() {
   };
 
   const openImportModal = (product: CjProduct) => {
+    console.log('[openImportModal] Product to import:', JSON.stringify(product, null, 2));
+    console.log('[openImportModal] CJ Product Category Name:', product.categoryName);
+    console.log('[openImportModal] Current platformCategories state:', JSON.stringify(platformCategories, null, 2));
+
     // Handle case where productName might be a stringified array
     let productName = product.productName || '';
     try {
@@ -337,13 +341,38 @@ export default function BrowseCjProductsPage() {
       // If parsing fails, keep the original name
     }
 
+    let determinedPlatformCategoryId = ''; // Default to empty or a 'select' placeholder
+
+    if (product.categoryName && platformCategories.length > 0) {
+      const cjCategoryNameLower = product.categoryName.toLowerCase().trim();
+      console.log(`[openImportModal] Attempting to match CJ category (lower, trimmed): "${cjCategoryNameLower}"`);
+
+      const matchedPlatformCategory = platformCategories.find(pCat => {
+        const platformCatNameLower = pCat.name.toLowerCase().trim();
+        // console.log(`[openImportModal] Comparing with platform cat: "${platformCatNameLower}" (ID: ${pCat.id})`); // Uncomment for very verbose logging
+        return platformCatNameLower === cjCategoryNameLower;
+      });
+
+      if (matchedPlatformCategory) {
+        determinedPlatformCategoryId = String(matchedPlatformCategory.id); // Ensure it's a string for the Select component
+        console.log(`[openImportModal] SUCCESS: Matched CJ category "${product.categoryName}" to platform category ID ${determinedPlatformCategoryId} ("${matchedPlatformCategory.name}")`);
+      } else {
+        console.log(`[openImportModal] FAILED: No direct match found for CJ category "${product.categoryName}" (normalized: "${cjCategoryNameLower}") in platform categories.`);
+        platformCategories.forEach(pCat => { // Log all platform categories for manual comparison if match fails
+            console.log(`  - Available platform category: "${pCat.name}" (ID: ${pCat.id}, LowerTrimmed: "${pCat.name.toLowerCase().trim()}")`);
+        });
+      }
+    } else {
+      console.log('[openImportModal] Skipping match: No CJ category name provided or no platform categories loaded.');
+    }
+
     setImportModal({
       isOpen: true,
       productToImport: product,
-      platformCategoryId: '', // Empty string for initial state
+      platformCategoryId: determinedPlatformCategoryId, // Use the determined ID
       sellingPrice: parseFloat(product.sellPrice) ? (parseFloat(product.sellPrice) * 1.5).toFixed(2) : '0.00',
-      displayName: productName,
-      displayDescription: `Imported from CJ: ${productName}`,
+      displayName: productName, // productName is already processed above
+      displayDescription: `Imported from CJ: ${productName}`, // productName is already processed above
     });
   };
 
