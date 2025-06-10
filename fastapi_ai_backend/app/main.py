@@ -20,10 +20,24 @@ from app.routers.product_variants import router as product_variants_router
 from app.routers.bulk_operations import router as bulk_operations_router
 # Import the new categories router
 from app.routers.categories import router as categories_router
-# Import the placeholder auth router
-from app.routers.auth_placeholder import router as auth_placeholder_router
+# Import the new auth router (replacing placeholder)
+from app.routers.auth import router as auth_router
 # Import the admin router
 from app.routers.admin import router as admin_router
+# Import the admin dashboard data router
+from app.routers.admin_dashboard_data import router as admin_dashboard_router
+# Import the merchant store profiles router
+from app.routers.merchant_store_profiles import router as merchant_store_profiles_router
+# Import the store reviews router
+from app.routers.store_reviews import router as store_reviews_router
+# Import the user profile router
+from app.routers.user_profile import router as user_profile_router
+# Import the gift recommendation agent MCP server
+from app.agents.gift_recommendation_agent import gift_recommendation_mcp_server
+# Import the AI feedback router
+from app.routers.ai_feedback import router as ai_feedback_router
+# Import the VTO router
+from app.routers.vto import router as vto_router
 from app.agents.shopping_assistant_agent import shopping_assistant_mcp_server, UserQueryInput, ShoppingAssistantResponse
 from app.models.product import Product
 
@@ -68,8 +82,15 @@ app.include_router(products_router, prefix="/api", tags=["Products"])
 app.include_router(product_variants_router, prefix="/api", tags=["Product Variants"])
 app.include_router(bulk_operations_router, prefix="/api/bulk", tags=["Bulk Operations"])
 app.include_router(categories_router, prefix="/api/categories", tags=["Categories"])
-app.include_router(auth_placeholder_router, prefix="/api/auth", tags=["Authentication (Placeholder)"])
-app.include_router(admin_router, prefix="/api/admin", tags=["Admin"]) # Add the admin router
+# app.include_router(auth_placeholder_router, prefix="/api/auth", tags=["Authentication (Placeholder)"]) # Commented out placeholder
+app.include_router(auth_router, prefix="/api/auth", tags=["Authentication"]) # Added new auth router
+app.include_router(admin_router, prefix="/api/admin", tags=["Admin"])
+app.include_router(admin_dashboard_router, prefix="/api/admin/dashboard", tags=["Admin Dashboard"])
+app.include_router(merchant_store_profiles_router, prefix="/api/merchant", tags=["Merchant Store Profiles"])
+app.include_router(store_reviews_router, prefix="/api", tags=["Store Reviews"])
+app.include_router(user_profile_router, prefix="/api/users", tags=["User Profile"])
+app.include_router(ai_feedback_router, prefix="/api/ai", tags=["AI Agent Feedback"])
+app.include_router(vto_router, prefix="/api/vto", tags=["Virtual Try-On (VTO)"]) # Add VTO router
 
 
 
@@ -333,6 +354,7 @@ async def call_process_user_query_manual(input_data: UserQueryInput):
 # The path "/mcp_product_service" should match PRODUCT_SERVICE_AGENT_MOUNT_PATH in shopping_assistant_agent.py
 app.mount("/mcp_product_service", product_service_mcp)
 app.mount("/mcp_shopping_assistant_service", shopping_assistant_mcp_server)
+app.mount("/mcp_gift_recommendation", gift_recommendation_mcp_server) # Mount the new Gift Recommendation agent
 
 
 @app.get("/", tags=["Root"], summary="Root path of the API")

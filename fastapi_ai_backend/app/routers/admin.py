@@ -1,8 +1,10 @@
 from typing import List, Optional
+from typing import List, Optional, Dict, Any
 from fastapi import APIRouter, HTTPException, Depends, status, Query
 import asyncpg
+from datetime import datetime # Import datetime
 
-from app.models.admin_models import ProductReviewAction
+from app.models.admin_models import ProductReviewAction, AdminAuditLogEntry # Import AdminAuditLogEntry
 from app.models.product import Product, ProductVariant # Using existing Product model for response
 from app.db import get_db_connection, release_db_connection
 from app.audit_utils import record_admin_audit_log # Import audit utility
@@ -72,6 +74,84 @@ async def list_products_for_review(
         return fetched_products_for_review
     except Exception as e:
         print(f"Error listing products for review: {e}")
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e))
+    finally:
+        if conn:
+            await release_db_connection(conn)
+
+@router.get("/audit-logs", response_model=List[AdminAuditLogEntry])
+async def list_admin_audit_logs(
+    limit: int = Query(50, ge=1, le=100),
+    offset: int = Query(0, ge=0),
+    admin_username: Optional[str] = None,
+    action: Optional[str] = None,
+    target_entity_type: Optional[str] = None,
+    target_entity_id: Optional[str] = None,
+    start_date: Optional[datetime] = None,
+    end_date: Optional[datetime] = None,
+):
+    """
+    Retrieve admin audit log entries with pagination and filtering.
+    """
+    conn = None
+    try:
+        conn = await get_db_connection()
+
+        base_query = "SELECT id, timestamp, admin_username, action, target_entity_type, target_entity_id, details FROM admin_audit_log"
+        filter_conditions = []
+        params = []
+        param_idx = 1
+
+        if admin_username:
+            filter_conditions.append(f"admin_username ILIKE ${param_idx}")
+            params.append(f"%{admin_username}%")
+            param_idx += 1
+        if action:
+            filter_conditions.append(f"action ILIKE ${param_idx}")
+            params.append(f"%{action}%")
+            param_idx += 1
+        if target_entity_type:
+            filter_conditions.append(f"target_entity_type ILIKE ${param_idx}")
+            params.append(f"%{target_entity_type}%")
+            param_idx += 1
+        if target_entity_id:
+            filter_conditions.append(f"target_entity_id = ${param_idx}")
+            params.append(target_entity_id)
+            param_idx += 1
+        if start_date:
+            filter_conditions.append(f"timestamp >= ${param_idx}")
+            params.append(start_date)
+            param_idx += 1
+        if end_date:
+            # Add 1 day to end_date to make it inclusive of the whole day
+            # from datetime import timedelta
+            # end_date_inclusive = end_date + timedelta(days=1)
+            # filter_conditions.append(f"timestamp < ${param_idx}")
+            # params.append(end_date_inclusive)
+            # Simpler: if end_date is just a date, it implies up to the end of that date.
+            # If it's a specific timestamp, then direct comparison is fine.
+            # For now, assuming direct comparison:
+            filter_conditions.append(f"timestamp <= ${param_idx}")
+            params.append(end_date)
+            param_idx += 1
+
+        if filter_conditions:
+            base_query += " WHERE " + " AND ".join(filter_conditions)
+
+        base_query += f" ORDER BY timestamp DESC LIMIT ${param_idx} OFFSET ${param_idx + 1}"
+        params.extend([limit, offset])
+
+        log_rows = await conn.fetch(base_query, *params)
+
+        return [AdminAuditLogEntry(**dict(row)) for row in log_rows]
+
+    except asyncpg.exceptions.UndefinedTableError:
+        # This specific error is handled in audit_utils when trying to record,
+        # but good to have here if the table is missing during read attempt.
+        print("Error listing audit logs: 'admin_audit_log' table does not exist.")
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Audit log table not found. Please contact support.")
+    except Exception as e:
+        print(f"Error listing admin audit logs: {e}")
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e))
     finally:
         if conn:
