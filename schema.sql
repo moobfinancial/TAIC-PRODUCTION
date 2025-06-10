@@ -39,13 +39,17 @@ CREATE TABLE categories (
     name VARCHAR(255) NOT NULL,
     description TEXT,
     parent_category_id INTEGER REFERENCES categories(id) ON DELETE SET NULL,
+    category_type VARCHAR(10) DEFAULT 'PRODUCT' NOT NULL, -- New column for category type
+    custom_attributes JSONB, -- New column for service-specific attributes
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
     is_active BOOLEAN DEFAULT TRUE,
-    CONSTRAINT categories_name_parent_id_unique UNIQUE (name, parent_category_id)
+    CONSTRAINT categories_name_parent_id_unique UNIQUE (name, parent_category_id),
+    CONSTRAINT check_category_type CHECK (category_type IN ('PRODUCT', 'SERVICE')) -- Check constraint
 );
 
 CREATE INDEX idx_categories_parent_category_id ON categories(parent_category_id);
+CREATE INDEX idx_categories_category_type ON categories(category_type); -- Index on the new column
 
 CREATE TRIGGER update_categories_updated_at
     BEFORE UPDATE ON categories
@@ -97,7 +101,7 @@ CREATE TABLE products (
     id VARCHAR(255) PRIMARY KEY,
     name VARCHAR(255) NOT NULL,
     description TEXT,
-    price DECIMAL(10, 2) NOT NULL,
+    price DECIMAL(10, 2) NOT NULL, -- This will be treated as base_price
     image_url VARCHAR(255),
     category VARCHAR(100), -- Legacy category name field, consider migrating to platform_category_id
     platform_category_id INTEGER REFERENCES categories(id) ON DELETE SET NULL, -- Preferred way to link categories
@@ -107,6 +111,9 @@ CREATE TABLE products (
     merchant_id VARCHAR(255), -- To associate product with a merchant/user
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP NOT NULL,
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP NOT NULL,
+    has_variants BOOLEAN DEFAULT FALSE, -- New column for variant support
+    source VARCHAR(50), -- New column for product origin (e.g., 'merchant', 'cj')
+    original_cj_product_id VARCHAR(255) UNIQUE, -- New column for original CJ product ID
     CONSTRAINT check_products_approval_status CHECK (approval_status IN ('pending', 'approved', 'rejected'))
 );
 
@@ -124,6 +131,31 @@ CREATE INDEX idx_products_approval_status ON products(approval_status);
 CREATE INDEX idx_products_merchant_id ON products(merchant_id);
 CREATE INDEX idx_products_name ON products(name); -- For searching/sorting by name
 CREATE INDEX idx_products_price ON products(price); -- For sorting/filtering by price
+CREATE INDEX idx_products_has_variants ON products(has_variants);
+CREATE INDEX idx_products_source ON products(source);
+CREATE INDEX idx_products_original_cj_product_id ON products(original_cj_product_id);
+
+
+-- Product Variants Table
+CREATE TABLE product_variants (
+    id SERIAL PRIMARY KEY,
+    product_id VARCHAR(255) REFERENCES products(id) ON DELETE CASCADE,
+    sku VARCHAR(255) UNIQUE,
+    attributes JSONB NOT NULL,
+    specific_price DECIMAL(10, 2),
+    stock_quantity INTEGER NOT NULL DEFAULT 0,
+    image_url VARCHAR(255),
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX idx_product_variants_product_id ON product_variants(product_id);
+CREATE INDEX idx_product_variants_sku ON product_variants(sku);
+
+CREATE TRIGGER update_product_variants_updated_at
+    BEFORE UPDATE ON product_variants
+    FOR EACH ROW
+    EXECUTE FUNCTION update_updated_at_column();
 
 CREATE TABLE crypto_transactions (
     id SERIAL PRIMARY KEY,
