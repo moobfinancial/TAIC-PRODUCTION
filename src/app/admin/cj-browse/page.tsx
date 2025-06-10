@@ -201,38 +201,67 @@ export default function BrowseCjProductsPage() {
   // Fetch CJ API Categories for the filter dropdown
   useEffect(() => {
     const fetchCjApiCategories = async () => {
-      if (adminAuthLoading) { // Check auth loading state
-        console.log('[BrowseCjProductsPage] Admin auth is loading, skipping CJ API category fetch.');
+      // This inner guard is crucial: only proceed if categories are not yet loaded.
+      if (cjApiCategories.length > 0) {
+        console.log('[BrowseCjProductsPage] CJ API categories already loaded, skipping fetch.');
         return;
       }
-      if (!adminApiKey) { // Use reactive adminApiKey
-        toast({title: "Authentication Error", description: "Admin API Key not found. Cannot load CJ API categories.", variant: "destructive"});
-        setIsLoadingCjApiCategories(false);
+
+      // Further guards for auth state.
+      if (adminAuthLoading) {
+        console.log('[BrowseCjProductsPage] Admin auth is loading, deferring CJ API category fetch.');
         return;
       }
+      if (!adminApiKey) {
+        console.log('[BrowseCjProductsPage] Admin API Key not found, cannot load CJ API categories at this stage.');
+        // Not toasting here as the outer condition should prevent this call if !adminApiKey
+        return;
+      }
+
+      console.log('[BrowseCjProductsPage] Attempting to fetch CJ API Categories...');
       setIsLoadingCjApiCategories(true);
       try {
         const response = await fetch('/api/admin/cj/cj-categories-route', {
           headers: { 'X-Admin-API-Key': adminApiKey },
         });
+
         if (!response.ok) {
-          const errorData = await response.json();
-          throw new Error(errorData.error || errorData.details || 'Failed to fetch CJ categories');
+          let errorDetails = 'Failed to fetch CJ categories';
+          try {
+            const errorData = await response.json();
+            errorDetails = errorData.error || errorData.details || `API request failed with status ${response.status}`;
+            console.error('[BrowseCjProductsPage] Error fetching CJ categories from API:', errorData);
+          } catch (jsonError) {
+            console.error('[BrowseCjProductsPage] Error fetching CJ categories and failed to parse error JSON:', response.statusText);
+            errorDetails = `API request failed with status ${response.status}: ${response.statusText}`;
+          }
+          throw new Error(errorDetails);
         }
+
         const data = await response.json();
-        const transformedCategories = transformCjApiDataToCjCategories(data as RawCjApiL1Category[]);
-        setCjApiCategories(transformedCategories);
-        console.log('[BrowseCjProductsPage] Fetched and transformed CJ API Categories:', transformedCategories);
+
+        // Data from the API route is already transformed.
+        // Validate that data is an array.
+        if (Array.isArray(data)) {
+          setCjApiCategories(data as CjCategory[]); // Assuming CjCategory is the correct type for transformed categories
+          console.log('[BrowseCjProductsPage] Fetched and set CJ API Categories:', data);
+        } else {
+          console.error('[BrowseCjProductsPage] Fetched CJ category data is not an array:', data);
+          throw new Error('Received invalid category data format from API.');
+        }
       } catch (error: any) {
-        toast({ title: "Error", description: `Could not load CJ API categories: ${error.message}`, variant: "destructive" });
+        console.error('[BrowseCjProductsPage] Exception during CJ API category fetch:', error);
+        toast({ title: "Error Loading CJ Categories", description: error.message, variant: "destructive" });
       } finally {
         setIsLoadingCjApiCategories(false);
       }
     };
-    if (!adminAuthLoading && adminApiKey) { // Check auth loading state
+
+    // Only attempt to fetch if auth is ready, API key is available, AND categories haven't been loaded yet.
+    if (!adminAuthLoading && adminApiKey && cjApiCategories.length === 0) {
       fetchCjApiCategories();
     }
-  }, [adminApiKey, adminAuthLoading, toast]); // Add adminAuthLoading, re-add toast for completeness 
+  }, [adminAuthLoading, adminApiKey, cjApiCategories, toast]); 
 
   const handleSearchCjProducts = async (page = 1) => {
     if (!adminApiKey || adminAuthLoading) { // Wait for auth to settle and key to be available

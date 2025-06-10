@@ -61,9 +61,12 @@ export async function GET(request: NextRequest) {
       FROM products p
       LEFT JOIN categories c ON p.category ILIKE c.name
     `; // Using ILIKE for case-insensitive match, assuming p.category stores name
-    const conditions1: string[] = [];
+    const conditions1: string[] = [
+      "p.is_active = true",
+      "p.approval_status = 'approved'"
+    ];
     const values1: any[] = [];
-    let paramIndex1 = 1;
+    let paramIndex1 = 1; // Start param index at 1 for the first query
 
     if (searchQuery) {
       conditions1.push(`(p.name ILIKE $${paramIndex1} OR p.description ILIKE $${paramIndex1} OR p.category ILIKE $${paramIndex1})`);
@@ -85,6 +88,7 @@ export async function GET(request: NextRequest) {
       values1.push(maxPrice);
       paramIndex1++;
     }
+    // Apply base status filters and any additional dynamic filters for products1Query
     if (conditions1.length > 0) {
       products1Query += ' WHERE ' + conditions1.join(' AND ');
     }
@@ -98,7 +102,7 @@ export async function GET(request: NextRequest) {
         NULL as data_ai_hint, 'CJ' as source
       FROM cj_products cp
       JOIN categories c ON cp.platform_category_id = c.id
-      WHERE cp.is_active = true
+      WHERE cp.is_active = true AND cp.approval_status = 'approved'
     `;
     const conditions2: string[] = [];
     const values2: any[] = [];
@@ -145,10 +149,17 @@ export async function GET(request: NextRequest) {
     const combinedValues = [...values1, ...values2, limit, offset];
 
     // --- Count Queries (for pagination) ---
+    // Base count query for 'products' table with essential status filters
     let count1Query = `SELECT COUNT(*) AS count FROM products p LEFT JOIN categories c ON p.category ILIKE c.name`;
-    if (conditions1.length > 0) count1Query += ' WHERE ' + conditions1.join(' AND ');
+    // Construct the WHERE clause for count1Query using the same conditions as products1Query
+    // but only the ones that don't rely on values already incorporated into conditions1 for base status.
+    // The values1 array will be used for parameter binding.
+    const count1Conditions = [...conditions1]; // Create a copy to potentially modify for count if needed, though here it's the same
+    if (count1Conditions.length > 0) {
+      count1Query += ' WHERE ' + count1Conditions.join(' AND ');
+    }
 
-    let count2Query = `SELECT COUNT(*) AS count FROM cj_products cp JOIN categories c ON cp.platform_category_id = c.id WHERE cp.is_active = true`;
+    let count2Query = `SELECT COUNT(*) AS count FROM cj_products cp JOIN categories c ON cp.platform_category_id = c.id WHERE cp.is_active = true AND cp.approval_status = 'approved'`;
     if (conditions2.length > 0) count2Query += ' AND ' + conditions2.join(' AND ');
 
     client = await pool.connect();

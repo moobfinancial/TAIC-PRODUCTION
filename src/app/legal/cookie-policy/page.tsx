@@ -58,7 +58,7 @@ export default function CookiePolicyPage() {
         <p>You have the right to decide whether to accept or reject cookies (except for Strictly Necessary cookies). You can exercise your cookie preferences through our Cookie Consent Management tool, which can typically be accessed via a "Cookie Settings" button or link in the website footer or a persistent banner.</p>
         <p>Within this tool, you can opt-in or opt-out of the different categories of non-essential cookies. Please note that blocking some types of cookies may impact your experience on the site and the services we are able to offer.</p>
         <p>Additionally, most web browsers allow some control of most cookies through the browser settings. To find out more about cookies, including how to see what cookies have been set and how to manage and delete them, visit <a href="https://www.allaboutcookies.org" target="_blank" rel="noopener noreferrer" className="text-primary-600 dark:text-primary-400 hover:underline">www.allaboutcookies.org</a>.</p>
-        <p><em>[Placeholder: Link/Button to Cookie Consent Management Tool - e.g., &lt;button onClick={() => openCookieConsentTool()}&gt;Manage Cookie Settings&lt;/button&gt; - This will require JavaScript integration with a consent management platform/script.]</em></p>
+        <p><em>{'[Placeholder: Link/Button to Cookie Consent Management Tool - e.g., <button onClick={() => openCookieConsentTool()}>Manage Cookie Settings</button> - This will require JavaScript integration with a consent management platform/script.]'}</em></p>
       </Section>
 
       <Section title="5. Third-Party Cookies" id="third-party-cookies">

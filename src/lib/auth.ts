@@ -8,54 +8,51 @@ interface AuthSession {
     name?: string;
     // Add other user properties as needed
   };
+  error?: string; // Added for conveying errors
 }
 
 /**
  * Get the current authenticated user from the request cookies
  * This is a server-side function that can be used in API routes
  */
-export async function getAuth(request?: NextRequest): Promise<AuthSession> {
-  // In a real implementation, you would validate the session token
-  // from the cookies or headers and fetch the user from your database
-  
+export async function getAuth(/* request?: NextRequest */): Promise<AuthSession> {
+  // The `request` parameter isn't strictly necessary if solely relying on `cookies()` from `next/headers`,
+  // as it derives context implicitly. It might be kept for future use or if other request properties are needed.
   try {
-    // For API routes that use the NextRequest object
-    if (request) {
-      const cookieStore = cookies();
-      const sessionToken = cookieStore.get('session-token')?.value;
-      
-      // In a real app, you would validate the token and fetch the user
-      if (sessionToken) {
-        // Mock implementation - replace with actual session validation
-        return {
-          user: {
-            id: 'user-from-token',
-            email: 'user@example.com',
-            name: 'Test User'
-          }
-        };
-      }
-    }
-    
-    // For server components or when no request is provided
-    const cookieStore = cookies();
+    const cookieStore = await cookies(); // Call once.
     const sessionToken = cookieStore.get('session-token')?.value;
-    
+
     if (sessionToken) {
-      // Mock implementation - replace with actual session validation
+      // MOCK IMPLEMENTATION: Replace with actual session validation and user retrieval
+      // This part should ideally involve verifying the sessionToken (e.g., against a DB or a JWT secret)
+      // and then fetching the actual user details.
+      // Example: const user = await validateSessionAndGetUser(sessionToken);
+      // if (!user) return { error: "Invalid session" };
+      // return { user };
+
       return {
         user: {
-          id: 'user-from-token',
-          email: 'user@example.com',
-          name: 'Test User'
+          id: 'mock-user-id-from-token', // Should be dynamic based on token
+          email: 'user@example.com',    // Should be dynamic
+          name: 'Mock User'             // Should be dynamic
         }
       };
     }
-    
-    return {};
-  } catch (error) {
-    console.error('Error getting auth session:', error);
-    return {};
+    return {}; // No session token found
+  } catch (error: any) {
+    console.error('[Auth] Error in getAuth:', error.message, error.stack);
+    // Check for common Next.js errors when `cookies()` is misused
+    // Error messages can vary slightly between Next.js versions.
+    const errorMessage = error.message || '';
+    if (errorMessage.includes('cookies() was called outside a Server Component') || 
+        errorMessage.includes('Invariant: cookies() expects to have current pathname') ||
+        errorMessage.includes('Dynamic server usage') ||
+        errorMessage.includes('next/headers') // General catch for next/headers issues
+        ) {
+      return { error: 'Auth context not available or cookies used in unsupported environment.' };
+    }
+    // For other errors, return a generic error message
+    return { error: 'Failed to retrieve authentication session.' };
   }
 }
 
@@ -63,9 +60,16 @@ export async function getAuth(request?: NextRequest): Promise<AuthSession> {
  * Get the current user ID from the request
  * This is a convenience function that extracts just the user ID
  */
-export async function getUserId(request?: NextRequest): Promise<string | null> {
-  const session = await getAuth(request);
-  return session.user?.id || null;
+export async function getUserId(/* request?: NextRequest */): Promise<string | null> {
+  const session = await getAuth(/* request */);
+  // Check for error or no user before accessing user.id
+  if (session.error || !session.user) {
+    if (session.error) {
+      console.log(`[Auth] getUserId: Denying access due to auth error: ${session.error}`);
+    }
+    return null;
+  }
+  return session.user.id;
 }
 
 // New JWT verification utility

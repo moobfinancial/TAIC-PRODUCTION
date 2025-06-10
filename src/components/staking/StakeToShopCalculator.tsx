@@ -13,12 +13,17 @@ import { useToast } from '@/hooks/use-toast';
 // Assuming StakedWishlistGoal might be defined in types, if not, it might need to be.
 // For now, we'll assume staked balance and goals need to be fetched or are placeholders.
 
+interface StakeToShopCalculatorProps {
+  initialTargetValue?: number;
+  context?: string; // e.g., 'stakingPage', 'wishlistPage'
+}
+
 interface StakedData {
   stakedTaicBalance: number;
   // stakedWishlistGoals: StakedWishlistGoal[]; // Example, if you fetch this
 }
 
-export function StakeToShopCalculator() {
+export function StakeToShopCalculator({ initialTargetValue, context }: StakeToShopCalculatorProps) {
   const { user, isAuthenticated, isLoading: authLoading, token, refreshUser } = useAuth(); // Added refreshUser
   const { toast } = useToast();
 
@@ -27,7 +32,7 @@ export function StakeToShopCalculator() {
   const [stakeData, setStakeData] = useState<StakedData | null>(null);
   const [errorStakeData, setErrorStakeData] = useState<string | null>(null);
 
-  const [wishlistValue, setWishlistValue] = useState<number>(1000); // Example default
+  const [wishlistValue, setWishlistValue] = useState<number>(initialTargetValue && initialTargetValue > 0 ? initialTargetValue : 1000);
   const [stakeAmount, setStakeAmount] = useState<number>(0); // User's current general stake, fetched
   const [additionalStake, setAdditionalStake] = useState<number>(0); // For new staking simulation
 

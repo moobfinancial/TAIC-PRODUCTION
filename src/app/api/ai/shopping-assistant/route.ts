@@ -84,14 +84,11 @@ async function fetchProductsDirectly(userQuery: string | undefined): Promise<Pro
 }
 
 // Define the flow using the central 'ai' instance
-export const shoppingAssistantFlow = ai.defineFlow<
-  GetProductRecommendationsInput,
-  GetProductRecommendationsOutput
->({
+const shoppingAssistantFlow = ai.defineFlow({
   name: 'shoppingAssistantFlow',
   inputSchema: GetProductRecommendationsInputSchema,
   outputSchema: GetProductRecommendationsOutputSchema, // Output schema for the flow itself
-}, async (input: GetProductRecommendationsInput): Promise<GetProductRecommendationsOutput> => {
+}, async (input /* Type will be inferred */): Promise<GetProductRecommendationsOutput> => {
   console.log('[API Shopping Assistant Flow] Initiated with input:', JSON.stringify(input, null, 2));
 
   // Step 1: Fetch products directly using the input query

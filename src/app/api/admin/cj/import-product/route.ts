@@ -130,8 +130,8 @@ export async function POST(request: NextRequest) {
         { 
           error: 'Product ID in response does not match requested ID',
           requestedId: cjProductId,
-          receivedId: cjProduct.pid,
-          details: cjProduct
+          receivedId: supplierProduct.pid,
+          details: supplierProduct
         },
         { status: 422 }
       );
@@ -176,33 +176,33 @@ export async function POST(request: NextRequest) {
         RETURNING platform_product_id, cj_product_id, platform_category_id, selling_price, display_name, is_active, approval_status;`;
 
       // Prepare product data for insertion
-      const cjApiImageSource = cjProduct.productImageSet?.productImage || cjProduct.productImage;
-      let imageUrl = DEFAULT_IMAGE_URL;
-      if (Array.isArray(cjApiImageSource) && cjApiImageSource.length > 0) {
-        imageUrl = cjApiImageSource[0];
+      const cjApiImageSource = supplierProduct.productImageSet?.productImage || supplierProduct.productImage;
+      let productImagesArr: string[] = [];
+      if (Array.isArray(cjApiImageSource)) {
+          productImagesArr = cjApiImageSource.filter(img => typeof img === 'string' && img.trim() !== '');
       } else if (typeof cjApiImageSource === 'string' && cjApiImageSource.trim() !== '') {
-        imageUrl = cjApiImageSource;
+          productImagesArr = [cjApiImageSource];
       }
-      // If still DEFAULT_IMAGE_URL, it means no valid image was found or provided.
+      // productImagesArr now contains all valid image URLs. mainImage will be defined from this.
 
-      const variants = cjProduct.variants || [];
+      const variants = supplierProduct.variants || [];
 
       // Prepare the main product image (use first image if available)
-      const mainImage = imageUrl;
+      const mainImage = productImagesArr.length > 0 ? productImagesArr[0] : '';
 
       // Prepare additional images (all except the first one)
-      const additionalImages = productImages.length > 1 ? productImages.slice(1) : [];
+      const additionalImages = productImagesArr.length > 1 ? productImagesArr.slice(1) : [];
       
       // Determine product name and description, prioritizing English versions if available
-      const originalName = cjProduct.productName || 'Unnamed Product';
-      const originalDescription = cjProduct.productDescription || '';
+      const originalName = supplierProduct.productName || 'Unnamed Product';
+      const originalDescription = supplierProduct.productDescription || '';
       
       // Translate product name and description if they appear to be in Chinese
       // We'll use a simple heuristic: if the text contains Chinese characters, translate it
       const needsTranslation = (text: string) => /[\u4E00-\u9FFF]/.test(text);
       
-      let displayName = inputDisplayName || cjProduct.productNameEn || originalName;
-      let displayDescription = inputDisplayDescription || cjProduct.productDescriptionEn || originalDescription;
+      let displayName = inputDisplayName || supplierProduct.productNameEn || originalName;
+      let displayDescription = inputDisplayDescription || supplierProduct.productDescriptionEn || originalDescription;
       
       try {
         // Translate name if needed and not already provided as input
@@ -225,9 +225,9 @@ export async function POST(request: NextRequest) {
       
       const queryParams = [
         // $1: cj_product_id
-        cjProduct.pid || cjProductId,
+        supplierProduct.pid || cjProductId,
         // $2: cj_product_data_json (store the complete product data)
-        cjProduct,
+        supplierProduct,
         // $4: display_name
         displayName, // This has translation logic applied
         // $5: display_description
@@ -237,7 +237,7 @@ export async function POST(request: NextRequest) {
         // $7: selling_price
         selling_price,
         // $8: cj_base_price
-        parseFloat(cjProduct.originalPrice) || parseFloat(cjProduct.sellPrice) || 0,
+        parseFloat(supplierProduct.originalPrice) || parseFloat(supplierProduct.sellPrice) || 0,
         // $9: image_url (main image)
         mainImage,
         // $10: additional_image_urls_json
@@ -282,7 +282,7 @@ export async function POST(request: NextRequest) {
           original_price: supplierProduct.originalPrice,
           category_id: supplierProduct.categoryId,
           category_name: supplierProduct.categoryName,
-          images: productImages,
+          images: productImagesArr,
           variants: variants
         }
       }, { status: 201 });

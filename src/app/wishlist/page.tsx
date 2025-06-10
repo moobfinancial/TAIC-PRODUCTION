@@ -8,7 +8,7 @@ import { useWishlist } from '@/hooks/useWishlist'; // Assuming useWishlist is se
 // Update useAuth import path
 import { useAuth } from '@/contexts/AuthContext';
 import { useToast } from '@/hooks/use-toast';
-import { Trash2, Heart, Gem, ShoppingBag, Info, Target, PlusCircle, Clock, PartyPopper, ThumbsUp, ShieldAlert } from 'lucide-react'; // Added ShieldAlert
+import { Trash2, Heart, Gem, ShoppingBag, Info, Target, PlusCircle, Clock, PartyPopper, ThumbsUp, ShieldAlert, Loader2 } from 'lucide-react'; // Added ShieldAlert, Loader2
 // StakedWishlistGoal might need to be sourced differently if not on user object
 import type { WishlistItem, StakedWishlistGoal as StakedWishlistGoalType } from '@/lib/types';
 import { StakeToShopCalculator } from '@/components/staking/StakeToShopCalculator';

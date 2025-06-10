@@ -1,5 +1,5 @@
 // src/ai/schemas/shopping-assistant-schemas.ts
-import { z } from 'zod';
+import { z } from 'genkit';
 
 // Define a Zod schema for the Product, compatible with AppProductType
 export const ProductAISchema = z.object({

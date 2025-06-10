@@ -17,7 +17,7 @@ type ImageStyle = 'vivid' | 'natural';
 
 interface GenerateVirtualTryOnImageParams {
   userImageUrl: string;
-  productImageUrl: string;
+  productImageUrl?: string;
   prompt: string;
   model?: string;
   size?: ImageSize;
@@ -161,7 +161,7 @@ async function generateVirtualTryOnImage({
 async function saveGeneratedImageToUserAccount(
   imageUrl: string,
   userId: string = 'anonymous', // Default to anonymous if no user ID provided
-  productInfo?: { productId?: string; productName?: string }
+  productInfo?: { productId?: string | number; productName?: string }
 ): Promise<string> {
   try {
     console.log('[saveGeneratedImageToUserAccount] Saving generated image to user account', { userId });

@@ -27,6 +27,7 @@ import { useToast } from '@/hooks/use-toast';
 import { Loader2, AlertTriangle, PackageSearch, Edit, RefreshCw, ExternalLink } from 'lucide-react';
 import type { Order, OrderItem } from '@/lib/types'; // Using existing types
 import Link from 'next/link';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 
 // Define AdminOrder type based on what /api/admin/orders returns
 interface MerchantOrder extends Order {
@@ -35,12 +36,13 @@ interface MerchantOrder extends Order {
 }
 
 export default function MerchantOrdersPage() {
-  const { token, user, loading: merchantAuthLoading } = useMerchantAuth(); // Assuming user object has merchantId
+  const { token, merchant, loading: merchantAuthLoading } = useMerchantAuth(); // Assuming user object has merchantId
   const { toast } = useToast();
 
   const [orders, setOrders] = useState<MerchantOrder[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [actionLoading, setActionLoading] = useState<Record<string, boolean>>({});
 
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [selectedOrder, setSelectedOrder] = useState<MerchantOrder | null>(null);

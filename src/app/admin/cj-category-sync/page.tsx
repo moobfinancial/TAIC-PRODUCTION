@@ -76,7 +76,7 @@ export default function SupplierCategorySyncPage() { // Renamed component
       return;
     }
     if (!isPreviewFetched || supplierCategoriesPreview.length === 0) { // Use renamed state
-        toast({ title: "No Categories to Sync", description: "Please fetch categories for preview first.", variant: "warning"});
+        toast({ title: "No Categories to Sync", description: "Please fetch categories for preview first.", variant: "default"});
         return;
     }
 
@@ -97,7 +97,7 @@ export default function SupplierCategorySyncPage() { // Renamed component
       const resultData: SyncResult = await response.json();
 
       if (!response.ok) {
-        throw new Error(resultData.error || resultData.message || `Sync failed: ${response.statusText}`);
+        throw new Error(resultData.message || `Sync failed: ${response.statusText}`);
       }
       setSyncResult(resultData);
       toast({

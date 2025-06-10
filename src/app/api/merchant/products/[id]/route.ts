@@ -3,37 +3,32 @@ import { pool } from '@/lib/db';
 import { z } from 'zod';
 import { withMerchantAuth } from '@/lib/merchantAuth';
 
-// Schema for updating a product
+// Schema for updating a product (fields in 'products' table updatable by merchant)
 const updateProductSchema = z.object({
-  name: z.string().min(2, 'Product name must be at least 2 characters').max(255).optional(),
-  description: z.string().min(10, 'Description must be at least 10 characters').optional(),
-  price: z.number().positive('Price must be positive').optional(),
-  basePrice: z.number().positive('Base price must be positive').optional(),
-  // Accept any non-empty string for imageUrl (including local paths starting with /uploads/)
-  imageUrl: z.string().min(1, 'Image URL is required').optional(),
-  additionalImages: z.array(z.string().url()).optional(), // Ensuring URLs if array is provided
-  // categoryId from form is string, allow empty/null for 'no category', parse to int in backend if not null
-  categoryId: z.string().optional().nullable(),
-  stockQuantity: z.number().int().nonnegative('Stock quantity must be a non-negative integer').optional(),
-  cashbackConfig: z.object({
-    type: z.enum(['percentage', 'fixed']),
-    value: z.number().positive(),
-  }).optional(),
-  isActive: z.boolean().optional(),
+  name: z.string().min(2).max(255).optional(),
+  description: z.string().min(10).optional(),
+  price: z.number().positive().optional(),
+  imageUrl: z.string().min(1).optional(),
+  categoryId: z.string().optional().nullable(), // For platform_category_id
+  isActive: z.boolean().optional(), // Special handling: only true if approved, false anytime
+  // merchant cannot update approval_status directly
+  // Fields like basePrice, additionalImages, stockQuantity, cashbackConfig are not in 'products' table yet.
 });
 
 // GET handler to fetch a specific product
-async function getProduct(req: NextRequest, user: any, { params }: { params: { id: string } }) {
+async function getProduct(req: NextRequest, merchantUser: any, { params }: { params: { id: string } }) { // Renamed user
   try {
     const productId = params.id;
     
-    // Check if product exists and belongs to this merchant
+    // Check if product exists and belongs to this merchant in 'products' table
     const result = await pool.query(
-      `SELECT p.*, c.name as category_name
-       FROM merchant_products p
-       LEFT JOIN categories c ON p.category_id = c.id
+      `SELECT p.id, p.name, p.description, p.price, p.image_url, 
+              p.platform_category_id, c.name as category_name, 
+              p.approval_status, p.is_active, p.created_at, p.updated_at
+       FROM products p
+       LEFT JOIN categories c ON p.platform_category_id = c.id
        WHERE p.id = $1 AND p.merchant_id = $2`,
-      [productId, user.id]
+      [productId, merchantUser.id] // Use merchantUser.id
     );
     
     if (result.rows.length === 0) {
@@ -51,13 +46,10 @@ async function getProduct(req: NextRequest, user: any, { params }: { params: { i
       name: product.name,
       description: product.description,
       price: parseFloat(product.price),
-      basePrice: product.base_price ? parseFloat(product.base_price) : undefined,
       imageUrl: product.image_url,
-      additionalImages: product.additional_images,
-      categoryId: product.category_id,
+      platformCategoryId: product.platform_category_id,
       categoryName: product.category_name,
-      stockQuantity: product.stock_quantity,
-      cashbackConfig: product.cashback_config,
+      approvalStatus: product.approval_status,
       isActive: product.is_active,
       createdAt: product.created_at,
       updatedAt: product.updated_at
@@ -72,14 +64,14 @@ async function getProduct(req: NextRequest, user: any, { params }: { params: { i
 }
 
 // PUT handler to update a specific product
-async function updateProduct(req: NextRequest, user: any, { params }: { params: { id: string } }) {
+async function updateProduct(req: NextRequest, merchantUser: any, { params }: { params: { id: string } }) { // Renamed user
   try {
     const productId = params.id;
     
-    // Check if product exists and belongs to this merchant
+    // Check if product exists and belongs to this merchant in 'products' table, and get its current status
     const checkResult = await pool.query(
-      'SELECT id FROM merchant_products WHERE id = $1 AND merchant_id = $2',
-      [productId, user.id]
+      'SELECT id, approval_status, is_active FROM products WHERE id = $1 AND merchant_id = $2',
+      [productId, merchantUser.id] // Use merchantUser.id from the function parameters
     );
     
     if (checkResult.rows.length === 0) {
@@ -106,7 +98,7 @@ async function updateProduct(req: NextRequest, user: any, { params }: { params: 
     
     // Build the SET clause and values array for the SQL query
     const updates: string[] = [];
-    const values = [productId, user.id];
+    const values = [productId, merchantUser.id];
     let valueIndex = 3;
     
     if (data.name !== undefined) {
@@ -124,49 +116,68 @@ async function updateProduct(req: NextRequest, user: any, { params }: { params: 
       values.push(data.price.toString()); // Convert to string for PostgreSQL
     }
     
-    if (data.basePrice !== undefined) {
-      updates.push(`base_price = $${valueIndex++}`);
-      values.push(data.basePrice.toString()); // Convert to string for PostgreSQL
-    }
+    // basePrice is not in the simplified updateProductSchema or products table for now
+    // if (data.basePrice !== undefined) {
+    //   updates.push(`base_price = $${valueIndex++}`);
+    //   values.push(data.basePrice.toString()); // Convert to string for PostgreSQL
+    // }
     
     if (data.imageUrl !== undefined) {
       updates.push(`image_url = $${valueIndex++}`);
       values.push(data.imageUrl);
     }
     
-    if (data.additionalImages !== undefined) {
-      updates.push(`additional_images = $${valueIndex++}`);
-      values.push(data.additionalImages);
-    }
+    // additionalImages is not in the simplified updateProductSchema or products table for now
+    // if (data.additionalImages !== undefined) {
+    //   updates.push(`additional_images = $${valueIndex++}`);
+    //   values.push(data.additionalImages);
+    // }
     
-    // Handle categoryId - explicitly set to NULL if null/empty
+    // Handle categoryId (maps to platform_category_id) - explicitly set to NULL if null/empty
     if (data.categoryId !== undefined) {
       if (data.categoryId === null || data.categoryId === '') {
-        updates.push(`category_id = NULL`);
+        updates.push(`platform_category_id = NULL`);
       } else {
-        updates.push(`category_id = $${valueIndex++}`);
-        values.push(data.categoryId);
+        updates.push(`platform_category_id = $${valueIndex++}`);
+        // Assuming categoryId is a string that needs to be parsed to integer or is already an integer string
+        values.push(parseInt(data.categoryId, 10)); 
       }
     }
     
-    if (data.stockQuantity !== undefined) {
-      updates.push(`stock_quantity = $${valueIndex++}`);
-      values.push(data.stockQuantity.toString()); // Convert to string for PostgreSQL
-    }
+    // stockQuantity is not in the simplified updateProductSchema or products table for now
+    // if (data.stockQuantity !== undefined) {
+    //   updates.push(`stock_quantity = $${valueIndex++}`);
+    //   values.push(data.stockQuantity.toString()); // Convert to string for PostgreSQL
+    // }
     
-    // Handle cashbackConfig - explicitly set to NULL if null
-    if (data.cashbackConfig !== undefined) {
-      if (data.cashbackConfig === null) {
-        updates.push(`cashback_config = NULL`);
-      } else {
-        updates.push(`cashback_config = $${valueIndex++}`);
-        values.push(JSON.stringify(data.cashbackConfig)); // Convert object to JSON string
-      }
-    }
+    // cashbackConfig is not in the simplified updateProductSchema or products table for now
+    // if (data.cashbackConfig !== undefined) {
+    //   if (data.cashbackConfig === null) {
+    //     updates.push(`cashback_config = NULL`);
+    //   } else {
+    //     updates.push(`cashback_config = $${valueIndex++}`);
+    //     values.push(JSON.stringify(data.cashbackConfig)); // Convert object to JSON string
+    //   }
+    // }
     
+    const currentProductStatus = checkResult.rows[0]; // Contains id, approval_status, is_active
+
     if (data.isActive !== undefined) {
-      updates.push(`is_active = $${valueIndex++}`);
-      values.push(data.isActive.toString()); // Convert to string for PostgreSQL
+      if (data.isActive === false) {
+        updates.push(`is_active = $${valueIndex++}`);
+        values.push(false);
+      } else { // data.isActive is true
+        if (currentProductStatus.approval_status === 'approved') {
+          updates.push(`is_active = $${valueIndex++}`);
+          values.push(true);
+        } else {
+          // Merchant trying to activate a non-approved product
+          return NextResponse.json(
+            { error: 'Product must be approved to be set active.' },
+            { status: 403 } // Forbidden
+          );
+        }
+      }
     }
     
     // If no fields to update, return early
@@ -179,10 +190,10 @@ async function updateProduct(req: NextRequest, user: any, { params }: { params: 
     
     // Execute the update query
     const updateQuery = `
-      UPDATE merchant_products
+      UPDATE products
       SET ${updates.join(', ')}
       WHERE id = $1 AND merchant_id = $2
-      RETURNING id, name, description, price, updated_at
+      RETURNING id, name, description, price, image_url, platform_category_id, approval_status, is_active, updated_at
     `;
     
     console.log('Update query:', updateQuery);
@@ -201,13 +212,20 @@ async function updateProduct(req: NextRequest, user: any, { params }: { params: 
       
       const updatedProduct = result.rows[0];
       
+      // Format the response based on fields returned from 'products' table
       return NextResponse.json({
-        id: updatedProduct.id,
-        name: updatedProduct.name,
-        description: updatedProduct.description,
-        price: parseFloat(updatedProduct.price),
-        updatedAt: updatedProduct.updated_at,
-        message: 'Product updated successfully'
+        message: 'Product updated successfully',
+        product: {
+          id: updatedProduct.id,
+          name: updatedProduct.name,
+          description: updatedProduct.description,
+          price: parseFloat(updatedProduct.price),
+          imageUrl: updatedProduct.image_url,
+          platformCategoryId: updatedProduct.platform_category_id,
+          approvalStatus: updatedProduct.approval_status,
+          isActive: updatedProduct.is_active,
+          updatedAt: updatedProduct.updated_at
+        }
       });
     } catch (dbError: unknown) {
       console.error('Database error during product update:', dbError);
@@ -231,14 +249,14 @@ async function updateProduct(req: NextRequest, user: any, { params }: { params: 
 }
 
 // DELETE handler to remove a specific product
-async function deleteProduct(req: NextRequest, user: any, { params }: { params: { id: string } }) {
+async function deleteProduct(req: NextRequest, merchantUser: any, { params }: { params: { id: string } }) { // Renamed user
   try {
     const productId = params.id;
     
-    // Check if product exists and belongs to this merchant
+    // Check if product exists and belongs to this merchant in 'products' table before deleting
     const checkResult = await pool.query(
-      'SELECT id FROM merchant_products WHERE id = $1 AND merchant_id = $2',
-      [productId, user.id]
+      'SELECT id FROM products WHERE id = $1 AND merchant_id = $2',
+      [productId, merchantUser.id] // Use merchantUser.id
     );
     
     if (checkResult.rows.length === 0) {
@@ -248,15 +266,21 @@ async function deleteProduct(req: NextRequest, user: any, { params }: { params: 
       );
     }
     
-    // Delete the product
-    await pool.query(
-      'DELETE FROM merchant_products WHERE id = $1',
-      [productId]
+    // Execute the delete query against 'products' table, ensuring merchant ownership again in the DELETE statement
+    const deleteResult = await pool.query(
+      'DELETE FROM products WHERE id = $1 AND merchant_id = $2 RETURNING id',
+      [productId, merchantUser.id] // Use merchantUser.id
     );
+
+    if (deleteResult.rowCount === 0) {
+      // This case should ideally be caught by the checkResult above, but as a safeguard:
+      return NextResponse.json(
+        { error: 'Product not found or you do not have permission to delete it, or it was already deleted.' },
+        { status: 404 }
+      );
+    }
     
-    return NextResponse.json({
-      message: 'Product deleted successfully'
-    });
+    return NextResponse.json({ message: `Product with ID ${productId} deleted successfully` });
   } catch (error) {
     console.error('Error deleting product:', error);
     return NextResponse.json(

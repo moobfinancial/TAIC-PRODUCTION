@@ -1,11 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { z } from 'genkit';
-import { genkit } from 'genkit';
+import { z, genkit } from 'genkit';
 import { googleAI, gemini } from '@genkit-ai/googleai';
 
 // Local Genkit Initialization
 const localAI = genkit({
-  enableTracingAndMetrics: false,
   plugins: [
     googleAI({ apiKey: process.env.GOOGLE_API_KEY }),
   ],

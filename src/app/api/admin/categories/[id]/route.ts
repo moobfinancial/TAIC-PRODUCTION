@@ -44,12 +44,13 @@ async function getDescendantIds(client: PoolClient, categoryId: number): Promise
 }
 
 
-export async function PUT(request: NextRequest, { params }: { params: { id: string } }) {
-  const apiKey = request.headers.get('X-Admin-API-Key');
+export async function PUT(request: NextRequest, context: any) {
+    const apiKey = request.headers.get('X-Admin-API-Key');
   if (!validateAdminApiKey(apiKey)) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
 
+  const { params } = context; // Assuming context will be typed as 'any' or fixed later
   const categoryId = parseInt(params.id, 10);
   if (isNaN(categoryId)) {
     return NextResponse.json({ error: 'Invalid category ID format' }, { status: 400 });
@@ -94,15 +95,15 @@ export async function PUT(request: NextRequest, { params }: { params: { id: stri
     let paramIndex = 1;
 
     if (name !== undefined) {
-      updateFields.push(`name = $${paramIndex++}`);
+      updateFields.push(`name = \$${paramIndex++}`);
       updateValues.push(name);
     }
     if (description !== undefined) { // Allows setting description to null or a new string
-      updateFields.push(`description = $${paramIndex++}`);
+      updateFields.push(`description = \$${paramIndex++}`);
       updateValues.push(description);
     }
     if (parent_category_id !== undefined) { // Allows setting parent_category_id to null
-      updateFields.push(`parent_category_id = $${paramIndex++}`);
+      updateFields.push(`parent_category_id = \$${paramIndex++}`);
       updateValues.push(parent_category_id);
     }
 
@@ -115,7 +116,7 @@ export async function PUT(request: NextRequest, { params }: { params: { id: stri
     updateFields.push(`updated_at = CURRENT_TIMESTAMP`);
     updateValues.push(categoryId); // For the WHERE clause
 
-    const queryString = `UPDATE categories SET ${updateFields.join(', ')} WHERE id = $${paramIndex} RETURNING *;`;
+    const queryString = `UPDATE categories SET ${updateFields.join(', ')} WHERE id = \$${paramIndex} RETURNING *;`;
 
     const result = await client.query(queryString, updateValues);
 
@@ -153,12 +154,13 @@ export async function PUT(request: NextRequest, { params }: { params: { id: stri
   }
 }
 
-export async function DELETE(request: NextRequest, { params }: { params: { id: string } }) {
+export async function DELETE(request: NextRequest, context: any) {
   const apiKey = request.headers.get('X-Admin-API-Key');
   if (!validateAdminApiKey(apiKey)) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
 
+  const { params } = context;
   const categoryId = parseInt(params.id, 10);
   if (isNaN(categoryId)) {
     return NextResponse.json({ error: 'Invalid category ID format' }, { status: 400 });
@@ -172,7 +174,7 @@ export async function DELETE(request: NextRequest, { params }: { params: { id: s
     // Check 1: Child Categories
     const childCheckQuery = `SELECT id FROM categories WHERE parent_category_id = $1 LIMIT 1;`;
     let result = await client.query(childCheckQuery, [categoryId]);
-    if (result.rowCount > 0) {
+    if (result && typeof result.rowCount === 'number' && result.rowCount > 0) {
       await client.query('ROLLBACK');
       return NextResponse.json({ error: "Category has sub-categories. Please delete or re-assign them first." }, { status: 400 });
     }
@@ -180,7 +182,7 @@ export async function DELETE(request: NextRequest, { params }: { params: { id: s
     // Check 2: Product Associations (cj_products)
     const cjProductCheckQuery = `SELECT platform_product_id FROM cj_products WHERE platform_category_id = $1 LIMIT 1;`;
     result = await client.query(cjProductCheckQuery, [categoryId]);
-    if (result.rowCount > 0) {
+    if (result && typeof result.rowCount === 'number' && result.rowCount > 0) {
       await client.query('ROLLBACK');
       return NextResponse.json({ error: "Category is in use by supplier products (CJ)." }, { status: 400 });
     }
@@ -191,7 +193,7 @@ export async function DELETE(request: NextRequest, { params }: { params: { id: s
     // For now, assuming it exists as per subtask instructions.
     try {
         result = await client.query(merchantProductCheckQuery, [categoryId]);
-        if (result.rowCount > 0) {
+        if (result && typeof result.rowCount === 'number' && result.rowCount > 0) {
           await client.query('ROLLBACK');
           return NextResponse.json({ error: "Category is in use by merchant products." }, { status: 400 });
         }

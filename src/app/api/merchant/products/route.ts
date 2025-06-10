@@ -2,27 +2,22 @@ import { NextRequest, NextResponse } from 'next/server';
 import { pool } from '@/lib/db';
 import { z } from 'zod';
 import { withMerchantAuth } from '@/lib/merchantAuth';
+import { v4 as uuidv4 } from 'uuid';
 
-// Schema for creating a new product
+// Schema for creating a new product (fields mapped to 'products' table)
 const createProductSchema = z.object({
   name: z.string().min(2, 'Product name must be at least 2 characters').max(255),
   description: z.string().min(10, 'Description must be at least 10 characters'),
   price: z.number().positive('Price must be positive'),
-  basePrice: z.number().positive('Base price must be positive').optional(),
-  imageUrl: z.string().min(1, 'Image URL is required'), // Allow relative paths too if needed, or keep .url() if only absolute
-  additionalImages: z.array(z.string().url()).optional(),
-  // categoryId from form is string, allow empty for 'no category', parse to int in backend if not null
-  categoryId: z.string().optional().nullable(),
-  stockQuantity: z.number().int().nonnegative('Stock quantity must be a non-negative integer'),
-  cashbackConfig: z.object({
-    type: z.enum(['percentage', 'fixed']),
-    value: z.number().positive(),
-  }).optional(),
-  isActive: z.boolean().optional(),
+  imageUrl: z.string().min(1, 'Image URL is required'),
+  // platform_category_id will be derived from this
+  categoryId: z.string().optional().nullable(), 
+  // Fields like basePrice, additionalImages, stockQuantity, cashbackConfig are not in the 'products' table yet.
+  // The 'isActive' field from input is ignored; new products are set to is_active=false, approval_status='pending'.
 });
 
-// GET handler to list merchant's products
-async function getProducts(req: NextRequest, user: any) {
+// GET handler to list merchant's products from the 'products' table
+async function getProducts(req: NextRequest, merchantUser: any) { // Renamed user to merchantUser
   try {
     // Get query parameters for pagination
     const url = new URL(req.url);
@@ -30,46 +25,46 @@ async function getProducts(req: NextRequest, user: any) {
     const limit = parseInt(url.searchParams.get('limit') || '10');
     const offset = (page - 1) * limit;
     
-    // Get products for this merchant
+    // Get products for this merchant from the 'products' table
     const result = await pool.query(
-      `SELECT p.*, c.name as category_name
-       FROM merchant_products p
-       LEFT JOIN categories c ON p.category_id = c.id
+      `SELECT p.id, p.name, p.description, p.price, p.image_url, 
+              p.platform_category_id, c.name as category_name, 
+              p.approval_status, p.is_active, p.created_at, p.updated_at
+       FROM products p
+       LEFT JOIN categories c ON p.platform_category_id = c.id
        WHERE p.merchant_id = $1
        ORDER BY p.created_at DESC
        LIMIT $2 OFFSET $3`,
-      [user.id, limit, offset]
+      [merchantUser.id, limit, offset]
     );
     
-    // Get total count for pagination
+    // Get total count for pagination from the 'products' table
     const countResult = await pool.query(
-      'SELECT COUNT(*) FROM merchant_products WHERE merchant_id = $1',
-      [user.id]
+      'SELECT COUNT(*) FROM products WHERE merchant_id = $1',
+      [merchantUser.id]
     );
     
     const totalCount = parseInt(countResult.rows[0].count);
     const totalPages = Math.ceil(totalCount / limit);
     
     // Format the response
-    const products = result.rows.map(product => ({
+    const productsResponse = result.rows.map(product => ({
       id: product.id,
       name: product.name,
       description: product.description,
       price: parseFloat(product.price),
-      basePrice: product.base_price ? parseFloat(product.base_price) : undefined,
       imageUrl: product.image_url,
-      additionalImages: product.additional_images,
-      categoryId: product.category_id,
-      categoryName: product.category_name,
-      stockQuantity: product.stock_quantity,
-      cashbackConfig: product.cashback_config,
+      platformCategoryId: product.platform_category_id,
+      categoryName: product.category_name, // from the JOIN
+      approvalStatus: product.approval_status,
       isActive: product.is_active,
       createdAt: product.created_at,
       updatedAt: product.updated_at
+      // Fields like basePrice, additionalImages, stockQuantity, cashbackConfig are not in this response as they are not in 'products' table yet
     }));
     
     return NextResponse.json({
-      products,
+      products: productsResponse, // Use the new variable name
       pagination: {
         total: totalCount,
         page,
@@ -87,7 +82,7 @@ async function getProducts(req: NextRequest, user: any) {
 }
 
 // POST handler to create a new product
-async function createProduct(req: NextRequest, user: any) {
+async function createProduct(req: NextRequest, merchantUser: any) { // Renamed user to merchantUser for clarity
   try {
     // Parse request body
     const body = await req.json();
@@ -105,43 +100,38 @@ async function createProduct(req: NextRequest, user: any) {
       name,
       description,
       price,
-      basePrice,
       imageUrl,
-      additionalImages,
-      categoryId,
-      stockQuantity,
-      cashbackConfig,
-      isActive = true
+      categoryId
+      // basePrice, additionalImages, stockQuantity, cashbackConfig, isActive are handled differently or not used for 'products' table
     } = validationResult.data;
     
-    // Insert the new product
+    const newProductId = uuidv4();
+    const platformCategoryId = categoryId ? parseInt(categoryId, 10) : null;
+
+    // Insert the new product into the main 'products' table
     const result = await pool.query(
-      `INSERT INTO merchant_products (
-        merchant_id,
+      `INSERT INTO products (
+        id,
         name,
         description,
         price,
-        base_price,
         image_url,
-        additional_images,
-        category_id,
-        stock_quantity,
-        cashback_config,
+        platform_category_id,
+        merchant_id,
+        approval_status,
         is_active
-      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
-      RETURNING id, name, description, price, created_at`,
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+      RETURNING id, name, description, price, approval_status, is_active, created_at`,
       [
-        user.id,
+        newProductId,
         name,
         description,
         price,
-        basePrice || null,
         imageUrl,
-        additionalImages ? JSON.stringify(additionalImages) : null,
-        categoryId || null,
-        stockQuantity,
-        cashbackConfig ? JSON.stringify(cashbackConfig) : null,
-        isActive
+        platformCategoryId,
+        merchantUser.id, // Use merchantUser.id here
+        'pending',       // Default approval_status
+        false            // Default is_active
       ]
     );
     
@@ -152,6 +142,8 @@ async function createProduct(req: NextRequest, user: any) {
       name: newProduct.name,
       description: newProduct.description,
       price: parseFloat(newProduct.price),
+      approvalStatus: newProduct.approval_status,
+      isActive: newProduct.is_active,
       createdAt: newProduct.created_at
     }, { status: 201 });
   } catch (error) {

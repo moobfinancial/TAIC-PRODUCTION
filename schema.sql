@@ -97,17 +97,31 @@ CREATE TABLE products (
     description TEXT,
     price DECIMAL(10, 2) NOT NULL,
     image_url VARCHAR(255),
-    category VARCHAR(100),
+    category VARCHAR(100), -- Legacy category name field, consider migrating to platform_category_id
+    platform_category_id INTEGER REFERENCES categories(id) ON DELETE SET NULL, -- Preferred way to link categories
     data_ai_hint TEXT,
-    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+    is_active BOOLEAN DEFAULT false NOT NULL,
+    approval_status VARCHAR(50) DEFAULT 'pending' NOT NULL, -- Values: 'pending', 'approved', 'rejected'
+    merchant_id VARCHAR(255), -- To associate product with a merchant/user
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP NOT NULL,
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP NOT NULL,
+    CONSTRAINT check_products_approval_status CHECK (approval_status IN ('pending', 'approved', 'rejected'))
 );
 
--- Trigger to update updated_at on products table
+-- Trigger for automatically updating the updated_at column on products table
+-- Assumes the function update_updated_at_column() is defined elsewhere and is suitable.
 CREATE TRIGGER update_products_updated_at
-BEFORE UPDATE ON products
-FOR EACH ROW
-EXECUTE FUNCTION update_updated_at_column();
+    BEFORE UPDATE ON products
+    FOR EACH ROW
+    EXECUTE FUNCTION update_updated_at_column();
+
+-- Indexes for products table
+CREATE INDEX idx_products_platform_category_id ON products(platform_category_id);
+CREATE INDEX idx_products_is_active ON products(is_active);
+CREATE INDEX idx_products_approval_status ON products(approval_status);
+CREATE INDEX idx_products_merchant_id ON products(merchant_id);
+CREATE INDEX idx_products_name ON products(name); -- For searching/sorting by name
+CREATE INDEX idx_products_price ON products(price); -- For sorting/filtering by price
 
 CREATE TABLE crypto_transactions (
     id SERIAL PRIMARY KEY,

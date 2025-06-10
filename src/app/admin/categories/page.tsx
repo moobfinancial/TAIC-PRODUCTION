@@ -205,7 +205,7 @@ export default function ManageCategoriesPage() {
           <Button variant="outline" size="sm" onClick={() => handleEditClick(category)} disabled={isSubmitting}>
             <Edit className="mr-1 h-3.5 w-3.5" /> Edit
           </Button>
-          <Button variant="destructiveOutline" size="sm" onClick={() => handleDeleteClick(category.id)} disabled={isSubmitting}>
+          <Button variant="destructive" size="sm" onClick={() => handleDeleteClick(category.id)} disabled={isSubmitting}>
             <Trash2 className="mr-1 h-3.5 w-3.5" /> Delete
           </Button>
         </div>

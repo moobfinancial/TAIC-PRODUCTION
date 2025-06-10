@@ -118,7 +118,7 @@ export async function POST(request: NextRequest) {
 
       try {
         const result = await client.query(updateQuery, queryParams);
-        if (result.rowCount > 0) {
+        if (result && typeof result.rowCount === 'number' && result.rowCount > 0) {
           updateResults.push({ platform_product_id: platformProductId, status: 'success' });
           successfullyUpdatedCount++;
         } else {

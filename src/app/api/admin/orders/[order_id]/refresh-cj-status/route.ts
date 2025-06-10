@@ -17,12 +17,13 @@ function validateAdminApiKey(apiKey: string | null): boolean {
   return apiKey === serverApiKey;
 }
 
-export async function POST(request: NextRequest, { params }: { params: { order_id: string } }) {
+export async function POST(request: NextRequest, context: any) {
   const apiKey = request.headers.get('X-Admin-API-Key');
   if (!validateAdminApiKey(apiKey)) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
 
+  const { params } = context;
   const platformOrderId = parseInt(params.order_id, 10);
   if (isNaN(platformOrderId)) {
     return NextResponse.json({ error: 'Invalid Order ID format' }, { status: 400 });

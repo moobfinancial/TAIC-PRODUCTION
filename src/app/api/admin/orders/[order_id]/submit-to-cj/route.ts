@@ -19,12 +19,13 @@ function validateAdminApiKey(apiKey: string | null): boolean {
   return apiKey === serverApiKey;
 }
 
-export async function POST(request: NextRequest, { params }: { params: { order_id: string } }) {
+export async function POST(request: NextRequest, context: any) {
   const apiKey = request.headers.get('X-Admin-API-Key');
   if (!validateAdminApiKey(apiKey)) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
 
+  const { params } = context;
   const platformOrderId = parseInt(params.order_id, 10);
   if (isNaN(platformOrderId)) {
     return NextResponse.json({ error: 'Invalid Order ID format' }, { status: 400 });
@@ -50,9 +51,9 @@ export async function POST(request: NextRequest, { params }: { params: { order_i
     const orderData: Order = orderResult.rows[0];
 
     // Check order status and if already submitted
-    if (orderData.cj_order_id) {
+    if (orderData.cjOrderId) {
       await client.query('ROLLBACK');
-      return NextResponse.json({ error: 'Order already submitted to CJ.', cjOrderId: orderData.cj_order_id }, { status: 409 });
+      return NextResponse.json({ error: 'Order already submitted to CJ.', cjOrderId: orderData.cjOrderId }, { status: 409 });
     }
     // Example: Allow submission only for 'completed' (paid) or 'pending' orders that need fulfillment
     if (orderData.status !== 'completed' && orderData.status !== 'pending_payment_confirmation_cj') { // Assuming 'pending_payment_confirmation_cj' is a status after payment but before CJ submission

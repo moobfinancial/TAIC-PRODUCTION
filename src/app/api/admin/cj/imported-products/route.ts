@@ -49,6 +49,7 @@ export async function GET(request: NextRequest) {
         cj_base_price,
         image_url,
         is_active,
+        approval_status,
         created_at,
         updated_at,
         original_name,

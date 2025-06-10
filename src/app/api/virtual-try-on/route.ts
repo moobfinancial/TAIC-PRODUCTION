@@ -202,7 +202,7 @@ export async function POST(request: NextRequest) {
       generatedImageUrl: publicUrl, // This will be GCS URL if save succeeded, else original AI URL
       galleryImageId: galleryImageId, // ID from user_gallery_images table
       storagePath: storagePath || null, // GCS path if save succeeded
-      metadata: { ...result.metadata, processingTime: duration, storagePath, galleryImageId },
+      metadata: { processingTime: duration, storagePath: storagePath || null, galleryImageId: galleryImageId || null }, // result.metadata removed as it's not on the type
       timestamp: new Date().toISOString(),
     }, { status: 200 });
 

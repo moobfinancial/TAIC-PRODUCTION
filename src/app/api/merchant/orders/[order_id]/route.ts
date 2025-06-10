@@ -50,12 +50,13 @@ const UpdateOrderSchema = z.object({
 });
 
 
-export async function PUT(request: NextRequest, { params }: { params: { order_id: string } }) {
+export async function PUT(request: NextRequest, context: any) {
   const authResult = await verifyMerchantAuth(request);
   if (!authResult.valid || !authResult.merchantId) {
     return NextResponse.json({ error: authResult.error || 'Unauthorized' }, { status: authResult.status || 401 });
   }
   const merchantId = authResult.merchantId;
+  const { params } = context;
   const platformOrderId = parseInt(params.order_id, 10);
 
   if (isNaN(platformOrderId)) {

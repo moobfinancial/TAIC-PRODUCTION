@@ -6,8 +6,8 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/com
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Button } from '@/components/ui/button';
-import { useEffect, useState, useMemo } from 'react';
-import { ShoppingBag, BotIcon, Sparkles, Gift, TrendingUp, Gem, PiggyBank, Landmark, MinusCircle, PlusCircle, Target, Clock, PartyPopper, ThumbsUp, Info, Calculator, ShieldAlert } from 'lucide-react'; // Added ShieldAlert
+import { useEffect, useState, useMemo, useCallback } from 'react';
+import { ShoppingBag, BotIcon, Sparkles, Gift, TrendingUp, Gem, PiggyBank, Landmark, MinusCircle, PlusCircle, Target, Clock, PartyPopper, ThumbsUp, Info, Calculator, ShieldAlert, Loader2 } from 'lucide-react'; // Added ShieldAlert, Loader2
 // Update useAuth import path
 import { useAuth } from '@/contexts/AuthContext';
 import { useToast } from '@/hooks/use-toast';
@@ -49,6 +49,7 @@ export default function StakingPage() {
   const [isLoadingActiveStakes, setIsLoadingActiveStakes] = useState(true);
   const [activeStakesError, setActiveStakesError] = useState<string | null>(null);
   const [unstakingStakeId, setUnstakingStakeId] = useState<number | null>(null);
+  const [isStakeActionLoading, setIsStakeActionLoading] = useState(false);
 
 
   useEffect(() => {
@@ -124,7 +125,7 @@ export default function StakingPage() {
       return;
     }
 
-    setIsLoading(true); // Use general isLoading or a specific one like isStakingGeneral
+    setIsStakeActionLoading(true);
     try {
       const response = await fetch('/api/user/staking/stake', {
         method: 'POST',
@@ -145,7 +146,7 @@ export default function StakingPage() {
     } catch (err: any) {
       toast({ title: "Staking Failed", description: err.message, variant: "destructive" });
     } finally {
-      setIsLoading(false);
+      setIsStakeActionLoading(false);
     }
   };
 
@@ -365,10 +366,10 @@ export default function StakingPage() {
                       value={stakeInputAmount}
                       onChange={(e) => setStakeInputAmount(e.target.value)}
                       className="text-base flex-grow"
-                      disabled={!isAuthenticated || authIsLoading || isLoading}
+                      disabled={!isAuthenticated || authIsLoading || isStakeActionLoading}
                     />
-                    <Button onClick={handleStake} disabled={!isAuthenticated || authIsLoading || isLoading || !stakeInputAmount} className="font-semibold">
-                      {isLoading && !authIsLoading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <PlusCircle className="mr-2 h-5 w-5"/>}
+                    <Button onClick={handleStake} disabled={!isAuthenticated || authIsLoading || isStakeActionLoading || !stakeInputAmount} className="font-semibold">
+                      {isStakeActionLoading && !authIsLoading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <PlusCircle className="mr-2 h-5 w-5"/>}
                       Stake
                     </Button>
                   </div>

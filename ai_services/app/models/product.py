@@ -10,7 +10,7 @@ class ProductModel(BaseModel):
     # Assuming platform_product_id (from cj_products) or a similar numeric ID from other tables
     # will be the primary identifier used internally by AI services for now.
     # It can be converted to string when presented if needed by specific API contracts.
-    id: int # e.g., platform_product_id from cj_products or id from merchant_products
+    id: str  # Unified ID for AI services, typically the string representation of original_id # e.g., platform_product_id from cj_products or id from merchant_products
 
     name: str
     description: Optional[str] = None
@@ -26,7 +26,11 @@ class ProductModel(BaseModel):
 
     # For CJ products, this would be cj_product_id. For others, it might be null or a different SKU.
     # This helps in uniquely identifying the product from its source if needed.
-    source_product_id: Optional[str] = None # e.g., cj_product_id
+    source_product_id: Optional[str] = None # ID from the external supplier system (e.g., CJ's cj_product_id)
+
+    # Fields to track the product's origin within our system
+    original_id: str # The primary key from our source database table (e.g., cj_products.platform_product_id or products.id)
+    source: str      # Indicates the source table or system within our platform (e.g., 'cj_products', 'products_main')
 
     # Potentially other fields useful for AI:
     # stock_quantity: Optional[int] = None

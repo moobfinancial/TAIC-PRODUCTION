@@ -6,7 +6,7 @@ export const VirtualTryOnInputSchema = z.object({
   userDescription: z.string().optional().describe('Optional description of the user image (e.g., pose, key features).'),
   productDescription: z.string().optional().describe('Optional description of the product (e.g., "red t-shirt", "sunglasses").'),
   // userId is now obtained from JWT, so it's removed from the input schema.
-  // userId: z.string().optional().describe('User ID to associate the generated image with.'),
+  userId: z.string().optional().describe('User ID to associate the generated image with.'),
   productId: z.union([z.string(), z.number()]).optional().describe('Product ID for reference when saving the image. Can be a string or number.'),
 });
 

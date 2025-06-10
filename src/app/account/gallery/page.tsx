@@ -3,10 +3,12 @@
 import { useAuth } from '@/contexts/AuthContext';
 import { useCallback, useEffect, useState, useMemo } from 'react'; // Import useMemo
 import Image from 'next/image'; // Use Next.js Image
-import { Loader2, Image as ImageIcon, ArrowLeft, UploadCloud, AlertTriangle, Sparkles } from 'lucide-react'; // Added Sparkles for VTO section
+import { Loader2, Image as ImageIcon, ArrowLeft, UploadCloud, AlertTriangle, Sparkles, CheckCircle, RefreshCw } from 'lucide-react'; // Added Sparkles for VTO section, CheckCircle for success message, RefreshCw for retry
 import Link from 'next/link';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input'; // For file input
+import { Card, CardHeader, CardTitle, CardContent, CardDescription, CardFooter } from '@/components/ui/card';
+import { Label } from '@/components/ui/label';
 import { useToast } from '@/hooks/use-toast'; // For upload feedback
 import type { UserGalleryImage } from '@/lib/types'; // Import the new type
 

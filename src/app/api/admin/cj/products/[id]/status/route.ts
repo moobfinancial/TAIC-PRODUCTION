@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { Pool } from 'pg';
 import { z } from 'zod';
-import { validateAdminApiKey } from '../../../../../../lib/adminAuth'; // Adjusted path
+import { validateAdminApiKey } from '@/lib/adminAuth';
 
 // Force this route to run in Node.js runtime instead of Edge Runtime
 export const runtime = 'nodejs';
@@ -22,13 +22,14 @@ const UpdateStatusInputSchema = z.object({
 });
 
 
-export async function PUT(request: NextRequest, { params }: { params: { id: string } }) {
+export async function PUT(request: NextRequest, context: any) {
   const apiKey = request.headers.get('X-Admin-API-Key');
   const authResult = await validateAdminApiKey(apiKey);
   if (!authResult.valid) {
     return NextResponse.json({ success: false, message: 'Invalid or missing Admin API Key.' }, { status: 401 });
   }
 
+  const { params } = context;
   const platformProductId = parseInt(params.id, 10);
   if (isNaN(platformProductId)) {
     return NextResponse.json({ error: 'Invalid product ID format.' }, { status: 400 });

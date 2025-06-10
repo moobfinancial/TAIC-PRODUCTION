@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import React, { useState, useEffect, Suspense } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -9,7 +9,7 @@ import { useToast } from '@/hooks/use-toast';
 import { Lock, Loader2 } from 'lucide-react';
 import { useAdminAuth } from '@/contexts/AdminAuthContext';
 
-export default function AdminLoginPage() {
+function AdminLoginPageContent() {
   const [apiKey, setApiKey] = useState('');
   const [isLoading, setIsLoading] = useState(true);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -37,7 +37,7 @@ export default function AdminLoginPage() {
       console.log('[AdminLoginPage] isAuthenticated is FALSE. Setting local isLoading to false.');
       setIsLoading(false); // This is the page's own loading indicator
     }
-  }, [isAuthenticated, router, searchParams]);
+  }, [isAuthenticated, router, searchParams, isLoading]); // Added isLoading to dependencies as it's used in console.log
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -138,5 +138,23 @@ export default function AdminLoginPage() {
         </div>
       </div>
     </div>
+  );
+}
+
+function AdminLoginLoadingFallback() {
+  return (
+    <div className="flex flex-col items-center justify-center min-h-screen bg-background text-foreground">
+      <Loader2 className="h-12 w-12 animate-spin text-primary mb-4" />
+      <p className="text-lg font-semibold">Loading Login Page...</p>
+      <p className="text-sm text-muted-foreground">Please wait a moment.</p>
+    </div>
+  );
+}
+
+export default function AdminLoginPage() {
+  return (
+    <Suspense fallback={<AdminLoginLoadingFallback />}>
+      <AdminLoginPageContent />
+    </Suspense>
   );
 }

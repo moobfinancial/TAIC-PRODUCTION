@@ -62,7 +62,7 @@ export default function ManageCjProductsPage() {
       const data: ImportedProductsApiResponse = await response.json();
       // Assuming the API returns all products and we filter client-side as per subtask description.
       // If API supports filtering by status, add query param: ?status=${filterStatus} (for 'all', don't send param)
-      const productsWithNumericPrice = (data.data || []).map(p => ({
+      const productsWithNumericPrice = (data.products || []).map((p: ImportedCjProduct) => ({
         ...p,
         selling_price: typeof p.selling_price === 'string' ? parseFloat(p.selling_price) : p.selling_price
       }));
@@ -152,7 +152,7 @@ export default function ManageCjProductsPage() {
           </Button>
         )}
         {(product.approval_status === 'pending' || product.approval_status === 'approved') && (
-          <Button size="sm" variant="destructiveOutline" onClick={() => updateProductStatus([product.id], { approvalStatus: 'rejected', isActive: false })} disabled={isLoading}>
+          <Button size="sm" variant="destructive" onClick={() => updateProductStatus([product.id], { approvalStatus: 'rejected', isActive: false })} disabled={isLoading}>
             <ShieldX className="mr-1 h-4 w-4" /> Reject
           </Button>
         )}
@@ -171,7 +171,7 @@ export default function ManageCjProductsPage() {
   };
   
   const getStatusBadge = (status: 'pending' | 'approved' | 'rejected', isActive: boolean) => {
-    if (status === 'approved' && isActive) return <Badge variant="success" className="bg-green-500">Approved & Active</Badge>;
+    if (status === 'approved' && isActive) return <Badge variant="default" className="bg-green-500">Approved & Active</Badge>;
     if (status === 'approved' && !isActive) return <Badge variant="secondary" className="bg-yellow-500 text-white">Approved & Inactive</Badge>;
     if (status === 'pending') return <Badge variant="outline" className="border-orange-500 text-orange-500">Pending Approval</Badge>;
     if (status === 'rejected') return <Badge variant="destructive" className="bg-red-500">Rejected</Badge>;
@@ -211,21 +211,22 @@ export default function ManageCjProductsPage() {
           <div className="flex items-center space-x-3 p-3 bg-muted rounded-md border my-4">
             <p className="text-sm font-medium">{selectedProductIds.size} product(s) selected.</p>
             <Button size="sm" onClick={() => updateProductStatus(Array.from(selectedProductIds), { approvalStatus: 'approved', isActive: true })} disabled={isLoading}>
-                <ShieldCheck className="mr-1 h-4 w-4" /> Approve Selected
-            </Button>
-            <Button size="sm" variant="destructiveOutline" onClick={() => updateProductStatus(Array.from(selectedProductIds), { approvalStatus: 'rejected', isActive: false })} disabled={isLoading}>
-                <ShieldX className="mr-1 h-4 w-4" /> Reject Selected
+              <ShieldCheck className="mr-1 h-4 w-4" /> Approve Selected
+            </Button> 
+            <Button 
+              size="sm" 
+              variant="destructive" 
+              onClick={() => updateProductStatus(Array.from(selectedProductIds), { approvalStatus: 'rejected', isActive: false })} 
+              disabled={selectedProductIds.size === 0 || isLoading}
+            >
+              <ShieldX className="mr-2 h-4 w-4" /> Reject Selected ({selectedProductIds.size})
             </Button>
             <Button size="sm" variant="outline" onClick={() => setSelectedProductIds(new Set())} disabled={isLoading}>Clear Selection</Button>
           </div>
         )}
 
         {isLoading && products.length === 0 ? (
-           <div className="flex justify-center items-center h-64"><Loader2 className="h-8 w-8 animate-spin" /> <p className="ml-2">Loading products...</p></div>
-        ) : !isLoading && filteredProducts.length === 0 ? (
-          <p className="text-center text-muted-foreground py-10">
-            No products found for status: <span className="font-semibold">{filterStatus}</span>.
-          </p>
+          <div className="flex justify-center items-center h-64"><Loader2 className="h-8 w-8 animate-spin" /> <p className="ml-2">Loading products...</p></div>
         ) : (
           <Card>
             <CardContent className="p-0">
@@ -233,58 +234,35 @@ export default function ManageCjProductsPage() {
                 <TableHeader>
                   <TableRow>
                     <TableHead className="w-[50px]">
-                       <Checkbox
+                      <Checkbox 
                         checked={selectedProductIds.size === filteredProducts.length && filteredProducts.length > 0}
-                        onCheckedChange={(checked) => handleSelectAllOnPage(!!checked)}
-                        aria-label="Select all on page"
+                        onCheckedChange={(checked) => handleSelectAllOnPage(Boolean(checked))}
                         disabled={filteredProducts.length === 0}
                       />
                     </TableHead>
                     <TableHead className="w-[80px]">Image</TableHead>
-                    <TableHead>Name & CJ ID</TableHead>
-                    <TableHead>Price</TableHead>
-                    <TableHead>Status</TableHead>
-                    <TableHead className="text-right">Actions</TableHead>
+                    <TableHead>Display Name</TableHead>
+                    <TableHead className="w-[120px]">Price</TableHead>
+                    <TableHead className="w-[180px]">Status</TableHead>
+                    <TableHead className="w-[250px]">Actions</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {filteredProducts.map((product) => (
-                    <TableRow key={product.id}>
-                      <TableCell>
-                        <Checkbox
-                          id={`select-${product.id}`}
-                          checked={selectedProductIds.has(product.id)}
-                          onCheckedChange={(checked) => handleSelectProduct(product.id, !!checked)}
-                        />
-                      </TableCell>
-                      <TableCell>
-                        {(() => {
-                          let imgSrc = product.image_url;
-                          if (imgSrc && typeof imgSrc === 'string' && imgSrc.startsWith('[') && imgSrc.endsWith(']')) {
-                            try {
-                              const parsed = JSON.parse(imgSrc);
-                              if (Array.isArray(parsed) && parsed.length > 0 && typeof parsed[0] === 'string' && parsed[0].trim() !== '') {
-                                imgSrc = parsed[0];
-                              } else {
-                                imgSrc = undefined; // Malformed array, empty, or not a string element
-                              }
-                            } catch (e) {
-                              console.warn('Failed to parse image_url:', imgSrc, e);
-                              imgSrc = undefined; // Parsing failed
-                            }
-                          }
-                          // Basic check if imgSrc is now a valid-looking URL string
-                          if (imgSrc && typeof imgSrc === 'string' && !(imgSrc.startsWith('http://') || imgSrc.startsWith('https://') || imgSrc.startsWith('/'))) {
-                            console.warn('Invalid image URL format after processing:', imgSrc);
-                            imgSrc = undefined; // Not a valid scheme or relative path
-                          }
-
-                          return imgSrc ? (
-                            <Image src={imgSrc} alt={product.display_name} width={50} height={50} className="rounded object-cover aspect-square" />
+                  {filteredProducts.length > 0 ? (
+                    filteredProducts.map(product => (
+                      <TableRow key={product.id}>
+                        <TableCell>
+                          <Checkbox 
+                            checked={selectedProductIds.has(product.id)}
+                            onCheckedChange={(checked) => handleSelectProduct(product.id, Boolean(checked))}
+                          />
+                        </TableCell>
+                        <TableCell>
+                          {product.image_url ? (
+                            <Image src={product.image_url} alt={product.display_name} width={50} height={50} className="rounded object-cover" />
                           ) : (
                             <div className="w-[50px] h-[50px] bg-muted rounded flex items-center justify-center text-xs text-muted-foreground">No Image</div>
-                          );
-                        })()}
+                          )}
                       </TableCell>
                       <TableCell>
                         <div className="font-medium">{product.display_name}</div>
@@ -295,7 +273,15 @@ export default function ManageCjProductsPage() {
                       <TableCell>{getStatusBadge(product.approval_status, product.is_active)}</TableCell>
                       <TableCell className="text-right">{renderProductActions(product)}</TableCell>
                     </TableRow>
-                  ))}
+                  )))
+                  : (
+                    <TableRow>
+                      <TableCell colSpan={6} className="h-24 text-center">
+                        No products found for "{filterStatus}" status.
+                      </TableCell>
+                    </TableRow>
+                  )
+                  }
                 </TableBody>
               </Table>
             </CardContent>

@@ -1,7 +1,7 @@
 
 'use client';
 
-import { useState, type FormEvent, useEffect } from 'react';
+import React, { useState, type FormEvent, useEffect, Suspense } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import { Button } from '@/components/ui/button';
@@ -12,7 +12,7 @@ import { useToast } from '@/hooks/use-toast';
 import { LogIn, Store, Loader2 } from 'lucide-react';
 import { useMerchantAuth } from '@/contexts/MerchantAuthContext';
 
-export default function MerchantLoginPage() {
+function MerchantLoginPageContent() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [isLoading, setIsLoading] = useState(false);
@@ -160,5 +160,23 @@ export default function MerchantLoginPage() {
         </CardFooter>
       </Card>
     </div>
+  );
+}
+
+function MerchantLoginLoadingFallback() {
+  return (
+    <div className="flex flex-col items-center justify-center min-h-screen bg-background text-foreground">
+      <Loader2 className="h-12 w-12 animate-spin text-primary mb-4" />
+      <p className="text-lg font-semibold">Loading Merchant Login...</p>
+      <p className="text-sm text-muted-foreground">Please wait a moment.</p>
+    </div>
+  );
+}
+
+export default function MerchantLoginPage() {
+  return (
+    <Suspense fallback={<MerchantLoginLoadingFallback />}>
+      <MerchantLoginPageContent />
+    </Suspense>
   );
 }

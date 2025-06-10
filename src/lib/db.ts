@@ -9,7 +9,7 @@ if (connectionString) {
   // If connection string is provided, use it
   pool = new Pool({
     connectionString,
-    ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : false,
+    ssl: (new URL(connectionString).hostname === 'localhost' || new URL(connectionString).hostname === '127.0.0.1') ? false : (process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : false),
   });
 } else {
   // Otherwise, use individual parameters
@@ -19,7 +19,7 @@ if (connectionString) {
     host: process.env.PGHOST,
     port: parseInt(process.env.PGPORT || '5432'),
     database: process.env.PGDATABASE,
-    ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : false,
+    ssl: (process.env.PGHOST === 'localhost' || process.env.PGHOST === '127.0.0.1') ? false : (process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : false),
   });
 }
 

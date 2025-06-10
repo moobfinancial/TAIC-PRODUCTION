@@ -72,7 +72,7 @@ export async function POST(request: NextRequest) {
       // Check if product already exists (optional, but good practice)
       client = await pool.connect();
       const checkExist = await client.query('SELECT 1 FROM cj_products WHERE cj_product_id = $1', [cjProductId]);
-      if (checkExist.rowCount > 0) {
+      if (checkExist && typeof checkExist.rowCount === 'number' && checkExist.rowCount > 0) {
         results.alreadyExists++;
         results.errors.push({ cjProductId, error: 'Product already imported.' });
         client.release(); // Release before continuing loop
@@ -112,14 +112,14 @@ export async function POST(request: NextRequest) {
       const maxIdResult = await client.query(`SELECT COALESCE(MAX(platform_product_id), 0) + 1 as next_id FROM cj_products;`);
       const nextId = maxIdResult.rows[0].next_id;
 
-      const originalPrice = parseFloat(cjProduct.originalPrice) || parseFloat(cjProduct.sellPrice) || 0;
+      const originalPrice = parseFloat(supplierProduct.originalPrice) || parseFloat(supplierProduct.sellPrice) || 0;
       const sellingPrice = originalPrice * (1 + pricingMarkupPercentage / 100.0);
 
-      const originalName = cjProduct.productName || 'Unnamed Product';
-      const originalDescription = cjProduct.productDescription || '';
+      const originalName = supplierProduct.productName || 'Unnamed Product';
+      const originalDescription = supplierProduct.productDescription || '';
 
-      let displayName = cjProduct.productNameEn || originalName;
-      let displayDescription = cjProduct.productDescriptionEn || originalDescription;
+      let displayName = supplierProduct.productNameEn || originalName;
+      let displayDescription = supplierProduct.productDescriptionEn || originalDescription;
 
       const needsTranslation = (text: string) => /[\u4E00-\u9FFF]/.test(text);
       if (needsTranslation(displayName)) {
@@ -129,10 +129,10 @@ export async function POST(request: NextRequest) {
         displayDescription = (await translateText(displayDescription, 'en')) || displayDescription;
       }
 
-      const productImages = Array.isArray(cjProduct.productImage) ? cjProduct.productImage : (cjProduct.productImage ? [cjProduct.productImage] : []);
+      const productImages = Array.isArray(supplierProduct.productImage) ? supplierProduct.productImage : (supplierProduct.productImage ? [supplierProduct.productImage] : []);
       const mainImage = productImages.length > 0 ? productImages[0] : '';
       const additionalImages = productImages.length > 1 ? productImages.slice(1) : [];
-      const variants = cjProduct.variants || [];
+      const variants = supplierProduct.variants || [];
 
       const insertQuery = `
         INSERT INTO cj_products (
@@ -145,7 +145,7 @@ export async function POST(request: NextRequest) {
         );`;
 
       await client.query(insertQuery, [
-        nextId, cjProduct.pid, cjProduct, displayName, displayDescription,
+        nextId, supplierProduct.pid, supplierProduct, displayName, displayDescription,
         platformCategoryId, sellingPrice, originalPrice, mainImage,
         additionalImages.length > 0 ? JSON.stringify(additionalImages) : null,
         variants.length > 0 ? JSON.stringify(variants) : null,

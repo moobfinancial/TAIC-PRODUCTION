@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import Image from 'next/image';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/components/ui/accordion';
@@ -138,7 +138,7 @@ export function OrderHistory() {
         <ScrollArea className="h-[400px]">
           <Accordion type="single" collapsible className="w-full">
             {orders.slice().reverse().map((order: Order) => (
-              <AccordionItem value={order.id} key={order.id} className="border-b">
+              <AccordionItem value={String(order.id)} key={order.id} className="border-b">
                 <AccordionTrigger className="hover:no-underline">
                   <div className="flex justify-between items-start w-full pr-4"> {/* items-start for alignment */}
                     <div className="text-left">
@@ -146,7 +146,7 @@ export function OrderHistory() {
                       <p className="text-sm text-muted-foreground">
                         {new Date(order.date).toLocaleDateString()} - {new Date(order.date).toLocaleTimeString()}
                       </p>
-                       <Badge variant={order.status === 'completed' ? 'success' : 'secondary'} className="mt-1">{order.status || 'N/A'}</Badge>
+                       <Badge variant={order.status === 'completed' ? 'default' : 'secondary'} className="mt-1">{order.status || 'N/A'}</Badge>
                     </div>
                     <div className="flex flex-col items-end text-right">
                         <p className="text-xs text-muted-foreground">{order.items.length} item(s)</p>
