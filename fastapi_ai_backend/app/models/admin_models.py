@@ -7,8 +7,9 @@ from datetime import datetime
 # from .product import Product as ProductForAdminReview
 
 class ProductReviewAction(BaseModel):
-    new_status: str = Field(..., description="The new approval status for the product.")
-    admin_notes: Optional[str] = Field(default=None, description="Administrator notes regarding the review action.")
+    """Schema for an administrator's action on a product review."""
+    new_status: str = Field(..., description="The new approval status to set for the product (e.g., 'approved', 'rejected').")
+    admin_notes: Optional[str] = Field(default=None, description="Optional notes from the administrator regarding the review decision.")
 
     @validator('new_status')
     def status_must_be_valid(cls, value):
@@ -27,23 +28,25 @@ class ProductReviewAction(BaseModel):
         }
 
 class AdminAuditLogEntry(BaseModel):
-    id: int
-    timestamp: datetime
-    admin_username: str
-    action: str
-    target_entity_type: Optional[str] = None
-    target_entity_id: Optional[str] = None
-    details: Optional[Dict[str, Any]] = None # JSONB from DB will be parsed to Dict
+    """Schema representing a single entry in the admin audit log."""
+    id: int = Field(..., description="Unique identifier for the audit log entry.")
+    timestamp: datetime = Field(..., description="Timestamp of when the audited action occurred.")
+    admin_username: str = Field(..., description="Username or identifier of the admin who performed the action.")
+    action: str = Field(..., description="Description of the action performed (e.g., 'product_review', 'user_ban').")
+    target_entity_type: Optional[str] = Field(default=None, description="Type of the entity that was affected (e.g., 'product', 'user').")
+    target_entity_id: Optional[str] = Field(default=None, description="Identifier of the specific entity affected.")
+    details: Optional[Dict[str, Any]] = Field(default=None, description="A JSON object containing additional details about the action.") # JSONB from DB will be parsed to Dict
 
     class Config:
         from_attributes = True
 
 class DashboardStats(BaseModel):
-    total_shoppers: int = Field(default=0, description="Total number of registered shoppers.")
-    total_merchants: int = Field(default=0, description="Total number of registered merchants.")
-    products_pending_approval: int = Field(default=0, description="Number of products currently awaiting admin approval.")
-    total_sales_volume: float = Field(default=0.0, description="Total sales volume from completed orders, formatted to 2 decimal places.")
-    new_users_last_30_days: int = Field(default=0, description="Total number of new users (shoppers and merchants) registered in the last 30 days.")
+    """Schema for aggregated statistics typically displayed on an admin dashboard."""
+    total_shoppers: int = Field(default=0, description="Total count of registered users with the 'SHOPPER' role.")
+    total_merchants: int = Field(default=0, description="Total count of registered users with the 'MERCHANT' role.")
+    products_pending_approval: int = Field(default=0, description="Number of products currently in 'pending' or 'needs_review' approval status.")
+    total_sales_volume: float = Field(default=0.0, description="Total monetary value of all completed sales. Rounded to 2 decimal places.")
+    new_users_last_30_days: int = Field(default=0, description="Count of all new users (shoppers and merchants) registered within the last 30 days.")
 
     @validator('total_sales_volume')
     def format_sales_volume(cls, v):

@@ -10,19 +10,26 @@ from app.db import get_db_connection, release_db_connection
 from app.audit_utils import record_admin_audit_log # Import audit utility
 
 router = APIRouter(
-    tags=["Admin - Product Management"],
+    tags=["Administration"], # Using a more general tag for now, can be split later if needed
     # prefix="/api/admin" # Prefix will be set in main.py
     # TODO: Add dependencies=[Depends(get_current_admin_user)] for actual auth
 )
 
-@router.get("/products-for-review", response_model=List[Product])
+@router.get(
+    "/products-for-review",
+    response_model=List[Product],
+    summary="List Products for Admin Review",
+    description="""
+Retrieves a list of products based on their approval status (e.g., 'pending', 'approved', 'rejected').
+- Useful for admin interfaces where products need to be reviewed and managed.
+- Defaults to listing products with 'pending' status.
+- Includes product variants and category information in the response.
+- **Protected Endpoint:** Requires admin authentication.
+    """
+)
 async def list_products_for_review(
-    approval_status: Optional[str] = Query("pending", enum=["pending", "approved", "rejected"])
+    approval_status: Optional[str] = Query("pending", enum=["pending", "approved", "rejected"], description="Filter products by their approval status.")
 ):
-    """
-    List products based on their approval status.
-    Defaults to 'pending' status.
-    """
     conn = None
     fetched_products_for_review: List[Product] = []
     try:
@@ -79,20 +86,27 @@ async def list_products_for_review(
         if conn:
             await release_db_connection(conn)
 
-@router.get("/audit-logs", response_model=List[AdminAuditLogEntry])
+@router.get(
+    "/audit-logs",
+    response_model=List[AdminAuditLogEntry],
+    summary="List Admin Audit Log Entries",
+    description="""
+Retrieves a paginated and filterable list of administrative audit log entries.
+- Allows tracking of significant actions performed by administrators.
+- Supports filtering by admin username, action type, target entity, and date range.
+- **Protected Endpoint:** Requires admin authentication (typically super admin or specific audit viewer role).
+    """
+)
 async def list_admin_audit_logs(
-    limit: int = Query(50, ge=1, le=100),
-    offset: int = Query(0, ge=0),
-    admin_username: Optional[str] = None,
-    action: Optional[str] = None,
-    target_entity_type: Optional[str] = None,
-    target_entity_id: Optional[str] = None,
-    start_date: Optional[datetime] = None,
-    end_date: Optional[datetime] = None,
+    limit: int = Query(50, ge=1, le=100, description="Number of audit log entries to return per page."),
+    offset: int = Query(0, ge=0, description="Offset for pagination."),
+    admin_username: Optional[str] = Query(default=None, description="Filter by admin username (case-insensitive partial match)."),
+    action: Optional[str] = Query(default=None, description="Filter by action type (case-insensitive partial match)."),
+    target_entity_type: Optional[str] = Query(default=None, description="Filter by target entity type (e.g., 'product', 'user')."),
+    target_entity_id: Optional[str] = Query(default=None, description="Filter by specific target entity ID."),
+    start_date: Optional[datetime] = Query(default=None, description="Filter logs from this timestamp onwards (inclusive)."),
+    end_date: Optional[datetime] = Query(default=None, description="Filter logs up to this timestamp (inclusive)."),
 ):
-    """
-    Retrieve admin audit log entries with pagination and filtering.
-    """
     conn = None
     try:
         conn = await get_db_connection()
@@ -157,11 +171,23 @@ async def list_admin_audit_logs(
         if conn:
             await release_db_connection(conn)
 
-@router.post("/products/{product_id}/review", response_model=Product)
-async def review_product(product_id: str, review_action: ProductReviewAction):
+@router.post(
+    "/products/{product_id}/review",
+    response_model=Product,
+    summary="Review and Approve/Reject Product",
+    description="""
+Allows an administrator to approve or reject a product, and optionally add review notes.
+- Updates the product's `approval_status` and `admin_review_notes`.
+- Sets `is_active` to `True` if approved, `False` if rejected.
+- Records the action in the admin audit log.
+- Returns the updated product details, including variants.
+- **Protected Endpoint:** Requires admin authentication.
     """
-    Approve or reject a product and add optional admin review notes.
-    """
+)
+async def review_product(
+    product_id: str,
+    review_action: ProductReviewAction
+):
     conn = None
     try:
         conn = await get_db_connection()

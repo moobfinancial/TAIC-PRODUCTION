@@ -17,7 +17,7 @@ from app.audit_utils import record_admin_audit_log # For logging deletion
 logger = logging.getLogger(__name__)
 
 router = APIRouter(
-    tags=["User Profile"],
+    tags=["User Profile Management"],
     # prefix will be set in main.py, e.g., /api/users
 )
 
@@ -37,14 +37,20 @@ async def fetch_user_profile_by_id(user_id: str, conn: asyncpg.Connection) -> Op
     return None
 
 
-@router.get("/me", response_model=UserProfileResponse)
+@router.get(
+    "/me",
+    response_model=UserProfileResponse,
+    summary="Get My Profile",
+    description="""
+Retrieves the complete profile information for the currently authenticated user.
+- **Protected Endpoint:** Requires authentication.
+- Fetches user details such as email, full name, role, wallet information, and timestamps.
+    """
+)
 async def get_current_user_profile(
     current_user_id: str = Depends(get_current_active_user_id),
     conn: asyncpg.Connection = Depends(get_db_connection)
 ):
-    """
-    Get the profile of the currently authenticated user.
-    """
     try:
         user_profile = await fetch_user_profile_by_id(current_user_id, conn)
         if not user_profile:
@@ -71,15 +77,23 @@ async def get_current_user_profile(
     # manual release in a finally block here would be more explicit for this direct usage pattern.
     # Let's assume for now the dependency injection handles it based on how it's used in other routers.
 
-@router.put("/me", response_model=UserProfileResponse)
+@router.put(
+    "/me",
+    response_model=UserProfileResponse,
+    summary="Update My Profile",
+    description="""
+Updates the profile information for the currently authenticated user.
+- **Protected Endpoint:** Requires authentication.
+- Currently supports updating the `full_name`.
+- Other fields in `UserProfileUpdate` model could be made updatable in the future.
+- Returns the complete updated user profile.
+    """
+)
 async def update_current_user_profile(
     profile_update_data: UserProfileUpdate,
     current_user_id: str = Depends(get_current_active_user_id),
     conn: asyncpg.Connection = Depends(get_db_connection)
 ):
-    """
-    Update the profile (e.g., full_name) for the currently authenticated user.
-    """
     try:
         update_data = profile_update_data.model_dump(exclude_unset=True)
 
@@ -146,16 +160,27 @@ async def update_current_user_profile(
         logger.error(traceback.format_exc())
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Could not update user profile.")
 
-@router.get("/me/export-data", response_model=UserExportData)
+@router.get(
+    "/me/export-data",
+    response_model=UserExportData,
+    summary="Export My Data",
+    description="""
+Exports all personal data associated with the currently authenticated user.
+- **Protected Endpoint:** Requires authentication.
+- The exported data includes:
+    - Core user profile information.
+    - History of orders placed by the user.
+    - Store reviews written by the user.
+    - Merchant-specific data (store profile, product count) if the user has a 'MERCHANT' role.
+- The response will be a JSON file attachment.
+- **Note on `orders.user_id`:** There's a known schema mismatch where `orders.user_id` is INTEGER while `users.id` is VARCHAR. The query attempts a cast, which is inefficient and may fail if IDs are not compatible. A schema migration for `orders.user_id` to VARCHAR is recommended.
+    """
+)
 async def export_user_data(
     response: Response, # Inject Response object to set headers
     current_user_id: str = Depends(get_current_active_user_id),
     conn: asyncpg.Connection = Depends(get_db_connection)
 ):
-    """
-    Export all personal data for the currently authenticated user.
-    Includes profile, orders, reviews written, and merchant data if applicable.
-    """
     try:
         # 1. Fetch core user profile
         user_profile = await fetch_user_profile_by_id(current_user_id, conn)
@@ -250,15 +275,27 @@ async def export_user_data(
         logger.error(traceback.format_exc())
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Could not export user data.")
 
-@router.delete("/me/delete-account", response_model=AccountDeletionResponse)
+@router.delete(
+    "/me/delete-account",
+    response_model=AccountDeletionResponse,
+    summary="Delete My Account",
+    description="""
+Initiates the process of deleting the currently authenticated user's account.
+- **Protected Endpoint:** Requires authentication.
+- This is a "soft delete" and anonymization process:
+    - The user's `is_active` flag is set to `False`.
+    - Personally Identifiable Information (PII) such as email, full name, and wallet address are anonymized or nulled in the `users` table.
+    - Password fields are cleared.
+    - An audit log entry is recorded for this action.
+- **Important:** This action is generally considered irreversible from the user's perspective. Data recovery might only be possible through administrative database backups.
+- The `anonymized_at` timestamp is recorded. If the `anonymized_at` column is missing (schema issue), the endpoint will return an error.
+- Further data handling for related records (orders, reviews, merchant data) is a more complex process and may be handled separately or by background tasks.
+    """
+)
 async def delete_my_account(
     current_user_id: str = Depends(get_current_active_user_id),
     conn: asyncpg.Connection = Depends(get_db_connection)
 ):
-    """
-    Marks the authenticated user's account for deletion (soft delete/anonymization).
-    This action is irreversible from a user's perspective.
-    """
     try:
         # Fetch user to confirm it's active before attempting anonymization
         user_to_delete = await conn.fetchrow("SELECT id, email, role, is_active FROM users WHERE id = $1", current_user_id)

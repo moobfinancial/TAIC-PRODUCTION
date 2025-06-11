@@ -4,10 +4,11 @@ from datetime import datetime
 import re # For wallet address regex validation
 
 class UserRegisterSchema(BaseModel):
-    email: EmailStr
-    password: str = Field(..., min_length=8, description="User password. Will be hashed before storage.")
-    full_name: Optional[str] = Field(default=None, max_length=100)
-    role: str = Field(default='SHOPPER', description="User role, either 'SHOPPER' or 'MERCHANT'.")
+    """Schema for user registration request payload using email and password."""
+    email: EmailStr = Field(..., description="User's unique email address.")
+    password: str = Field(..., min_length=8, description="User password. Must be at least 8 characters. Will be hashed before storage.")
+    full_name: Optional[str] = Field(default=None, max_length=100, description="User's full name (optional).")
+    role: str = Field(default='SHOPPER', description="User role, defaults to 'SHOPPER'. Can be 'SHOPPER' or 'MERCHANT'.")
 
     @validator('role')
     def role_must_be_valid(cls, value):
@@ -28,9 +29,13 @@ class UserRegisterSchema(BaseModel):
         }
 
 class MerchantRegisterSchema(BaseModel): # This might become redundant if UserRegisterSchema handles roles
-    email: EmailStr
-    password: str = Field(..., min_length=8, description="Merchant password. Will be hashed before storage.")
-    business_name: str = Field(..., min_length=1, max_length=150)
+    """
+    Schema for merchant registration.
+    Note: This schema might become redundant if UserRegisterSchema adequately handles roles.
+    """
+    email: EmailStr = Field(..., description="Merchant's unique email address.")
+    password: str = Field(..., min_length=8, description="Merchant password. Must be at least 8 characters. Will be hashed before storage.")
+    business_name: str = Field(..., min_length=1, max_length=150, description="Merchant's business name.")
     # Role will be implicitly 'MERCHANT' if this schema is used.
 
     class Config:
@@ -44,16 +49,17 @@ class MerchantRegisterSchema(BaseModel): # This might become redundant if UserRe
         }
 
 class UserResponse(BaseModel):
-    id: str
-    email: Optional[EmailStr] = None # Email can be None for wallet-only users
-    full_name: Optional[str] = None
-    role: str
-    is_active: bool
-    email_verified: bool
-    wallet_address: Optional[str] = None # Added wallet_address
-    wallet_verified: Optional[bool] = None # Added wallet_verified
-    created_at: datetime
-    last_login_at: Optional[datetime] = None # Added last_login_at
+    """Schema for representing a user's public information."""
+    id: str = Field(..., description="Unique identifier for the user.")
+    email: Optional[EmailStr] = Field(default=None, description="User's email address. Can be null for wallet-first signups.")
+    full_name: Optional[str] = Field(default=None, description="User's full name.")
+    role: str = Field(..., description="Role assigned to the user (e.g., 'SHOPPER', 'MERCHANT', 'ADMIN').")
+    is_active: bool = Field(..., description="Indicates if the user account is currently active.")
+    email_verified: bool = Field(..., description="Indicates if the user's email address has been verified.")
+    wallet_address: Optional[str] = Field(default=None, description="User's linked wallet address. Can be null.")
+    wallet_verified: Optional[bool] = Field(default=None, description="Indicates if the user's wallet address has been verified.")
+    created_at: datetime = Field(..., description="Timestamp of when the user account was created.")
+    last_login_at: Optional[datetime] = Field(default=None, description="Timestamp of the user's last login.")
 
     class Config:
         from_attributes = True
@@ -74,15 +80,17 @@ class UserResponse(BaseModel):
 
 
 class RegistrationResponse(BaseModel): # Kept for placeholder router, might be deprecated by UserResponse
-    message: str
-    user_email: Optional[EmailStr] = None
-    merchant_email: Optional[EmailStr] = None
+    """Response schema for placeholder registration endpoints. May be deprecated."""
+    message: str = Field(..., description="A message indicating the result of the registration attempt.")
+    user_email: Optional[EmailStr] = Field(default=None, description="Email of the registered user, if applicable.")
+    merchant_email: Optional[EmailStr] = Field(default=None, description="Email of the registered merchant, if applicable.")
 
 
 # --- For Login ---
 class UserLoginSchema(BaseModel):
-    email: EmailStr
-    password: str
+    """Schema for user login with email and password."""
+    email: EmailStr = Field(..., description="User's registered email address.")
+    password: str = Field(..., description="User's password.")
 
     class Config:
         json_schema_extra = {
@@ -93,9 +101,10 @@ class UserLoginSchema(BaseModel):
         }
 
 class WalletLoginSchema(BaseModel):
-    wallet_address: str = Field(..., description="The user's wallet address.")
-    original_message: str = Field(..., description="The original message that was signed by the user's wallet.")
-    signed_message: str = Field(..., description="The signature provided by the user's wallet.")
+    """Schema for user login or account linking using a crypto wallet signature."""
+    wallet_address: str = Field(..., description="The user's Ethereum wallet address (e.g., 0x...).")
+    original_message: str = Field(..., description="The original message that was signed by the user's wallet. Typically includes a timestamp or nonce.")
+    signed_message: str = Field(..., description="The EIP-191 compliant signature (hex string) provided by the user's wallet.")
 
     @validator('wallet_address')
     def wallet_address_must_be_valid_ethereum_address(cls, v):
@@ -120,14 +129,15 @@ class WalletLoginSchema(BaseModel):
             }
         }
 
-# Alias WalletLoginSchema for LinkWalletSchema if they are identical
+# Alias WalletLoginSchema for LinkWalletSchema as they are functionally identical for request payload.
 LinkWalletSchema = WalletLoginSchema
 
 
 class LinkEmailPasswordSchema(BaseModel):
-    email: EmailStr
-    password: str = Field(..., min_length=8, description="New password for the account.")
-    full_name: Optional[str] = Field(default=None, max_length=100, description="Full name, can update if not already set or if provided.")
+    """Schema for linking an email and password to an existing (e.g., wallet-first) user account."""
+    email: EmailStr = Field(..., description="The email address to link to the account.")
+    password: str = Field(..., min_length=8, description="A new password for the account. Must be at least 8 characters.")
+    full_name: Optional[str] = Field(default=None, max_length=100, description="User's full name. Can be used to set or update the full name on the account.")
 
     class Config:
         json_schema_extra = {
@@ -140,8 +150,9 @@ class LinkEmailPasswordSchema(BaseModel):
 
 
 class TokenResponse(BaseModel):
-    access_token: str
-    token_type: str = "bearer"
+    """Schema for returning a JWT access token upon successful authentication."""
+    access_token: str = Field(..., description="The JWT access token.")
+    token_type: str = Field(default="bearer", description="The type of token, typically 'bearer'.")
 
     class Config:
         json_schema_extra = {

@@ -33,16 +33,27 @@ ALLOWED_MIME_TYPES = ["image/jpeg", "image/png", "image/webp"]
 VTO_UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
 
 
-@router.post("/upload-vto-image", response_model=VTOImageMetadataResponse, status_code=status.HTTP_201_CREATED)
+@router.post(
+    "/upload-vto-image",
+    response_model=VTOImageMetadataResponse,
+    status_code=status.HTTP_201_CREATED,
+    summary="Upload User Image for VTO",
+    description=f"""
+Uploads an image (e.g., a user's photo) to be used as a base for Virtual Try-On (VTO).
+- **File Requirements:**
+    - Allowed MIME types: {', '.join(ALLOWED_MIME_TYPES)}.
+    - Maximum file size: {MAX_FILE_SIZE_MB}MB.
+- The image is stored locally (path configured on server) and its metadata (ID, user ID, path, type, size, etc.) is recorded in the `vto_images` database table.
+- The `image_type` for this upload will be set to 'user_profile_for_vto'.
+- Returns metadata of the uploaded image, including its unique ID which can be used in VTO generation requests.
+- **Protected Endpoint:** Requires user authentication.
+    """
+)
 async def upload_vto_image(
     current_user_id: str = Depends(get_current_active_user_id),
-    image_file: UploadFile = File(...),
+    image_file: UploadFile = File(..., description=f"Image file to upload for VTO. Max size: {MAX_FILE_SIZE_MB}MB. Allowed types: {', '.join(ALLOWED_MIME_TYPES)}."),
     conn: asyncpg.Connection = Depends(get_db_connection)
 ):
-    """
-    Upload an image for Virtual Try-On (VTO) purposes.
-    The image will be stored locally and its metadata recorded in the database.
-    """
     # 1. File Validation
     if image_file.content_type not in ALLOWED_MIME_TYPES:
         logger.warning(f"User {current_user_id} attempted to upload invalid VTO image type: {image_file.content_type}")
@@ -170,16 +181,27 @@ async def upload_vto_image(
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="An unexpected error occurred during image upload.")
     # Connection release is handled by FastAPI's dependency injection for `conn`.
 
-@router.post("/generate-vto", response_model=VTOGenerationResponse)
+@router.post(
+    "/generate-vto",
+    response_model=VTOGenerationResponse,
+    summary="Generate Virtual Try-On Image",
+    status_code=status.HTTP_202_ACCEPTED, # Suggests async processing, even if placeholder is sync for now
+    description="""
+Initiates a Virtual Try-On (VTO) image generation task.
+- Takes a `user_image_id` (ID of a previously uploaded 'user_profile_for_vto' image) and a `product_id`.
+- Validates that the user image belongs to the authenticated user and the product is valid for VTO.
+- Currently, this endpoint calls a **placeholder Python service** that simulates a more complex VTO generation flow (e.g., one managed by Genkit).
+- The placeholder service creates a new VTO image record in the database (type 'generated_vto_result') and copies the user's image to a new location to simulate a generated image.
+- Returns a response indicating the status of the generation request (e.g., 'pending', 'completed', 'failed') and details of the generated image if successful.
+- A `job_id` is returned, which could be used to poll for status if the backend were truly asynchronous.
+- **Protected Endpoint:** Requires user authentication.
+    """
+)
 async def generate_vto_image_endpoint(
     request_data: VTOGenerationRequest,
     current_user_id: str = Depends(get_current_active_user_id),
     conn: asyncpg.Connection = Depends(get_db_connection)
 ):
-    """
-    Triggers the Virtual Try-On image generation process.
-    This endpoint currently uses a Python placeholder to simulate the Genkit flow.
-    """
     logger.info(f"User {current_user_id} requested VTO generation for user_image_id: {request_data.user_image_id} and product_id: {request_data.product_id}")
 
     # 1. Validate that user_image_id belongs to current_user_id and is of type 'user_profile_for_vto'

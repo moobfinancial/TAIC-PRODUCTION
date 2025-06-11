@@ -67,15 +67,26 @@ async def generate_unique_slug(db_conn: asyncpg.Connection, store_name: str, mer
 
 # --- API Endpoints ---
 
-@router.post("/store-profile", response_model=StoreProfile)
+@router.post(
+    "/store-profile",
+    response_model=StoreProfile,
+    summary="Create or Update My Store Profile",
+    description="""
+Allows an authenticated merchant to create or update their store profile.
+- This endpoint performs an **UPSERT** operation:
+    - If a store profile for the merchant already exists, it's updated with the provided data.
+    - If no profile exists, a new one is created.
+- When creating a new profile, a unique `store_slug` is automatically generated from the `store_name`.
+- If `store_name` is updated on an existing profile, the `store_slug` currently **does not change** automatically with this endpoint. Slug changes would require a separate mechanism.
+- All fields from `StoreProfileCreate` can be provided. For updates, only changed fields need to be sent.
+- **Protected Endpoint:** Requires merchant authentication. The `merchant_id` is derived from the authentication token.
+    """,
+    status_code=status.HTTP_200_OK # Or 201 if primarily for creation, but UPSERT often uses 200
+)
 async def create_or_update_store_profile(
     profile_data: StoreProfileCreate,
     merchant_id: str = Depends(get_current_merchant_id)
 ):
-    """
-    Create a new store profile for the authenticated merchant if one doesn't exist,
-    or update the existing one (UPSERT behavior).
-    """
     conn = None
     try:
         conn = await get_db_connection()
@@ -161,11 +172,17 @@ async def create_or_update_store_profile(
         if conn:
             await release_db_connection(conn)
 
-@router.get("/store-profile/mine", response_model=StoreProfile)
+@router.get(
+    "/store-profile/mine",
+    response_model=StoreProfile,
+    summary="Get My Store Profile",
+    description="""
+Retrieves the store profile for the currently authenticated merchant.
+- **Protected Endpoint:** Requires merchant authentication. The `merchant_id` is derived from the token.
+- Returns a 404 error if the merchant has not yet created a store profile.
+    """
+)
 async def get_my_store_profile(merchant_id: str = Depends(get_current_merchant_id)):
-    """
-    Get the store profile for the currently authenticated merchant.
-    """
     conn = None
     try:
         conn = await get_db_connection()
@@ -185,11 +202,19 @@ async def get_my_store_profile(merchant_id: str = Depends(get_current_merchant_i
         if conn:
             await release_db_connection(conn)
 
-@router.get("/store-profile/slug/{store_slug}", response_model=StoreProfile)
-async def get_store_profile_by_slug(store_slug: str):
+@router.get(
+    "/store-profile/slug/{store_slug}",
+    response_model=StoreProfile,
+    summary="Get Store Profile by Slug (Public)",
+    description="""
+Retrieves a merchant's store profile using its publicly accessible `store_slug`.
+- This endpoint is intended for public use (e.g., displaying store pages).
+- Returns a 404 error if no store profile matches the given slug.
     """
-    Get a store profile by its public slug. (Publicly accessible)
-    """
+)
+async def get_store_profile_by_slug(
+    store_slug: str = Path(..., description="The URL-friendly slug of the store to retrieve.")
+):
     conn = None
     try:
         conn = await get_db_connection()

@@ -1,18 +1,19 @@
 from typing import Optional, List, Dict, Any # Added List, Dict, Any
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, HttpUrl
 from datetime import datetime
 
 class VTOImageMetadataResponse(BaseModel):
-    id: str
-    user_id: str
-    image_type: str
-    original_filename: Optional[str] = None
-    stored_filepath: str
-    mime_type: str
-    file_size_bytes: int
-    created_at: datetime
-    expires_at: Optional[datetime] = None
-    related_product_id: Optional[str] = None # Added as it's in vto_images table
+    """Response schema for VTO image metadata after upload or retrieval."""
+    id: str = Field(..., description="Unique identifier for the VTO image metadata record.")
+    user_id: str = Field(..., description="Identifier of the user who uploaded or owns the image.")
+    image_type: str = Field(..., description="Type of the image (e.g., 'user_profile_for_vto', 'generated_vto_result').")
+    original_filename: Optional[str] = Field(default=None, description="The original filename of the uploaded image, if available.")
+    stored_filepath: str = Field(..., description="The path or key where the image is stored (e.g., in a cloud bucket or local filesystem).")
+    mime_type: str = Field(..., description="MIME type of the image (e.g., 'image/jpeg', 'image/png').")
+    file_size_bytes: int = Field(..., description="Size of the image file in bytes.")
+    created_at: datetime = Field(..., description="Timestamp of when the image metadata record was created.")
+    expires_at: Optional[datetime] = Field(default=None, description="Optional timestamp indicating when this image might expire or be auto-deleted.")
+    related_product_id: Optional[str] = Field(default=None, description="If this image is related to a specific product (e.g., a VTO result for a product), its ID is stored here.")
 
     class Config:
         from_attributes = True
@@ -32,25 +33,27 @@ class VTOImageMetadataResponse(BaseModel):
         }
 
 class VTOGenerationRequest(BaseModel):
-    user_image_id: str = Field(..., description="ID of the user's uploaded image (type 'user_profile_for_vto') to use for VTO.")
-    product_id: str = Field(..., description="ID of the product to virtually try on.")
+    """Request schema for initiating a Virtual Try-On (VTO) generation."""
+    user_image_id: str = Field(..., description="The unique ID of the user's previously uploaded image (which should be of type 'user_profile_for_vto' or similar) to be used as the base for VTO.")
+    product_id: str = Field(..., description="The unique ID of the product the user wishes to virtually try on.")
 
     class Config:
         json_schema_extra = {
             "example": {
-                "user_image_id": "img_uuid_12345",
+                "user_image_id": "img_uuid_12345", # This ID comes from a VTOImageMetadataResponse after upload
                 "product_id": "product_def456"
             }
         }
 
 class VTOGenerationResponse(BaseModel):
-    job_id: Optional[str] = Field(default=None, description="A job ID to track the VTO generation status, especially if asynchronous.")
-    status: str = Field(..., description="Status of the VTO generation request (e.g., 'pending', 'completed', 'failed').")
-    generated_image_id: Optional[str] = Field(default=None, description="ID of the newly generated VTO image metadata record (if successful).")
-    generated_image_url: Optional[str] = Field(default=None, description="URL or relative path to the generated VTO image (if successful).")
-    error_message: Optional[str] = Field(default=None, description="Error message if the VTO generation failed.")
+    """Response schema after submitting a VTO generation request."""
+    job_id: Optional[str] = Field(default=None, description="An optional job ID that can be used to track the status of an asynchronous VTO generation process. If generation is synchronous, this might be null.")
+    status: str = Field(..., description="Current status of the VTO generation request (e.g., 'pending', 'processing', 'completed', 'failed').")
+    generated_image_id: Optional[str] = Field(default=None, description="If generation is successful, the unique ID of the newly created VTO image metadata record.")
+    generated_image_url: Optional[HttpUrl] = Field(default=None, description="If generation is successful, a direct URL to the generated VTO image.")
+    error_message: Optional[str] = Field(default=None, description="Provides a message if the VTO generation process encountered an error.")
     # Optionally include the VTOImageMetadataResponse for the new image if completed synchronously
-    generated_image_metadata: Optional[VTOImageMetadataResponse] = None
+    generated_image_metadata: Optional[VTOImageMetadataResponse] = Field(default=None, description="If generation is successful and synchronous, this field can directly provide the metadata of the generated image.")
 
 
     class Config:

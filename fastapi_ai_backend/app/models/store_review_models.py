@@ -3,42 +3,53 @@ from pydantic import BaseModel, Field
 from datetime import datetime
 
 class StoreReviewBase(BaseModel):
-    rating: int = Field(..., ge=1, le=5, description="Rating from 1 to 5 stars.")
-    review_title: Optional[str] = Field(default=None, max_length=255, description="Optional title for the review.")
-    review_text: Optional[str] = Field(default=None, description="Detailed text content of the review.")
-    reviewer_name: Optional[str] = Field(default=None, max_length=255, description="Name of the reviewer, can be anonymous or a display name.")
+    """Base schema for store review data, containing common fields for creation and representation."""
+    rating: int = Field(..., ge=1, le=5, description="Star rating provided by the reviewer, from 1 (worst) to 5 (best).")
+    review_title: Optional[str] = Field(default=None, max_length=255, description="An optional concise title for the review (e.g., 'Excellent Service!').")
+    review_text: Optional[str] = Field(default=None, description="The detailed textual content of the review.")
+    reviewer_name: Optional[str] = Field(default=None, max_length=255, description="Display name of the reviewer. Can be anonymous or a user-provided name. If a registered user posts, this might default to their profile name.")
 
     class Config:
         from_attributes = True
+        json_schema_extra = {
+            "example": {
+                "rating": 5,
+                "review_title": "Great Experience!",
+                "review_text": "The store had everything I needed and the staff was very helpful.",
+                "reviewer_name": "SatisfiedShopper123"
+            }
+        }
 
 class StoreReviewCreateBody(StoreReviewBase):
     """
-    Schema for the request body when creating a new store review.
-    reviewer_id will be injected from auth dependency.
-    merchant_id will be from path.
+    Schema for the request body when a user submits a new store review.
+    The `reviewer_id` is typically injected from the authenticated user's context on the server-side.
+    The `merchant_id` is usually part of the URL path.
     """
-    pass
+    pass # Inherits all fields from StoreReviewBase, example is in StoreReviewBase
+
 
 class StoreReviewDBInput(StoreReviewBase):
     """
-    Internal schema for preparing data before database insertion.
-    Includes fields derived from path or auth.
+    Internal schema used for preparing review data before it's inserted into the database.
+    This includes system-set fields like `merchant_id` (from path), `reviewer_id` (from auth), and default `is_approved` status.
     """
-    merchant_id: str
-    reviewer_id: Optional[str] = None # Could be None for anonymous/guest reviews not tied to a user account
-    is_approved: bool = True # Default approval status, can be changed by admin later
+    merchant_id: str = Field(..., description="The unique identifier of the merchant or store being reviewed.")
+    reviewer_id: Optional[str] = Field(default=None, description="The unique identifier of the user who wrote the review. Can be null for anonymous or guest reviews if permitted.")
+    is_approved: bool = Field(default=True, description="Approval status of the review. Defaults to True, but can be moderated by admins.")
+
 
 class StoreReviewResponse(StoreReviewBase):
     """
-    Schema for responses when returning store review data.
-    Includes database-generated fields.
+    Schema for representing a store review when retrieved from the API.
+    Includes all base fields plus database-generated fields like ID, timestamps, and approval status.
     """
-    id: int
-    merchant_id: str
-    reviewer_id: Optional[str] = None
-    is_approved: bool
-    created_at: datetime
-    updated_at: datetime
+    id: int = Field(..., description="Unique identifier for the store review.")
+    merchant_id: str = Field(..., description="Identifier of the merchant or store that was reviewed.")
+    reviewer_id: Optional[str] = Field(default=None, description="Identifier of the user who wrote the review, if available.")
+    is_approved: bool = Field(..., description="Indicates whether the review is approved and publicly visible.")
+    created_at: datetime = Field(..., description="Timestamp of when the review was originally created.")
+    updated_at: datetime = Field(..., description="Timestamp of the last update to the review (e.g., admin approval change).")
 
     class Config:
         from_attributes = True

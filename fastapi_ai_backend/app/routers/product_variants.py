@@ -5,7 +5,7 @@ from app.db import get_db_connection, release_db_connection # Database utilities
 import asyncpg # For type hinting and potential errors
 
 router = APIRouter(
-    tags=["Product Variants"],
+    tags=["Products - Variants"],
     # prefix="/api/v1" # Consider adding a global prefix in main.py if needed
 )
 
@@ -16,11 +16,21 @@ async def get_product_for_variant_operations(product_id: str, conn: asyncpg.Conn
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Product with id '{product_id}' not found.")
     return product_row
 
-@router.post("/products/{product_id}/variants", response_model=ProductVariant, status_code=status.HTTP_201_CREATED)
+@router.post(
+    "/products/{product_id}/variants",
+    response_model=ProductVariant,
+    status_code=status.HTTP_201_CREATED,
+    summary="Create Product Variant",
+    description="""
+Creates a new variant for a specified product.
+- Requires the parent `product_id` in the path.
+- The request body should contain variant details like SKU, attributes, price, stock, and image URL.
+- If this is the first variant added to a product, the product's `has_variants` flag is automatically set to `True`.
+- Returns the created product variant details, including its new system-generated ID.
+- **Protected Endpoint:** (Implicitly, as product management typically requires merchant or admin rights).
+    """
+)
 async def create_variant_for_product(product_id: str, variant_in: ProductVariantCreate):
-    """
-    Create a new variant for a specific product.
-    """
     conn = None
     try:
         conn = await get_db_connection()
@@ -64,11 +74,18 @@ async def create_variant_for_product(product_id: str, variant_in: ProductVariant
         if conn:
             await release_db_connection(conn)
 
-@router.get("/products/{product_id}/variants", response_model=List[ProductVariant])
+@router.get(
+    "/products/{product_id}/variants",
+    response_model=List[ProductVariant],
+    summary="List Product Variants",
+    description="""
+Retrieves a list of all variants associated with a specific product.
+- Requires the parent `product_id` in the path.
+- Returns an empty list if the product has no variants or does not exist (though a 404 is raised if product not found by initial check).
+- **Protected Endpoint:** (Typically, viewing product details might be public or require user roles, depending on overall API design).
+    """
+)
 async def list_variants_for_product(product_id: str):
-    """
-    List all variants for a specific product.
-    """
     conn = None
     try:
         conn = await get_db_connection()
@@ -91,11 +108,18 @@ async def list_variants_for_product(product_id: str):
         if conn:
             await release_db_connection(conn)
 
-@router.get("/variants/{variant_id}", response_model=ProductVariant)
+@router.get(
+    "/variants/{variant_id}",
+    response_model=ProductVariant,
+    summary="Get Variant by ID",
+    description="""
+Retrieves a specific product variant by its unique variant ID.
+- Requires the `variant_id` in the path.
+- Returns a 404 error if no variant with the given ID is found.
+- **Protected Endpoint:** (Similar to listing variants, access depends on API design).
+    """
+)
 async def get_variant_by_id(variant_id: int):
-    """
-    Get a specific variant by its ID.
-    """
     conn = None
     try:
         conn = await get_db_connection()
@@ -115,11 +139,20 @@ async def get_variant_by_id(variant_id: int):
         if conn:
             await release_db_connection(conn)
 
-@router.put("/variants/{variant_id}", response_model=ProductVariant)
+@router.put(
+    "/variants/{variant_id}",
+    response_model=ProductVariant,
+    summary="Update Product Variant",
+    description="""
+Updates an existing product variant's details.
+- Requires the `variant_id` in the path.
+- The request body should contain only the fields to be updated (e.g., SKU, price, stock).
+- Returns the complete updated product variant details.
+- Returns a 404 error if the variant is not found.
+- **Protected Endpoint:** (Typically requires merchant or admin rights).
+    """
+)
 async def update_variant(variant_id: int, variant_update: ProductVariantUpdate):
-    """
-    Update an existing product variant.
-    """
     conn = None
     try:
         conn = await get_db_connection()
@@ -169,12 +202,20 @@ async def update_variant(variant_id: int, variant_update: ProductVariantUpdate):
         if conn:
             await release_db_connection(conn)
 
-@router.delete("/variants/{variant_id}", status_code=status.HTTP_204_NO_CONTENT)
+@router.delete(
+    "/variants/{variant_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    summary="Delete Product Variant",
+    description="""
+Deletes a specific product variant by its ID.
+- Requires the `variant_id` in the path.
+- If this is the last variant associated with a product, the parent product's `has_variants` flag is automatically set to `False`.
+- Returns a 204 No Content response on successful deletion.
+- Returns a 404 error if the variant is not found.
+- **Protected Endpoint:** (Typically requires merchant or admin rights).
+    """
+)
 async def delete_variant(variant_id: int):
-    """
-    Delete a specific product variant.
-    If it's the last variant for a product, update product's `has_variants` to FALSE.
-    """
     conn = None
     try:
         conn = await get_db_connection()

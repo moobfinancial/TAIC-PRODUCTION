@@ -15,15 +15,17 @@ router = APIRouter(
 
 # --- Pydantic Models for Bulk Upload Response ---
 class ErrorDetail(BaseModel):
-    row_number: int
-    product_handle: Optional[str] = None
-    error_message: str
+    """Describes a single error encountered during the bulk upload process."""
+    row_number: int = Field(..., description="The row number in the CSV file where the error occurred (2-indexed, accounting for header).")
+    product_handle: Optional[str] = Field(default=None, description="The product_handle associated with the row, if available.")
+    error_message: str = Field(..., description="A detailed message describing the error.")
 
 class BulkUploadResponse(BaseModel):
-    total_rows_processed: int
-    products_created: int
-    variants_created: int
-    errors: List[ErrorDetail] = []
+    """Summarizes the result of a bulk product CSV upload attempt."""
+    total_rows_processed: int = Field(..., description="Total number of data rows found and processed in the CSV file.")
+    products_created: int = Field(..., description="Number of new parent products successfully created.")
+    variants_created: int = Field(..., description="Number of new product variants successfully created.")
+    errors: List[ErrorDetail] = Field(default_factory=list, description="A list of errors encountered during processing. Empty if all rows were processed successfully.")
 
 # --- Helper Function to Get Category ID ---
 async def get_category_id_by_name(conn: asyncpg.Connection, category_name: str) -> Optional[int]:
@@ -37,8 +39,27 @@ async def get_category_id_by_name(conn: asyncpg.Connection, category_name: str) 
     return category_row['id'] if category_row else None
 
 # --- Main CSV Upload Endpoint ---
-@router.post("/upload-products-csv", response_model=BulkUploadResponse)
-async def upload_products_csv(file: UploadFile = File(...)):
+@router.post(
+    "/upload-products-csv",
+    response_model=BulkUploadResponse,
+    summary="Bulk Upload Products via CSV",
+    description="""
+Processes a CSV file to bulk create products and their variants.
+- **File Format:** Expects a CSV file (`text/csv` or `application/vnd.ms-excel`).
+- **Encoding:** The file should be UTF-8 or Latin-1 encoded.
+- **Headers:** Requires specific headers as defined in the [Merchant Bulk Product Upload Template Guide](docs/merchant_bulk_product_upload_template_guide.md). Key headers include `product_handle`, `variant_sku`, `variant_stock_quantity`.
+- **Processing Logic:**
+    - Rows are grouped by `product_handle`.
+    - For each group, a new product is created using details from the first row of the group.
+    - Each row within the group (including the first) that specifies a `variant_sku` will create a product variant linked to the parent product.
+    - Category names are matched against existing active categories; if not found, an error is logged for that product, and it's skipped.
+    - Product IDs (`products.id`) are derived from the `product_handle` in the CSV, assuming uniqueness for new products.
+    - Transactions are used per product group: if any variant fails for a product, the product itself and any previously processed variants for that *same product* are rolled back. Errors for one product group do not affect others.
+- **Error Handling:** Returns a summary including total rows processed, products/variants created, and a list of specific errors with row numbers and messages.
+- **Authentication:** (Assumed) This endpoint should be protected and only accessible to authenticated merchants or administrators.
+    """
+)
+async def upload_products_csv(file: UploadFile = File(..., description="CSV file containing product and variant data.")):
     if file.content_type not in ["text/csv", "application/vnd.ms-excel"]: # Common CSV MIME types
         raise HTTPException(status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE, detail="Unsupported file type. Please upload a CSV file.")
 

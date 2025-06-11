@@ -18,19 +18,25 @@ from app.dependencies import get_current_active_user_id # For protected endpoint
 logger = logging.getLogger(__name__)
 
 router = APIRouter(
-    tags=["Authentication"],
+    tags=["Authentication & Authorization"],
     # prefix will be set in main.py, e.g., /api/auth
 )
 
-@router.post("/register", response_model=UserResponse, status_code=status.HTTP_201_CREATED)
+@router.post(
+    "/register",
+    response_model=UserResponse,
+    status_code=status.HTTP_201_CREATED,
+    summary="Register New User (Email/Password)",
+    description="""
+Register a new user (shopper or merchant) by providing an email, password, and optionally a full name and role.
+- A unique user ID will be generated.
+- The provided password will be securely hashed before storage.
+- The new user record will be inserted into the `users` database table.
+- A welcome email will be sent to the user based on their specified role (SHOPPER or MERCHANT).
+- If the email already exists, a 409 Conflict error will be returned.
+    """
+)
 async def register_user(user_in: UserRegisterSchema):
-    """
-    Register a new user (shopper or merchant) with email and password.
-    - Generates a unique ID for the user.
-    - Hashes the password.
-    - Inserts the user into the 'users' table.
-    - Sends a welcome email based on the role.
-    """
     conn: Optional[asyncpg.Connection] = None
     try:
         conn = await get_db_connection()
@@ -135,6 +141,109 @@ async def register_user(user_in: UserRegisterSchema):
     finally:
         if conn:
             await release_db_connection(conn)
+
+@router.post(
+    "/link-email-password",
+    response_model=UserResponse,
+    summary="Link Email/Password to Authenticated Account",
+    description="""
+Allows a currently authenticated user (e.g., one who signed up via wallet and has a JWT)
+to link an email address and password to their existing account.
+
+- **Protected Endpoint:** Requires a valid JWT for an existing user.
+- Checks if an email is already linked to the authenticated user's account; if so, returns an error.
+- Checks if the new email address is already in use by *another* user; if so, returns a conflict error.
+- Securely hashes the new password.
+- Updates the user's record with the new email, hashed password, and sets `email_verified` to `False`.
+- A full name can also be provided to update the user's profile if it wasn't set previously or is empty.
+- Triggers a conceptual email verification flow (actual email sending is separate).
+    """
+)
+async def link_email_password_to_account(
+    link_data: LinkEmailPasswordSchema,
+    current_user_id: str = Depends(get_current_active_user_id),
+    conn: asyncpg.Connection = Depends(get_db_connection)
+):
+    try:
+        # 1. Fetch current user's record to check current email status
+        # Fetch all fields needed for UserResponse as well, as we return it.
+        user_record = await conn.fetchrow(
+            "SELECT id, email, full_name, role, is_active, email_verified, wallet_address, wallet_verified, created_at, last_login_at FROM users WHERE id = $1",
+            current_user_id
+        )
+        # get_current_active_user_id ensures user exists and is active.
+        if not user_record:
+             logger.error(f"User {current_user_id} not found in link_email_password, despite token validation.")
+             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Authenticated user not found.")
+
+        if user_record['email']:
+            logger.warning(f"User {current_user_id} attempted to link email {link_data.email} but an email ({user_record['email']}) is already linked.")
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="An email is already linked to this account. To change it, please use the 'update email' feature (not yet implemented) or contact support.",
+            )
+
+        # 2. Check if the new email is already in use by ANOTHER user
+        other_user_with_email = await conn.fetchrow(
+            "SELECT id FROM users WHERE LOWER(email) = LOWER($1) AND id != $2",
+            link_data.email, current_user_id
+        )
+        if other_user_with_email:
+            logger.warning(f"User {current_user_id} attempted to link email {link_data.email} which is already used by user {other_user_with_email['id']}.")
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="This email address is already registered by another user.",
+            )
+
+        # 3. Hash the new password
+        hashed_new_password = hash_password(link_data.password)
+
+        # 4. Prepare fields for update
+        update_fields_dict = {
+            "email": link_data.email,
+            "hashed_password": hashed_new_password,
+            "email_verified": False,
+        }
+        if link_data.full_name and (user_record['full_name'] is None or user_record['full_name'].strip() == ""):
+            update_fields_dict["full_name"] = link_data.full_name
+
+        set_clauses = [f"{field} = ${i+1}" for i, field in enumerate(update_fields_dict.keys())]
+        params = list(update_fields_dict.values())
+
+        set_clauses.append("updated_at = NOW()")
+
+        params.append(current_user_id)
+
+        # 5. Update user record
+        update_query_sql = f"UPDATE users SET {', '.join(set_clauses)} WHERE id = ${len(params)}"
+
+        # We need to fetch all fields for UserResponse after update
+        updated_user_row_dict = await conn.fetchrow(
+            update_query_sql + " RETURNING id, email, full_name, role, is_active, email_verified, wallet_address, wallet_verified, created_at, last_login_at",
+            *params
+        )
+
+        if not updated_user_row_dict:
+            logger.error(f"Failed to link email/password for user {current_user_id}. No rows returned after update.")
+            raise HTTPException(status_code=500, detail="Failed to link email and password to your account.")
+
+        logger.info(f"Email {link_data.email} and password successfully linked to user {current_user_id}.")
+
+        # 6. Conceptual: Trigger Email Verification Flow
+        logger.info(f"TODO: Trigger email verification flow for user {current_user_id} and email {link_data.email}")
+
+        return UserResponse(**dict(updated_user_row_dict))
+
+    except HTTPException:
+        raise
+    except asyncpg.exceptions.UniqueViolationError:
+        logger.error(f"Email linking failed for user {current_user_id} due to unique violation for email {link_data.email} (should have been caught earlier).")
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="This email address may already be in use.")
+    except Exception as e:
+        logger.error(f"Unexpected error during email/password linking for user {current_user_id}: {type(e).__name__} - {e}")
+        import traceback
+        logger.error(traceback.format_exc())
+        raise HTTPException(status_code=500, detail="An unexpected error occurred while linking your email and password.")
 
 @router.post("/link-wallet", response_model=UserResponse)
 async def link_wallet_to_account(
@@ -246,106 +355,30 @@ async def link_wallet_to_account(
     # For safety in this specific router, if get_db_connection isn't a generator, manual release would be needed.
     # Given the project structure, let's assume Depends(get_db_connection) is fine.
 
-@router.post("/link-email-password", response_model=UserResponse)
-async def link_email_password_to_account(
-    link_data: LinkEmailPasswordSchema,
-    current_user_id: str = Depends(get_current_active_user_id),
-    conn: asyncpg.Connection = Depends(get_db_connection)
-):
+# This is the duplicate /link-email-password route that needs to be removed.
+# The SEARCH block will encompass this entire function.
+# The REPLACE block will be empty, effectively deleting it.
+
+@router.post(
+    "/login-wallet",
+    response_model=TokenResponse,
+    summary="Login or Register with Wallet Signature",
+    description="""
+Authenticates a user using a crypto wallet signature, or registers a new user if the wallet is not yet known.
+- Requires the wallet address, an original message, and the EIP-191 compliant signature of that message.
+- Verifies the signature against the provided wallet address.
+- If the wallet address (normalized to lowercase) exists in the `users` table and the user is active:
+    - Updates `last_login_at` and ensures `wallet_verified` is true.
+    - Issues a JWT access token containing user ID, role, wallet address, and email (if available).
+- If the wallet address does not exist:
+    - Creates a new user record with the provided wallet address (normalized to lowercase).
+    - Sets a default role (e.g., 'SHOPPER'), marks the user as active and `wallet_verified` as true.
+    - Issues a JWT access token.
+- Returns a 401 Unauthorized error for invalid signatures.
+- Returns a 403 Forbidden error if an existing user account is inactive.
     """
-    Links an email and password to the authenticated (likely wallet-first) user's account.
-    """
-    try:
-        # 1. Fetch current user's record
-        user_record = await conn.fetchrow(
-            "SELECT id, email, full_name FROM users WHERE id = $1",
-            current_user_id
-        )
-        # get_current_active_user_id ensures user exists and is active.
-
-        if user_record['email']: # Check if an email is already linked
-            logger.warning(f"User {current_user_id} attempted to link email {link_data.email} but an email ({user_record['email']}) is already linked.")
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="An email is already linked to this account. Unlinking is not yet supported.",
-            )
-
-        # 2. Check if the new email is already in use by ANOTHER user
-        other_user_with_email = await conn.fetchrow(
-            "SELECT id FROM users WHERE email = $1 AND id != $2",
-            link_data.email, current_user_id
-        )
-        if other_user_with_email:
-            logger.warning(f"User {current_user_id} attempted to link email {link_data.email} which is already used by user {other_user_with_email['id']}.")
-            raise HTTPException(
-                status_code=status.HTTP_409_CONFLICT,
-                detail="This email address is already registered by another user.",
-            )
-
-        # 3. Hash the new password
-        hashed_new_password = hash_password(link_data.password)
-
-        # 4. Prepare fields for update
-        update_fields = {
-            "email": link_data.email,
-            "hashed_password": hashed_new_password,
-            "email_verified": False, # New email needs verification
-            "updated_at": "NOW()"
-        }
-        if link_data.full_name and not user_record['full_name']: # Only update full_name if provided AND current one is empty
-            update_fields["full_name"] = link_data.full_name
-
-        set_clauses = []
-        params = []
-        param_idx = 1
-        for field, value in update_fields.items():
-            if field == "updated_at":
-                set_clauses.append("updated_at = NOW()")
-            else:
-                set_clauses.append(f"{field} = ${param_idx}")
-                params.append(value)
-                param_idx += 1
-
-        params.append(current_user_id) # For WHERE id = $N
-
-        # 5. Update user record
-        updated_user_row = await conn.fetchrow(
-            f"UPDATE users SET {', '.join(set_clauses)} WHERE id = ${param_idx} "
-            "RETURNING id, email, full_name, role, is_active, email_verified, wallet_address, wallet_verified, created_at, last_login_at",
-            *params
-        )
-
-        if not updated_user_row:
-            logger.error(f"Failed to link email/password for user {current_user_id}.")
-            raise HTTPException(status_code=500, detail="Failed to link email and password to your account.")
-
-        logger.info(f"Email {link_data.email} and password successfully linked to user {current_user_id}.")
-
-        # 6. Conceptual: Trigger Email Verification Flow
-        logger.info(f"TODO: Trigger email verification flow for user {current_user_id} and email {link_data.email}")
-        # (Actual email sending for verification is a separate feature)
-
-        return UserResponse(**dict(updated_user_row))
-
-    except HTTPException:
-        raise
-    except asyncpg.exceptions.UniqueViolationError:
-        # This should ideally be caught by the email check for other users.
-        logger.error(f"Email linking failed for user {current_user_id} due to unique violation for email {link_data.email}.")
-        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="This email address may already be in use.")
-    except Exception as e:
-        logger.error(f"Unexpected error during email/password linking for user {current_user_id}: {type(e).__name__} - {e}")
-        import traceback
-        logger.error(traceback.format_exc())
-        raise HTTPException(status_code=500, detail="An unexpected error occurred while linking your email and password.")
-
-
-@router.post("/login-wallet", response_model=TokenResponse)
+)
 async def login_or_register_with_wallet(login_data: WalletLoginSchema):
-    """
-    Authenticate or register a user with wallet signature and return a JWT access token.
-    If wallet address doesn't exist, a new user record is created.
-    """
     conn: Optional[asyncpg.Connection] = None
     try:
         # 1. Verify Signature
@@ -483,11 +516,22 @@ async def login_or_register_with_wallet(login_data: WalletLoginSchema):
         if conn:
             await release_db_connection(conn)
 
-@router.post("/login", response_model=TokenResponse)
+@router.post(
+    "/login",
+    response_model=TokenResponse,
+    summary="Login with Email/Password",
+    description="""
+Authenticates an existing user with their email and password.
+- Retrieves the user record by email.
+- Verifies the provided password against the stored secure hash.
+- If authentication is successful and the user account is active:
+    - Updates the user's `last_login_at` timestamp in the database.
+    - Issues a JWT access token containing user ID, email, and role.
+- Returns a 401 Unauthorized error for incorrect credentials or if the user is not found.
+- Returns a 403 Forbidden error if the user account is marked as inactive.
+    """
+)
 async def login_for_access_token(login_data: UserLoginSchema):
-    """
-    Authenticate user with email/password and return a JWT access token.
-    """
     conn: Optional[asyncpg.Connection] = None
     try:
         conn = await get_db_connection()

@@ -9,17 +9,25 @@ from app.db import get_db_connection, release_db_connection
 logger = logging.getLogger(__name__)
 
 router = APIRouter(
-    tags=["Admin - Dashboard Data"],
+    tags=["Administration - Dashboard"],
     # prefix="/api/admin/dashboard" # Prefix will be set in main.py
     # TODO: Add dependencies=[Depends(get_current_admin_user)] for actual auth
 )
 
-@router.get("/stats", response_model=DashboardStats)
+@router.get(
+    "/stats",
+    response_model=DashboardStats,
+    summary="Get Admin Dashboard Statistics",
+    description="""
+Retrieves a set of aggregated statistics for display on an administrative dashboard.
+- Provides counts for total shoppers, total merchants, products pending approval, and new users in the last 30 days.
+- Calculates total sales volume from completed orders.
+- Designed to be resilient: if an individual statistic cannot be fetched (e.g., due to a missing table or column during development/migration), it defaults to 0 or an appropriate empty value for that field, and logs a warning.
+- A more critical error (like inability to connect to the database) will result in a 503 Service Unavailable response.
+- **Protected Endpoint:** Requires admin authentication.
+    """
+)
 async def get_dashboard_stats():
-    """
-    Retrieve aggregated statistics for the Admin Dashboard.
-    Gracefully handles errors for individual stats, returning 0 or default if a query fails.
-    """
     conn: Optional[asyncpg.Connection] = None
     stats = DashboardStats() # Initialize with defaults
 

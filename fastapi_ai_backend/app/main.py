@@ -38,6 +38,8 @@ from app.agents.gift_recommendation_agent import gift_recommendation_mcp_server
 from app.routers.ai_feedback import router as ai_feedback_router
 # Import the VTO router
 from app.routers.vto import router as vto_router
+# Import the CJ Dropshipping agent MCP server
+from app.agents.cj_dropshipping_agent import cj_dropshipping_mcp_server
 from app.agents.shopping_assistant_agent import shopping_assistant_mcp_server, UserQueryInput, ShoppingAssistantResponse
 from app.models.product import Product
 
@@ -354,7 +356,8 @@ async def call_process_user_query_manual(input_data: UserQueryInput):
 # The path "/mcp_product_service" should match PRODUCT_SERVICE_AGENT_MOUNT_PATH in shopping_assistant_agent.py
 app.mount("/mcp_product_service", product_service_mcp)
 app.mount("/mcp_shopping_assistant_service", shopping_assistant_mcp_server)
-app.mount("/mcp_gift_recommendation", gift_recommendation_mcp_server) # Mount the new Gift Recommendation agent
+app.mount("/mcp_gift_recommendation", gift_recommendation_mcp_server)
+app.mount("/mcp_cj_dropshipping", cj_dropshipping_mcp_server) # Mount the new CJ Dropshipping agent
 
 
 @app.get("/", tags=["Root"], summary="Root path of the API")

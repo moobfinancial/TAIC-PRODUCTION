@@ -8,16 +8,17 @@ from datetime import datetime
 # Using string annotation: 'StoreProfile'
 
 class UserProfileResponse(BaseModel):
-    id: str
-    email: Optional[EmailStr] = None
-    full_name: Optional[str] = None
-    role: str
-    wallet_address: Optional[str] = None
-    email_verified: bool
-    wallet_verified: bool
-    created_at: datetime
-    updated_at: datetime
-    last_login_at: Optional[datetime] = None
+    """Detailed information about a user's profile."""
+    id: str = Field(..., description="Unique identifier for the user.")
+    email: Optional[EmailStr] = Field(default=None, description="User's email address. Can be null if not provided or for wallet-first users.")
+    full_name: Optional[str] = Field(default=None, description="User's full name.")
+    role: str = Field(..., description="Role of the user (e.g., 'SHOPPER', 'MERCHANT', 'ADMIN').")
+    wallet_address: Optional[str] = Field(default=None, description="User's linked Ethereum wallet address. Can be null.")
+    email_verified: bool = Field(..., description="Indicates if the user's email address has been verified.")
+    wallet_verified: bool = Field(..., description="Indicates if the user's wallet address has been verified (e.g., via signature).")
+    created_at: datetime = Field(..., description="Timestamp of when the user account was created.")
+    updated_at: datetime = Field(..., description="Timestamp of the last update to the user's profile.")
+    last_login_at: Optional[datetime] = Field(default=None, description="Timestamp of the user's last login.")
 
     class Config:
         from_attributes = True
@@ -37,7 +38,8 @@ class UserProfileResponse(BaseModel):
         }
 
 class UserProfileUpdate(BaseModel):
-    full_name: Optional[str] = Field(default=None, min_length=1, max_length=100, description="User's full name. Provide to update.")
+    """Schema for updating a user's profile information. Only fields to be updated should be included."""
+    full_name: Optional[str] = Field(default=None, min_length=1, max_length=100, description="User's full name. Provide to update. Set to null to clear.")
 
     class Config:
         json_schema_extra = {
@@ -49,33 +51,36 @@ class UserProfileUpdate(BaseModel):
 # --- Models for User Data Export ---
 
 class UserOrderData(BaseModel):
-    id: int # Assuming order.id is int based on schema.sql
-    amount: float # Pydantic will convert Decimal from DB if needed
-    currency: str
-    status: str
-    created_at: datetime
+    """Represents key information about a single order placed by the user."""
+    id: int = Field(..., description="Unique identifier for the order.") # Assuming order.id is int based on schema.sql
+    amount: float = Field(..., description="Total amount of the order.") # Pydantic will convert Decimal from DB if needed
+    currency: str = Field(..., description="Currency code for the order amount (e.g., 'USD').")
+    status: str = Field(..., description="Current status of the order (e.g., 'completed', 'pending').")
+    created_at: datetime = Field(..., description="Timestamp of when the order was created.")
 
     class Config:
         from_attributes = True
 
 class UserStoreReviewData(BaseModel):
-    id: int
-    merchant_id: str
-    rating: int
-    review_title: Optional[str] = None
-    review_text: Optional[str] = None
-    created_at: datetime
+    """Represents key information about a store review written by the user."""
+    id: int = Field(..., description="Unique identifier for the review.")
+    merchant_id: str = Field(..., description="Identifier of the merchant whose store was reviewed.")
+    rating: int = Field(..., ge=1, le=5, description="Rating given by the user (typically 1-5 stars).")
+    review_title: Optional[str] = Field(default=None, description="Optional title of the review.")
+    review_text: Optional[str] = Field(default=None, description="Optional detailed text of the review.")
+    created_at: datetime = Field(..., description="Timestamp of when the review was created.")
 
     class Config:
         from_attributes = True
 
 class UserExportData(BaseModel):
-    profile: UserProfileResponse
-    orders: List[UserOrderData] = Field(default_factory=list)
-    store_reviews_written: List[UserStoreReviewData] = Field(default_factory=list)
-    merchant_profile: Optional['app.models.store_profile_models.StoreProfile'] = None
-    merchant_products_listed_count: Optional[int] = None
-    export_generated_at: datetime
+    """Comprehensive data structure for exporting user-related information."""
+    profile: UserProfileResponse = Field(..., description="The user's core profile information.")
+    orders: List[UserOrderData] = Field(default_factory=list, description="A list of orders placed by the user.")
+    store_reviews_written: List[UserStoreReviewData] = Field(default_factory=list, description="A list of store reviews written by the user.")
+    merchant_profile: Optional['app.models.store_profile_models.StoreProfile'] = Field(default=None, description="Merchant's store profile, if the user is a merchant.")
+    merchant_products_listed_count: Optional[int] = Field(default=None, description="Number of products listed by the merchant, if applicable.")
+    export_generated_at: datetime = Field(..., description="Timestamp of when this data export was generated.")
 
     class Config:
         from_attributes = True
@@ -92,8 +97,9 @@ class UserExportData(BaseModel):
 
 # --- Model for Account Deletion Response ---
 class AccountDeletionResponse(BaseModel):
-    message: str
-    status: str # e.g., "account_marked_for_deletion", "anonymization_initiated"
+    """Response schema after initiating an account deletion request."""
+    message: str = Field(..., description="A human-readable message confirming the action taken.")
+    status: str = Field(..., description="A status code indicating the result (e.g., 'account_marked_for_deletion', 'anonymization_initiated').")
 
     class Config:
         json_schema_extra = {

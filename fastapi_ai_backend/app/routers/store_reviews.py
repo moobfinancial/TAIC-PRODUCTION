@@ -40,17 +40,25 @@ async def check_merchant_store_exists(conn: asyncpg.Connection, merchant_id: str
 
 # --- API Endpoints ---
 
-@router.post("/stores/{merchant_id}/reviews", response_model=StoreReviewResponse, status_code=status.HTTP_201_CREATED)
+@router.post(
+    "/stores/{merchant_id}/reviews",
+    response_model=StoreReviewResponse,
+    status_code=status.HTTP_201_CREATED,
+    summary="Create Store Review",
+    description="""
+Submits a new review for a specified merchant's store.
+- The `merchant_id` is taken from the URL path.
+- Review content (rating, title, text, reviewer_name) is provided in the request body.
+- `reviewer_id` is automatically determined from the authentication context (if the user is logged in). If not logged in, it may be treated as an anonymous review depending on the `get_optional_current_user_id` dependency's behavior.
+- New reviews are typically set to `is_approved = True` by default but could be subject to moderation.
+- **Protected or Semi-Protected Endpoint:** Requires user authentication to associate review with a user; might allow anonymous posting with different handling.
+    """
+)
 async def create_store_review(
-    merchant_id: str,
+    merchant_id: str = Path(..., description="The unique identifier of the merchant or store to review."),
     review_body: StoreReviewCreateBody,
     reviewer_id: Optional[str] = Depends(get_optional_current_user_id)
 ):
-    """
-    Create a new review for a merchant's store.
-    `reviewer_id` is obtained from authentication (if user is logged in).
-    `reviewer_name` can be provided in the body, otherwise might be anonymous or derived.
-    """
     conn = None
     try:
         conn = await get_db_connection()
@@ -101,16 +109,24 @@ async def create_store_review(
         if conn:
             await release_db_connection(conn)
 
-@router.get("/stores/{merchant_id}/reviews", response_model=List[StoreReviewResponse])
+@router.get(
+    "/stores/{merchant_id}/reviews",
+    response_model=List[StoreReviewResponse],
+    summary="List Store Reviews",
+    description="""
+Retrieves a list of approved reviews for a specific merchant's store.
+- Supports pagination using `limit` and `offset` query parameters.
+- Allows filtering by a minimum star `rating`.
+- Only `is_approved = TRUE` reviews are returned to the general public.
+- **Public Endpoint:** Typically, store reviews are public information.
+    """
+)
 async def list_store_reviews_for_merchant(
-    merchant_id: str,
-    limit: int = Query(20, ge=1, le=100),
-    offset: int = Query(0, ge=0),
-    min_rating: Optional[int] = Query(None, ge=1, le=5, description="Filter by minimum rating (inclusive).")
+    merchant_id: str = Path(..., description="The unique identifier of the merchant or store whose reviews are being listed."),
+    limit: int = Query(20, ge=1, le=100, description="Maximum number of reviews to return."),
+    offset: int = Query(0, ge=0, description="Number of reviews to skip for pagination."),
+    min_rating: Optional[int] = Query(default=None, ge=1, le=5, description="Filter reviews to include only those with this minimum rating (e.g., 3 for 3 stars and up).")
 ):
-    """
-    List approved reviews for a specific merchant's store with pagination and optional rating filter.
-    """
     conn = None
     try:
         conn = await get_db_connection()
