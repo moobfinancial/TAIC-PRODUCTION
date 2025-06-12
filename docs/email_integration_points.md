@@ -1,147 +1,101 @@
-# Email Integration Points for Welcome Notifications
+# Email Integration Points
 
-This document outlines where the email sending utilities defined in `fastapi_ai_backend/app/email_utils.py` should be integrated for sending welcome emails upon user and merchant registration.
+This document outlines where different email notifications, defined in `app/email_utils.py`, should be triggered within the TAIC platform's backend logic.
 
-## Background
+## 1. User Account Related Emails
 
-The `email_utils.py` module provides the following key functions:
-- `send_shopper_welcome_email(to_email: str, user_name: str, ...)`
-- `send_merchant_welcome_email(to_email: str, merchant_name: str, ...)`
+### 1.1. Shopper Welcome Email
+*   **Function:** `send_shopper_welcome_email`
+*   **Trigger Point:** After a new user successfully registers with the `SHOPPER` role.
+*   **Location:** `app/routers/auth.py` in the `/register` endpoint.
+*   **Status:** Implemented and Integrated.
 
-These functions simulate sending emails and include pre-defined templates for welcome messages.
+### 1.2. Merchant Welcome Email
+*   **Function:** `send_merchant_welcome_email`
+*   **Trigger Point:** After a new user successfully registers with the `MERCHANT` role.
+*   **Location:** `app/routers/auth.py` in the `/register` endpoint.
+*   **Status:** Implemented and Integrated.
 
-## Identifying Registration Endpoints
+### 1.3. Password Reset Email (Future)
+*   **Function:** (To be created, e.g., `send_password_reset_email`)
+*   **Trigger Point:** When a user requests a password reset.
+*   **Location:** A new endpoint in `app/routers/auth.py` for initiating password resets.
+*   **Status:** Pending implementation.
 
-As of the last review, dedicated user (shopper) and merchant registration REST API endpoints within the `fastapi_ai_backend/app/routers/` directory were not identified. The existing routers are:
-- `bulk_operations.py`
-- `product_variants.py`
-- `products.py`
+### 1.4. Email Verification Email (Future)
+*   **Function:** (To be created, e.g., `send_email_verification_email`)
+*   **Trigger Point:** After user registration or when a user changes their email address.
+*   **Location:** `app/routers/auth.py` (on registration, on email change via user profile).
+*   **Status:** Pending implementation.
 
-It is suspected that user and merchant registration might be handled by:
-1.  **Next.js API Routes:** Directly within the Next.js frontend's backend, potentially in files like `src/app/api/auth/register/route.ts` for shoppers and `src/app/api/merchant/auth/register/route.ts` for merchants.
-2.  **A separate authentication service** not part of this specific FastAPI application.
-3.  **Endpoints yet to be implemented** within the FastAPI backend.
+## 2. Order Related Emails (Shopper)
 
-## Proposed Integration Strategy (Assuming FastAPI Endpoints)
+### 2.1. Order Confirmation
+*   **Function:** `send_order_confirmation_email`
+*   **Trigger Point:** After an order is successfully placed and payment is confirmed.
+*   **Location:** Within the order creation/checkout finalization logic (e.g., in an `OrderService` or after successful payment processing callback).
+*   **Status:** Function and templates implemented in `email_utils.py`. Integration into order logic is pending.
 
-If and when user and merchant registration endpoints are implemented or identified within the `fastapi_ai_backend` (e.g., in a hypothetical `fastapi_ai_backend/app/routers/auth.py`), the integration should occur as follows:
+### 2.2. Order Shipped
+*   **Function:** `send_order_shipped_email`
+*   **Trigger Point:** When an order's status is updated to 'shipped', or when a shipment record with tracking information is created for an order.
+*   **Location:** Within the order management logic where shipping updates occur (e.g., in an admin panel order update endpoint, or a merchant order fulfillment endpoint).
+*   **Status:** Function and templates implemented in `email_utils.py`. Integration into order/shipping logic is pending.
 
-### 1. Shopper Registration Endpoint (Example: `POST /api/auth/register`)
+### 2.3. Order Delivered
+*   **Function:** (To be created, e.g., `send_order_delivered_email`)
+*   **Trigger Point:** When an order's status is updated to 'delivered' (either manually by an admin/merchant or via carrier webhook).
+*   **Location:** Order management logic for status updates.
+*   **Status:** Placeholder templates in `email_utils.py`. Function and integration pending.
 
-```python
-# Hypothetical content of fastapi_ai_backend/app/routers/auth.py
+### 2.4. Refund Processed
+*   **Function:** (To be created, e.g., `send_refund_processed_email`)
+*   **Trigger Point:** After a refund for an order has been successfully processed by the payment gateway or admin.
+*   **Location:** Refund processing logic (e.g., in an admin panel or payment service callback).
+*   **Status:** Placeholder templates in `email_utils.py`. Function and integration pending.
 
-from fastapi import APIRouter, HTTPException, status, Depends
-# ... other necessary imports ...
-from app.db import get_db_connection, release_db_connection # Example
-from app.models.user import UserCreate, UserResponse # Example Pydantic models
-from app.email_utils import send_shopper_welcome_email # Import the email utility
-import asyncpg
+## 3. Merchant Specific Emails
 
-router = APIRouter(prefix="/api/auth", tags=["Authentication"])
+### 3.1. New Order Received
+*   **Function:** `send_new_order_to_merchant_email`
+*   **Trigger Point:** When a new order containing products from a specific merchant is successfully placed and confirmed.
+*   **Location:** Order creation/checkout finalization logic, after splitting the order by merchant (if applicable).
+*   **Status:** Function and templates implemented in `email_utils.py`. Integration into order logic is pending.
 
-@router.post("/register", response_model=UserResponse, status_code=status.HTTP_201_CREATED)
-async def register_shopper(user_in: UserCreate):
-    conn = None
-    try:
-        conn = await get_db_connection()
+### 3.2. Low Stock Warning
+*   **Function:** `send_low_stock_warning_email`
+*   **Trigger Point:** When a product variant's `stock_quantity` is updated and falls below a merchant-defined (or system-defined) threshold.
+*   **Location:** Inventory update logic (e.g., after an order reduces stock, or in a merchant product update endpoint).
+*   **Status:** Function and templates implemented in `email_utils.py`. Integration into inventory logic is pending.
 
-        # --- Begin User Creation Logic ---
-        # Example: Check for existing user
-        existing_user = await conn.fetchrow("SELECT email FROM users WHERE email = $1", user_in.email)
-        if existing_user:
-            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Email already registered.")
+### 3.3. New Customer Message
+*   **Function:** `send_new_customer_message_email`
+*   **Trigger Point:** When a new message is successfully saved in a conversation, and the recipient is a merchant.
+*   **Location:** `app/routers/messaging.py` in the `POST /conversations/{conversation_id}/messages` endpoint (after saving the message and identifying the recipient is a merchant who is not the sender).
+*   **Status:** Function and templates implemented in `email_utils.py`. Integration into messaging logic is pending.
 
-        # Example: Hash password (implementation not shown)
-        hashed_password = f"hashed_{user_in.password}" # Replace with actual hashing
+### 3.4. Payout Sent
+*   **Function:** (To be created, e.g., `send_payout_sent_email`)
+*   **Trigger Point:** After a payout to a merchant has been successfully processed.
+*   **Location:** Merchant payout processing logic (likely an admin-triggered or automated batch process).
+*   **Status:** Placeholder templates in `email_utils.py`. Function and integration pending.
 
-        # Example: Insert new user into database
-        created_user_row = await conn.fetchrow(
-            "INSERT INTO users (email, hashed_password, full_name, created_at, updated_at) " # Assuming table structure
-            "VALUES ($1, $2, $3, NOW(), NOW()) "
-            "RETURNING id, email, full_name, created_at, updated_at", # Adjust returned fields as per UserResponse
-            user_in.email, hashed_password, user_in.full_name
-        )
+### 3.5. Product Approved/Rejected (Future)
+*   **Function:** (To be created)
+*   **Trigger Point:** When an admin approves or rejects a merchant's submitted product.
+*   **Location:** `app/routers/admin.py` in the product review endpoint.
+*   **Status:** Pending implementation.
 
-        if not created_user_row:
-            raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to create user.")
-        # --- End User Creation Logic ---
+## 4. Pioneer Program Emails (Future)
 
-        # --- Send Welcome Email ---
-        try:
-            # Assuming user_in.full_name or similar is available for personalization
-            user_name_for_email = user_in.full_name if user_in.full_name else user_in.email
-            email_sent = await send_shopper_welcome_email(
-                to_email=created_user_row['email'],
-                user_name=user_name_for_email
-            )
-            if not email_sent:
-                # Log the email sending failure but don't fail the registration
-                print(f"Warning: Failed to send welcome email to {created_user_row['email']}")
-        except Exception as email_exc:
-            # Log the email sending failure
-            print(f"Error sending welcome email to {created_user_row['email']}: {email_exc}")
-        # --- End Send Welcome Email ---
+### 4.1. Application Received Confirmation
+*   **Function:** (To be created)
+*   **Trigger Point:** After a user successfully submits a Pioneer Program application.
+*   **Location:** `app/routers/pioneer_applications.py` in the `/apply` endpoint.
+*   **Status:** Pending implementation.
 
-        # Adapt UserResponse instantiation as per actual model
-        return UserResponse(**dict(created_user_row))
-
-    except HTTPException:
-        raise
-    except Exception as e:
-        print(f"Error during shopper registration: {e}")
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e))
-    finally:
-        if conn:
-            await release_db_connection(conn)
-
-```
-
-### 2. Merchant Registration Endpoint (Example: `POST /api/merchant/register`)
-
-A similar integration pattern would apply to the merchant registration endpoint. After successfully creating the merchant record in the database:
-
-```python
-# ... (inside merchant registration endpoint logic) ...
-
-# --- Send Merchant Welcome Email ---
-try:
-    # Assuming merchant_in.store_name or similar is available
-    merchant_name_for_email = merchant_in.store_name if merchant_in.store_name else created_merchant_row['email']
-    email_sent = await send_merchant_welcome_email(
-        to_email=created_merchant_row['email'], # Or merchant contact email
-        merchant_name=merchant_name_for_email
-        # merchant_dashboard_url and merchant_docs_url can be passed if available, otherwise defaults are used
-    )
-    if not email_sent:
-        # Log the email sending failure
-        print(f"Warning: Failed to send merchant welcome email to {created_merchant_row['email']}")
-except Exception as email_exc:
-    # Log the email sending failure
-    print(f"Error sending merchant welcome email to {created_merchant_row['email']}: {email_exc}")
-# --- End Send Merchant Welcome Email ---
-
-# ... return merchant registration response ...
-```
-
-## Alternative Integration (If Registration is in Next.js API Routes)
-
-If user/merchant creation is handled exclusively by Next.js API routes that directly interact with the database:
-
-1.  **Option A: Create a FastAPI Email Service Endpoint:**
-    *   Expose a new internal FastAPI endpoint (e.g., `/api/internal/send-notification`).
-    *   The Next.js API route, after creating a user/merchant in the DB, would make an HTTP POST request to this FastAPI endpoint.
-    *   The FastAPI endpoint would then use `email_utils.py` to send the appropriate email. This keeps email logic centralized in Python.
-    *   This endpoint would need to be secured (e.g., internal network access only, or an API key).
-
-2.  **Option B: Replicate Email Logic in TypeScript:**
-    *   Re-implement email template formatting and sending logic directly within the Next.js TypeScript API routes.
-    *   This might involve using a TypeScript email library (e.g., Nodemailer, SendGrid/Mailgun SDKs).
-    *   This approach decentralizes the notification logic.
-
-**Recommendation:**
-Option A (FastAPI Email Service Endpoint) is generally preferred if aiming to keep notification logic consolidated within the Python backend, especially if other types of notifications are planned for the future.
-
-## Conclusion
-
-The `email_utils.py` module is ready for use. The primary challenge is locating or implementing the user/merchant registration logic within the FastAPI backend. Once these points are clear, the integration involves importing the relevant sender function and calling it post-successful user/merchant creation, with appropriate error handling for the email sending step.
+### 4.2. Application Status Update
+*   **Function:** (To be created)
+*   **Trigger Point:** When an admin updates the status of a Pioneer Program application.
+*   **Location:** `app/routers/admin.py` in the pioneer application status update endpoint.
+*   **Status:** Pending implementation.

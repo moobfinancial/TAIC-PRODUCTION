@@ -42,8 +42,20 @@ else:
 # Configuration for the Product Service MCP (ASA will be a client to this)
 # This will be the base URL of the FastAPI application where ProductService is mounted.
 # Assuming the main FastAPI app (from main.py) runs on port 8000.
-PRODUCT_SERVICE_BASE_URL = "http://localhost:8000"
-PRODUCT_SERVICE_AGENT_MOUNT_PATH = "/mcp_product_service" # The path where product_service_mcp is mounted in main.py
+PRODUCT_SERVICE_BASE_URL = os.getenv("PRODUCT_SERVICE_BASE_URL", "http://localhost:8000")
+PRODUCT_SERVICE_AGENT_MOUNT_PATH = os.getenv("PRODUCT_SERVICE_AGENT_MOUNT_PATH", "/mcp_product_service")
+
+# Configuration for the CJ Dropshipping Agent MCP (ASA might be a client to this)
+CJ_DROPSHIPPING_AGENT_BASE_URL = os.getenv("CJ_DROPSHIPPING_AGENT_BASE_URL", "http://localhost:8000")
+CJ_DROPSHIPPING_AGENT_DETAILS_TOOL_PATH = os.getenv("CJ_DROPSHIPPING_AGENT_DETAILS_TOOL_PATH", "/mcp_cj_dropshipping/call_tool/get_cj_product_details")
+CJ_DROPSHIPPING_AGENT_STOCK_TOOL_PATH = os.getenv("CJ_DROPSHIPPING_AGENT_STOCK_TOOL_PATH", "/mcp_cj_dropshipping/call_tool/get_cj_product_stock")
+CJ_DROPSHIPPING_AGENT_SHIPPING_TOOL_PATH = os.getenv("CJ_DROPSHIPPING_AGENT_SHIPPING_TOOL_PATH", "/mcp_cj_dropshipping/call_tool/get_cj_product_shipping_info")
+CJ_DROPSHIPPING_AGENT_LIVE_UPDATE_TOOL_PATH = os.getenv("CJ_DROPSHIPPING_AGENT_LIVE_UPDATE_TOOL_PATH", "/mcp_cj_dropshipping/call_tool/get_live_cj_product_update")
+
+
+# Keywords that might trigger a live update for CJ products
+LIVE_UPDATE_KEYWORDS = ["live stock", "current price", "is it available right now", "confirm stock", "latest price", "check stock", "verify price"]
+
 
 # --- Pydantic Model for Extracted Filters ---
 class ExtractedFilters(BaseModel):
@@ -52,6 +64,7 @@ class ExtractedFilters(BaseModel):
     price_min: Optional[float] = Field(None, description="Minimum price for products.")
     price_max: Optional[float] = Field(None, description="Maximum price for products.")
     attributes: Optional[Dict[str, str]] = Field(None, description="Specific product attributes, e.g., {'color': 'red', 'size': 'large'}.")
+    destination_country: Optional[str] = Field(None, description="Destination country for shipping, if mentioned (2-letter ISO code).")
 # --- End Pydantic Model ---
 
 shopping_assistant_mcp_server = FastMCP(
@@ -75,29 +88,34 @@ async def process_user_query_tool(input_data: UserQueryInput) -> ShoppingAssista
     # Initialize variables for response and debug info
     natural_language_response = "I'm sorry, I couldn't process your request at the moment."
     suggested_products: List[Product] = []
-    llm_filter_extraction_error = None
-    product_service_error_message = None
-    final_llm_error_message = None # For specific error during final response generation
+    llm_filter_extraction_error: Optional[str] = None
+    product_service_error_message: Optional[str] = None
+    final_llm_error_message: Optional[str] = None
+    cj_details_enrichment_errors: List[str] = []
+    cj_stock_enrichment_errors: List[str] = []
+    cj_shipping_enrichment_errors: List[str] = []
+    cj_live_update_info: List[str] = [] # For logging live update attempts
     llm_model_used_for_response_gen = OPENROUTER_MODEL_NAME
-    raw_product_count_debug: Any = 'N/A' # Using Any to allow 'N/A' or int
+    raw_product_count_debug: Any = 'N/A'
     tool_input_payload_debug: Dict = {}
-    product_service_tool_url_debug = "N/A"
+    product_service_tool_url_debug: str = "N/A"
 
-    extracted_filters = ExtractedFilters() # Initialize with defaults
+    extracted_filters = ExtractedFilters()
 
     try:
         # Attempt filter extraction if OpenAI client is available
-        llm_filter_extraction_error = None
+        # llm_filter_extraction_error = None # Already initialized above
 
         if openai_client:
             filter_extraction_system_prompt = (
                 "You are an intelligent assistant that analyzes user queries for e-commerce product searches. "
-                "Your task is to extract relevant search terms, a product category, price range, and product attributes. "
-                "Respond with a JSON object containing 'search_query', 'category', 'price_min', 'price_max', and 'attributes'. "
+                "Your task is to extract relevant search terms, a product category, price range, product attributes, and a destination country for shipping. "
+                "Respond with a JSON object containing 'search_query', 'category', 'price_min', 'price_max', 'attributes', and 'destination_country'. "
                 "'search_query' should be the refined keywords for searching product names/descriptions. "
                 "'category' should be one of the general e-commerce categories if identifiable, otherwise null. Example categories: Electronics, Fashion, Home Goods, Books, Sports, Beauty, Toys, Automotive. "
                 "'price_min' and 'price_max' should be numbers if a price range is specified (e.g., 'under $50' implies price_max: 50; 'over $100' implies price_min: 100; '$100 to $200' implies price_min: 100, price_max: 200). "
                 "'attributes' should be a dictionary of attribute key-value pairs if specific features are mentioned (e.g., for 'red t-shirt size large', attributes would be {'color': 'red', 'size': 'large'}). "
+                "If the user asks about shipping to a specific country or location (e.g., 'shipping to Canada', 'can I get it in US?'), extract a 2-letter ISO country code for 'destination_country' (e.g., 'CA', 'US'). "
                 "If a field is not mentioned or cannot be reliably extracted, its value should be null. "
                 "Only return the JSON object. Do not add any explanatory text before or after the JSON object."
             )
@@ -130,7 +148,8 @@ async def process_user_query_tool(input_data: UserQueryInput) -> ShoppingAssista
                         category=filter_data.get('category'),
                         price_min=filter_data.get('price_min'),
                         price_max=filter_data.get('price_max'),
-                        attributes=filter_data.get('attributes')
+                        attributes=filter_data.get('attributes'),
+                        destination_country=filter_data.get('destination_country') # Added
                     )
                     logger.info(f"ASA: Extracted filters: {extracted_filters.model_dump_json(indent=2, exclude_none=True)}")
                 except (json.JSONDecodeError, TypeError) as e_json:
@@ -182,15 +201,17 @@ async def process_user_query_tool(input_data: UserQueryInput) -> ShoppingAssista
                 category=current_category,
                 price_min=extracted_filters.price_min,
                 price_max=extracted_filters.price_max,
-                attributes_filter=extracted_filters.attributes # Map to attributes_filter in ListProductsToolInput
+                attributes_filter=extracted_filters.attributes
             ).model_dump(exclude_none=True)
             tool_input_payload_debug = tool_input_payload
 
             product_service_tool_url = f"{PRODUCT_SERVICE_BASE_URL}{PRODUCT_SERVICE_AGENT_MOUNT_PATH}/call_tool/get_all_products"
             product_service_tool_url_debug = product_service_tool_url
 
+            initial_suggested_products: List[Product] = []
+
             try:
-                async with httpx.AsyncClient() as http_client:
+                async with httpx.AsyncClient(timeout=10.0) as http_client: # Added timeout
                     logger.info(f"ASA: Calling Product Service: {product_service_tool_url} with payload: {tool_input_payload}")
                     try:
                         response = await http_client.post(product_service_tool_url, json=tool_input_payload)
@@ -200,28 +221,22 @@ async def process_user_query_tool(input_data: UserQueryInput) -> ShoppingAssista
                         if isinstance(products_data, dict) and "output" in products_data:
                             potential_products = products_data['output']
                             if isinstance(potential_products, list):
-                                for prod_data in potential_products: # Iterate and parse each product
+                                for prod_data in potential_products:
                                     try:
-                                        suggested_products.append(Product(**prod_data))
+                                        initial_suggested_products.append(Product(**prod_data))
                                     except Exception as e_map:
-                                        logger.error(f"ASA: Error mapping individual product data: {str(e_map)}. Data: {prod_data}")
-                                raw_product_count_debug = len(suggested_products)
-                            # Handle if 'output' is not a list (e.g. if it's already the product list directly)
-                            # This part of the original code was a bit complex, simplifying:
-                            # else if isinstance(potential_products, dict) and 'products' in potential_products...
-                            # For now, assume output is List[Product] or error.
+                                        logger.error(f"ASA: Error mapping individual product data from Product Service: {str(e_map)}. Data: {prod_data}")
+                                raw_product_count_debug = len(initial_suggested_products)
                             else:
                                 product_service_error_message = "Product service returned 'output', but it was not a list of products."
                                 logger.error(f"ASA: {product_service_error_message}. Received type: {type(potential_products)}")
                                 raw_product_count_debug = 0
-                            
-                            logger.info(f"ASA: Received and parsed {raw_product_count_debug} products from Product Service.")
-
-                        else: # 'output' key missing or response not a dict
+                            logger.info(f"ASA: Received and parsed {raw_product_count_debug} products from main Product Service.")
+                        else:
                             product_service_error_message = "Product service response format was unexpected (missing 'output' or not a dict)."
                             logger.error(f"ASA: {product_service_error_message} Response: {products_data}")
                             raw_product_count_debug = 0
-
+                    # ... (rest of the httpx error handling remains the same) ...
                     except httpx.HTTPStatusError as e_http:
                         product_service_error_message = f"HTTP error calling Product Service: {e_http.response.status_code}. Response: {e_http.response.text}"
                         logger.error(f"ASA: {product_service_error_message}")
@@ -232,12 +247,180 @@ async def process_user_query_tool(input_data: UserQueryInput) -> ShoppingAssista
                         product_service_error_message = f"Failed to decode JSON response from Product Service: {str(e_json_resp)}"
                         logger.error(f"ASA: {product_service_error_message}")
 
-            except Exception as e_outer_ps: # Catch-all for issues during product service interaction block
+            except Exception as e_outer_ps:
                 product_service_error_message = f"Unexpected error during Product Service interaction: {str(e_outer_ps)}"
                 logger.error(f"ASA: {product_service_error_message}")
 
+            # --- Enrich CJ Products if any ---
+            enriched_products_temp: List[Product] = []
+            if initial_suggested_products:
+                logger.info(f"ASA: Starting enrichment for {len(initial_suggested_products)} products.")
+                for i, product in enumerate(initial_suggested_products):
+                    if product.source == 'CJ' and (product.original_cj_product_id or product.id):
+                        cj_product_id_to_fetch = product.original_cj_product_id if product.original_cj_product_id else product.id
+                        logger.info(f"ASA: Product {product.id} (CJ ID: {cj_product_id_to_fetch}) identified as CJ source. Attempting to enrich.")
+                        cj_payload = {"cj_product_id": cj_product_id_to_fetch}
+                        cj_tool_url = f"{CJ_DROPSHIPPING_AGENT_BASE_URL}{CJ_DROPSHIPPING_AGENT_DETAILS_TOOL_PATH}"
+                        try:
+                            async with httpx.AsyncClient(timeout=10.0) as cj_http_client:
+                                cj_response = await cj_http_client.post(cj_tool_url, json=cj_payload)
+                                cj_response.raise_for_status()
+                                cj_product_data_envelope = cj_response.json()
+                                if isinstance(cj_product_data_envelope, dict) and "output" in cj_product_data_envelope:
+                                    enriched_product = Product(**cj_product_data_envelope['output'])
+                                    enriched_products_temp.append(enriched_product)
+                                    logger.info(f"ASA: Successfully enriched CJ Product ID {cj_product_id_to_fetch}. Original idx {i} replaced.")
+                                else:
+                                    logger.warning(f"ASA: CJ Agent details response for {cj_product_id_to_fetch} was not in expected format. Keeping original. Response: {cj_product_data_envelope}")
+                                    cj_details_enrichment_errors.append(f"CJ Agent bad details response for {cj_product_id_to_fetch}")
+                                    enriched_products_temp.append(product) # Keep original
+
+                        except httpx.HTTPStatusError as e_cj_http:
+                            err_msg = f"HTTP error enriching CJ Product details for {cj_product_id_to_fetch}: {e_cj_http.response.status_code} - {e_cj_http.response.text}"
+                            logger.error(f"ASA: {err_msg}")
+                            cj_details_enrichment_errors.append(err_msg)
+                            enriched_products_temp.append(product) # Keep original
+                        except Exception as e_cj_enrich:
+                            err_msg = f"Unexpected error enriching CJ Product details for {cj_product_id_to_fetch}: {str(e_cj_enrich)}"
+                            logger.error(f"ASA: {err_msg}")
+                            cj_details_enrichment_errors.append(err_msg)
+                            enriched_products_temp.append(product) # Keep original
+                    else:
+                        enriched_products_temp.append(product)
+                suggested_products = enriched_products_temp # First pass of enrichment done
+
+                # --- Second pass: Enrich CJ Products with Stock Information ---
+                final_suggested_products: List[Product] = []
+                for product_to_stock_check in suggested_products:
+                    if product_to_stock_check.source == 'CJ' and (product_to_stock_check.original_cj_product_id or product_to_stock_check.id):
+                        cj_product_id_for_stock = product_to_stock_check.original_cj_product_id if product_to_stock_check.original_cj_product_id else product_to_stock_check.id
+                        logger.info(f"ASA: Product {product_to_stock_check.id} (CJ ID: {cj_product_id_for_stock}) identified as CJ source. Attempting to get stock.")
+                        cj_stock_payload = {"cj_product_id": cj_product_id_for_stock, "sku": None} # Get overall stock for now
+                        cj_stock_tool_url = f"{CJ_DROPSHIPPING_AGENT_BASE_URL}{CJ_DROPSHIPPING_AGENT_STOCK_TOOL_PATH}"
+                        try:
+                            async with httpx.AsyncClient(timeout=10.0) as cj_stock_http_client:
+                                cj_stock_response = await cj_stock_http_client.post(cj_stock_tool_url, json=cj_stock_payload)
+                                cj_stock_response.raise_for_status()
+                                cj_stock_data_envelope = cj_stock_response.json()
+
+                                if isinstance(cj_stock_data_envelope, dict) and "output" in cj_stock_data_envelope:
+                                    stock_status_data = cj_stock_data_envelope['output']
+                                    # Assuming stock_status_data is a dict matching CJProductStockStatus model
+                                    product_to_stock_check.stock_quantity = stock_status_data.get('overall_stock_level', product_to_stock_check.stock_quantity) # Update if available
+                                    product_to_stock_check.stock_status_text = stock_status_data.get('status_text', product_to_stock_check.stock_status_text)
+                                    logger.info(f"ASA: Successfully updated stock for CJ Product ID {cj_product_id_for_stock}: Qty={product_to_stock_check.stock_quantity}, Status='{product_to_stock_check.stock_status_text}'")
+                                else:
+                                    logger.warning(f"ASA: CJ Agent stock response for {cj_product_id_for_stock} was not in expected format. Stock info not updated. Response: {cj_stock_data_envelope}")
+                                    cj_stock_enrichment_errors.append(f"CJ Agent bad stock response for {cj_product_id_for_stock}")
+                        except httpx.HTTPStatusError as e_cj_stock_http:
+                            err_msg = f"HTTP error getting stock for CJ Product {cj_product_id_for_stock}: {e_cj_stock_http.response.status_code} - {e_cj_stock_http.response.text}"
+                            logger.error(f"ASA: {err_msg}")
+                            cj_stock_enrichment_errors.append(err_msg)
+                        except Exception as e_cj_stock_enrich:
+                            err_msg = f"Unexpected error getting stock for CJ Product {cj_product_id_for_stock}: {str(e_cj_stock_enrich)}"
+                            logger.error(f"ASA: {err_msg}")
+                            cj_stock_enrichment_errors.append(err_msg)
+                    final_suggested_products.append(product_to_stock_check)
+                suggested_products = final_suggested_products # Update with stock-enriched products
+            else: # No initial products to enrich
+                suggested_products = initial_suggested_products
+
+                # --- Third pass: Enrich CJ Products with Shipping Information ---
+                if extracted_filters.destination_country:
+                    logger.info(f"ASA: Destination country '{extracted_filters.destination_country}' extracted. Attempting to get shipping info for CJ products.")
+                    products_after_shipping_enrich: List[Product] = []
+                    for product_to_ship_check in suggested_products:
+                        if product_to_ship_check.source == 'CJ' and (product_to_ship_check.original_cj_product_id or product_to_ship_check.id):
+                            cj_product_id_for_shipping = product_to_ship_check.original_cj_product_id if product_to_ship_check.original_cj_product_id else product_to_ship_check.id
+                            cj_shipping_payload = {
+                                "cj_product_id": cj_product_id_for_shipping,
+                                "destination_country": extracted_filters.destination_country,
+                                "sku": None # For now, general product shipping; variant-specific could be future
+                            }
+                            cj_shipping_tool_url = f"{CJ_DROPSHIPPING_AGENT_BASE_URL}{CJ_DROPSHIPPING_AGENT_SHIPPING_TOOL_PATH}"
+                            try:
+                                async with httpx.AsyncClient(timeout=10.0) as cj_shipping_http_client:
+                                    cj_shipping_response = await cj_shipping_http_client.post(cj_shipping_tool_url, json=cj_shipping_payload)
+                                    cj_shipping_response.raise_for_status()
+                                    cj_shipping_data_envelope = cj_shipping_response.json()
+
+                                    if isinstance(cj_shipping_data_envelope, dict) and "output" in cj_shipping_data_envelope:
+                                        shipping_info_data = cj_shipping_data_envelope['output']
+                                        # Product.shipping_info expects CJProductShippingInfo or Dict
+                                        # The CJ agent's get_cj_product_shipping_info returns CJProductShippingInfo model
+                                        # If that model is compatible or if Product.shipping_info is Dict, direct assignment or ** works.
+                                        # Assuming Product.shipping_info is Optional[CJProductShippingInfo]
+                                        from app.models.cj_product_models import CJProductShippingInfo # Ensure import
+                                        try:
+                                            product_to_ship_check.shipping_info = CJProductShippingInfo(**shipping_info_data)
+                                            logger.info(f"ASA: Successfully updated shipping for CJ Product ID {cj_product_id_for_shipping} to {extracted_filters.destination_country}.")
+                                        except Exception as e_map_ship:
+                                            logger.error(f"ASA: Error mapping CJ shipping data for {cj_product_id_for_shipping}: {e_map_ship}. Data: {shipping_info_data}")
+                                            cj_shipping_enrichment_errors.append(f"CJ Agent mapping error for {cj_product_id_for_shipping}")
+
+                                    else:
+                                        logger.warning(f"ASA: CJ Agent shipping response for {cj_product_id_for_shipping} was not in expected format. Shipping info not updated. Response: {cj_shipping_data_envelope}")
+                                        cj_shipping_enrichment_errors.append(f"CJ Agent bad shipping response for {cj_product_id_for_shipping}")
+                            except httpx.HTTPStatusError as e_cj_ship_http:
+                                err_msg = f"HTTP error getting shipping for CJ Product {cj_product_id_for_shipping}: {e_cj_ship_http.response.status_code} - {e_cj_ship_http.response.text}"
+                                logger.error(f"ASA: {err_msg}")
+                                cj_shipping_enrichment_errors.append(err_msg)
+                            except Exception as e_cj_ship_enrich:
+                                err_msg = f"Unexpected error getting shipping for CJ Product {cj_product_id_for_shipping}: {str(e_cj_ship_enrich)}"
+                                logger.error(f"ASA: {err_msg}")
+                                cj_shipping_enrichment_errors.append(err_msg)
+                        products_after_shipping_enrich.append(product_to_ship_check)
+                    suggested_products = products_after_shipping_enrich
+                else: # No destination country extracted, skip shipping enrichment
+                    logger.info("ASA: No destination country extracted, skipping CJ shipping info enrichment.")
+
+            # --- Optional Live Update for CJ Products ---
+            trigger_live_update = any(keyword in user_query.lower() for keyword in LIVE_UPDATE_KEYWORDS)
+            if trigger_live_update and any(p.source == 'CJ' for p in suggested_products):
+                logger.info(f"ASA: Live update triggered by keywords in query: '{user_query}'. Processing CJ products.")
+                live_updated_products_temp: List[Product] = []
+                for i, product in enumerate(suggested_products):
+                    if product.source == 'CJ' and (product.original_cj_product_id or product.id):
+                        cj_product_id_for_live_update = product.original_cj_product_id if product.original_cj_product_id else product.id
+                        live_update_payload = {"cj_product_id": cj_product_id_for_live_update}
+                        live_update_tool_url = f"{CJ_DROPSHIPPING_AGENT_BASE_URL}{CJ_DROPSHIPPING_AGENT_LIVE_UPDATE_TOOL_PATH}"
+                        logger.info(f"ASA: Attempting live update for CJ Product ID {cj_product_id_for_live_update} via {live_update_tool_url}")
+                        try:
+                            async with httpx.AsyncClient(timeout=15.0) as live_update_http_client: # Shorter timeout for this
+                                live_update_response = await live_update_http_client.post(live_update_tool_url, json=live_update_payload)
+                                live_update_response.raise_for_status()
+                                live_update_data_envelope = live_update_response.json()
+
+                                if isinstance(live_update_data_envelope, dict) and "output" in live_update_data_envelope:
+                                    updated_product_data = live_update_data_envelope['output']
+                                    # Replace the product in our list with the live-updated one
+                                    # Ensure it's a Product model instance
+                                    live_updated_products_temp.append(Product(**updated_product_data))
+                                    cj_live_update_info.append(f"Successfully live-updated CJ Product ID {cj_product_id_for_live_update}.")
+                                    logger.info(f"ASA: Successfully live-updated CJ Product ID {cj_product_id_for_live_update}. Original idx {i} replaced.")
+                                else:
+                                    logger.warning(f"ASA: CJ Agent live update response for {cj_product_id_for_live_update} was not in expected format. Keeping previous data. Response: {live_update_data_envelope}")
+                                    cj_live_update_info.append(f"CJ Agent bad live update response for {cj_product_id_for_live_update}.")
+                                    live_updated_products_temp.append(product) # Keep previous data
+                        except httpx.HTTPStatusError as e_cj_live_http:
+                            err_msg = f"HTTP error during live update for CJ Product {cj_product_id_for_live_update}: {e_cj_live_http.response.status_code} - {e_cj_live_http.response.text}"
+                            logger.error(f"ASA: {err_msg}")
+                            cj_live_update_info.append(err_msg)
+                            live_updated_products_temp.append(product) # Keep previous data
+                        except Exception as e_cj_live_update:
+                            err_msg = f"Unexpected error during live update for CJ Product {cj_product_id_for_live_update}: {str(e_cj_live_update)}"
+                            logger.error(f"ASA: {err_msg}")
+                            cj_live_update_info.append(err_msg)
+                            live_updated_products_temp.append(product) # Keep previous data
+                    else:
+                        live_updated_products_temp.append(product)
+                suggested_products = live_updated_products_temp
+            elif trigger_live_update:
+                 logger.info("ASA: Live update keywords found, but no CJ products in the current suggestion list to update.")
+
+
             # --- Generate Final Natural Language Response ---
-            if product_service_error_message:
+            if product_service_error_message and not suggested_products:
                 natural_language_response = "I'm having trouble accessing product information at the moment. Please try your search again in a few minutes."
                 llm_model_used_for_response_gen = "N/A (due to Product Service error)"
             elif not openai_client:
@@ -251,15 +434,26 @@ async def process_user_query_tool(input_data: UserQueryInput) -> ShoppingAssista
                 else: # No products, no filter error, but LLM for response gen is off
                     natural_language_response = "I couldn't find any products matching your query."
             else: # OpenAI client available and no product service error
-                response_gen_system_prompt = (
+                response_gen_system_prompt_parts = [
                     "You are an AI Shopping Assistant. Your primary goal is to provide a helpful and natural language response based on the user's query and the products found (if any). "
                     "If products are found, briefly mention one or two, or summarize the findings (e.g., 'I found several options for electronics'). Indicate the total number of products found if it's more than a few. "
                     "If a product has multiple options or variants (indicated in the summary provided to you), explicitly mention this and suggest the user can ask for more details about specific options (e.g., 'The T-shirt comes in different sizes and colors. Let me know if you'd like details on a specific one.'). "
+                    "Also, consider mentioning noteworthy stock statuses if available (e.g., 'low stock', 'out of stock'). "
+                    "If shipping information (like estimated delivery time or cost) is available for a product AND the user asked about shipping or a country, mention it briefly. "
+                ]
+                if cj_live_update_info and any("Successfully live-updated" in s for s in cj_live_update_info) : # Check if any successful live update occurred
+                    response_gen_system_prompt_parts.append("Some product details like stock or price may have been freshly updated for you. ")
+
+                response_gen_system_prompt_parts.append(
                     "If no products are found, politely inform the user and perhaps suggest they rephrase their query or try different terms. "
                     "If there was an earlier issue with understanding their query (e.g., filter extraction failed), acknowledge it subtly if relevant (e.g., 'Based on your query, I found...'). "
                     "Keep the response conversational and not overly long. Do not repeat the product list verbatim unless specifically asked or if it's very short (1-2 items)."
                 )
+                response_gen_system_prompt = "".join(response_gen_system_prompt_parts)
+
                 response_gen_user_prompt_parts = [f"User's original query: \"{user_query}\""]
+                if extracted_filters.destination_country:
+                    response_gen_user_prompt_parts.append(f"\nUser seems interested in shipping to: {extracted_filters.destination_country}.")
                 if llm_filter_extraction_error:
                     response_gen_user_prompt_parts.append(f"\nNote: There was an issue processing the query details: {llm_filter_extraction_error}")
 
@@ -267,6 +461,10 @@ async def process_user_query_tool(input_data: UserQueryInput) -> ShoppingAssista
                     product_summary_for_llm = "\n\nProducts found (summary for you to use in response):\n"
                     for i, p in enumerate(suggested_products[:3]):
                         base_info = f"- Name: {p.name}, Category: {p.category}, Price: {p.price:.2f}"
+                        if p.stock_status_text:
+                            base_info += f", Stock: {p.stock_status_text}"
+
+                        # Variant Info
                         if p.has_variants and p.variants:
                             variant_info = f", Variants: {len(p.variants)} options (e.g., "
                             example_attrs = set()
@@ -275,14 +473,23 @@ async def process_user_query_tool(input_data: UserQueryInput) -> ShoppingAssista
                                     example_attrs.add(attr_name.lower())
                                     if len(example_attrs) >= 2: break
                                 if len(example_attrs) >= 2: break
-                            if example_attrs:
-                                variant_info += ", ".join(list(example_attrs))
-                            else:
-                                variant_info += "various styles"
+                            variant_info += ", ".join(list(example_attrs)) if example_attrs else "various styles"
                             variant_info += ")"
-                            product_summary_for_llm += f"{base_info}{variant_info}\n"
-                        else:
-                            product_summary_for_llm += f"{base_info}\n"
+                            base_info += variant_info
+                        elif p.has_variants and p.variant_attribute_names:
+                            base_info += f", Options: (e.g., different {', '.join(p.variant_attribute_names)})"
+
+                        # Shipping Info
+                        if p.shipping_info:
+                            si = p.shipping_info # type: ignore
+                            ship_msg = si.message
+                            if si.estimated_delivery_min_days and si.estimated_delivery_max_days and si.destination_country:
+                                ship_msg = f"Est. Delivery: {si.estimated_delivery_min_days}-{si.estimated_delivery_max_days} days to {si.destination_country}"
+                                if si.shipping_cost is not None and si.currency:
+                                    ship_msg += f", Cost: ${si.shipping_cost:.2f} {si.currency}"
+                            base_info += f", Shipping: {ship_msg}"
+
+                        product_summary_for_llm += f"{base_info}\n"
                     if len(suggested_products) > 3:
                         product_summary_for_llm += f"...and {len(suggested_products) - 3} more.\n"
                     response_gen_user_prompt_parts.append(product_summary_for_llm)
@@ -300,7 +507,7 @@ async def process_user_query_tool(input_data: UserQueryInput) -> ShoppingAssista
                             {"role": "system", "content": response_gen_system_prompt},
                             {"role": "user", "content": response_gen_user_prompt}
                         ],
-                        max_tokens=300, # Increased slightly for potentially more nuanced responses
+                        max_tokens=300,
                         temperature=0.7
                     )
                     natural_language_response = completion.choices[0].message.content
@@ -310,9 +517,9 @@ async def process_user_query_tool(input_data: UserQueryInput) -> ShoppingAssista
                     logger.error(f"ASA: {final_llm_error_message}")
                     if suggested_products:
                         natural_language_response = f"I found {len(suggested_products)} product(s) for you, but I'm having a little trouble summarizing them right now. Please check the product list below."
-                    elif llm_filter_extraction_error: # No products, and filter extraction also failed
+                    elif llm_filter_extraction_error:
                         natural_language_response = "I had some trouble understanding your request and couldn't find any products. Could you please try rephrasing?"
-                    else: # No products, but filter extraction was okay (or skipped)
+                    else:
                         natural_language_response = "I couldn't find any products matching your query, and I'm having some technical difficulties at the moment. Please try again shortly."
                     llm_model_used_for_response_gen = f"{OPENROUTER_MODEL_NAME} (Error: {final_llm_error_message})"
 
@@ -333,6 +540,7 @@ async def process_user_query_tool(input_data: UserQueryInput) -> ShoppingAssista
             "product_service_url": product_service_tool_url_debug if 'product_service_tool_url_debug' in locals() else "N/A",
             "product_service_payload": tool_input_payload_debug if 'tool_input_payload_debug' in locals() else {},
             "product_service_error": product_service_error_message,
+            "cj_live_update_attempts": cj_live_update_info if 'cj_live_update_info' in locals() else [],
             "final_llm_error": final_llm_error_message,
             "llm_model_used_for_response_gen": llm_model_used_for_response_gen if 'llm_model_used_for_response_gen' in locals() else OPENROUTER_MODEL_NAME,
             "raw_product_count_from_service": raw_product_count_debug if 'raw_product_count_debug' in locals() else "N/A"
@@ -349,12 +557,17 @@ async def process_user_query_tool(input_data: UserQueryInput) -> ShoppingAssista
         "llm_filter_extraction_error": llm_filter_extraction_error,
         "extracted_search_query_param": extracted_filters.search_query,
         "extracted_category_param": extracted_filters.category,
-        "extracted_price_min": extracted_filters.price_min, # Added
-        "extracted_price_max": extracted_filters.price_max, # Added
-        "extracted_attributes": extracted_filters.attributes, # Added
+        "extracted_price_min": extracted_filters.price_min,
+        "extracted_price_max": extracted_filters.price_max,
+        "extracted_attributes": extracted_filters.attributes,
+        "extracted_destination_country": extracted_filters.destination_country,
         "product_service_url": product_service_tool_url_debug,
         "product_service_payload": tool_input_payload_debug,
         "product_service_error": product_service_error_message,
+        "cj_details_enrichment_errors": cj_details_enrichment_errors,
+        "cj_stock_enrichment_errors": cj_stock_enrichment_errors,
+        "cj_shipping_enrichment_errors": cj_shipping_enrichment_errors,
+        "cj_live_update_attempts": cj_live_update_info, # Added
         "final_llm_error": final_llm_error_message,
         "llm_model_used_for_response_gen": llm_model_used_for_response_gen,
         "raw_product_count_from_service": raw_product_count_debug

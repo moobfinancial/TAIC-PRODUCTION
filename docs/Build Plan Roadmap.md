@@ -1,188 +1,264 @@
-# TAIC Platform: Build Plan Roadmap
+# TAIC Platform: Build Plan Roadmap (Updated)
 
 ## 1. Introduction & Vision
 
-This document outlines the strategic build plan for the TAIC (Transformative AI Commerce) platform. It serves as a consolidated roadmap, integrating insights from `PROJECT_PLAN.md`, `docs/PRODUCTION_ROADMAP.md`, and `docs/ideas.md`, and aligns development efforts with the platform's evolving architecture and database schema (`schema.sql`). Its purpose is to guide the phased development of new features and enhancements, ensuring a cohesive and strategic approach to building a robust, scalable, and innovative e-commerce solution.
+This document outlines the strategic build plan for the TAIC (Transformative AI Commerce) platform. It serves as a consolidated roadmap, integrating insights from previous project plans and the initial comprehensive issue statement. It aligns development efforts with the platform's evolving architecture and database schema (`schema.sql`). Its purpose is to guide the phased development of new features and enhancements, ensuring a cohesive and strategic approach to building a robust, scalable, and innovative e-commerce solution.
 
 The overall vision for the TAIC platform is to be a global e-commerce ecosystem powered by blockchain technology and enhanced by artificial intelligence. Key pillars of this vision include:
 *   **Empowering Global Merchants:** Providing tools for entrepreneurs and businesses worldwide to establish their online presence, manage products (including variants and services), and reach a global customer base.
 *   **Seamless Crypto & Fiat Integration:** Supporting TAIC cryptocurrency as a primary payment method alongside traditional fiat currency options, offering flexibility and choice to users.
 *   **Incentivized Shopping Experience:** Leveraging cashback rewards in TAIC cryptocurrency to drive user engagement and loyalty.
-*   **AI-Driven Enhancements:** Utilizing a sophisticated AI agent architecture (FastAPI backend with MCPUs library) to deliver intelligent shopping assistance, personalized recommendations, virtual try-on capabilities, and efficient platform administration.
+*   **AI-Driven Enhancements:** Utilizing a sophisticated AI agent architecture (FastAPI backend with MCPUs library for core backend agents, and Genkit/Next.js for specific frontend-facing AI flows) to deliver intelligent shopping assistance, personalized recommendations, virtual try-on capabilities, and efficient platform administration.
 *   **Multi-Vendor Marketplace:** Establishing a comprehensive marketplace where multiple merchants can list products, subject to admin approval, fostering a diverse and competitive environment.
 
-This build plan supersedes previous roadmap documents for future planning and development tracking.
+This build plan is the primary source for future planning and development tracking.
 
 ## 2. Key Development Areas (Phased Approach)
 
-This section details the planned features and enhancements, organized into logical development phases. Each feature description includes its key components (Frontend, Admin Portal, Merchant Portal, Backend/DB).
+This section details planned features and enhancements, organized into logical development phases. Each feature description includes its key components.
+**Status Legend:**
+*   `[COMPLETED - Backend]`
+*   `[COMPLETED - DB Schema]`
+*   `[COMPLETED - Documentation]`
+*   `[COMPLETED - Policy]`
+*   `[IN PROGRESS]`
+*   `[PENDING - Frontend]`
+*   `[PENDING - Backend]`
+*   `[PENDING - Further AI Dev/Integration]`
+*   `[NEEDS CLARIFICATION/DECISION]`
 
-### Phase 1: Core Platform Enhancements & Foundational AI
+### Phase 1: Core Platform Enhancements, Foundational AI, & Homepage/Pioneer Launch
 
-This phase focuses on strengthening the core platform, introducing critical product management features, and laying the groundwork for the new AI agent architecture.
+This phase focuses on strengthening the core platform, introducing critical product management features, laying the groundwork for the FastAPI AI agent architecture, and launching initial homepage/Pioneer Program elements.
 
 *   **Product Variants Support:**
-    *   **Description:** Allow products to have multiple variations (e.g., size, color, material).
-    *   **Frontend (Shopper):** Display product variants on the Product Details Page, allowing shoppers to select and add specific variants to their cart.
-    *   **Admin Portal:**
-        *   View and manage product variants for merchant-uploaded products.
-        *   View and approve/manage variants for imported CJ Dropshipping products within the "Manage Imported CJ Products" section.
-    *   **Merchant Portal:**
-        *   Enable merchants to add new products with multiple variants.
-        *   Support bulk upload (CSV/Excel) for products with variants, including pricing for each variant.
-    *   **Backend/DB:** Design and implement a `product_variants` table. This table will be linked to a unified `products` table (once `cj_products` and `products` tables are consolidated or a clear relationship is established for variants). It will store SKU, attributes (e.g., size, color), price adjustments, and stock for each variant. (Addresses `variants_json` in `cj_products`).
+    *   **Description:** Allow products to have multiple variations.
+    *   **Status:** `[COMPLETED - DB Schema]`, `[COMPLETED - Backend APIs for Variant CRUD]`, `[COMPLETED - Backend for Bulk Upload CSV Parsing]`, `[COMPLETED - Documentation for Bulk Upload Template]`.
+    *   **Confirmations:**
+        *   Variant-Level Inventory: `[COMPLETED - Backend]` Logic in place for `product_variants.stock_quantity`.
+        *   Bulk Upload Template: `[COMPLETED - Documentation]` (`docs/merchant_bulk_product_upload_template_guide.md`).
+    *   **Frontend (Shopper):** `[PENDING - Frontend]` Display product variants on Product Details Page, allow selection and cart addition.
+    *   **Admin Portal:** `[PENDING - Frontend]` View/manage product variants.
+    *   **Merchant Portal:** `[PENDING - Frontend]` UI for adding products with variants, UI for bulk upload.
+    *   **Backend/DB:** `[COMPLETED - DB Schema]` `product_variants` table created and linked to `products`. `products` table enhanced for unification.
 
-*   **CJ Dropshipping Product Imports & Service Categories:**
-    *   **Description:** Enhance CJ Dropshipping integration and introduce a clear categorization system for services.
-    *   **Admin Portal:**
-        *   Admin imports CJ products using existing CJ categories.
-        *   Admin can view/approve CJ dropshipping product variants (managed via the new variants system) in the "Manage Imported CJ Products" section.
-    *   **Backend/DB:**
-        *   Define and implement a standardized, hierarchical category structure specifically for **services** within the `categories` table. This may involve a new attribute (e.g., `category_type` as 'product' or 'service') or a dedicated parent category for services.
-        *   Ensure `cj_products` table data (categories, base product info) can be smoothly integrated or mapped to the main `products` and `categories` tables.
+*   **Service Categories:**
+    *   **Description:** Clear categorization system for services.
+    *   **Status:** `[COMPLETED - DB Schema]`, `[COMPLETED - Backend APIs for Category CRUD]`.
+    *   **Confirmations:**
+        *   Unique Attributes for Services: `[COMPLETED - DB Schema]` `categories.custom_attributes` (JSONB) added. `categories.category_type` added.
+    *   **Admin Portal:** `[PENDING - Frontend]` UI for managing service categories and their custom attributes.
+    *   **Frontend (Shopper):** `[PENDING - Frontend]` Display and filtering for services.
+
+*   **Homepage Enhancements (from Issue):**
+    *   **Status:** `[COMPLETED - Initial Structure & Content Backend/Static]` for many items. Complex AI integrations are `[PENDING - Further AI Dev/Integration]`. Analytics setup is `[IN PROGRESS]`.
+    *   Homepage Messaging & Branding: `[COMPLETED - Initial Structure & Content Backend/Static]` (Text updates in `src/app/page.tsx`).
+    *   Interactive "AMA AI for TAIC Coin" Experience:
+        *   UI Structure: `[COMPLETED - Initial Structure & Content Backend/Static]` (Placeholder section and dialog skeleton in `src/app/page.tsx` and `InteractiveAIMADialog.tsx`).
+        *   Technical Integration (HeyGen, LiveKit): `[PENDING - Further AI Dev/Integration]`.
+        *   Interaction Logic, Escape Hatch: `[PENDING - Further AI Dev/Integration]`.
+        *   Telephony Integration & Consent: `[PENDING - Further AI Dev/Integration]`.
+    *   Canvas View Interaction Features: `[PENDING - Further AI Dev/Integration]`.
+    *   TAIC Coin & Pioneer Program Promotion Section: `[COMPLETED - Initial Structure & Content Backend/Static]` (Added to `src/app/page.tsx`).
+    *   CTA Sections (Consolidated): `[COMPLETED - Initial Structure & Content Backend/Static]` (Added to `src/app/page.tsx`).
+    *   Crypto & Rewards Highlights Section: `[COMPLETED - Initial Structure & Content Backend/Static]` (Added to `src/app/page.tsx`).
+    *   Influencer & Community Engagement Section: `[COMPLETED - Initial Structure & Content Backend/Static]` (Added to `src/app/page.tsx`).
+    *   Analytics & Testing: `[IN PROGRESS]` Basic CTA click tracking framework in place (`src/lib/analytics.ts`). Full analytics and A/B testing `[PENDING - Further AI Dev/Integration]`.
+
+*   **Pioneer Program Implementation (from Issue):**
+    *   **Status:** `[COMPLETED - Documentation]` for Tiers and Application Process. Backend/Smart Contract/Frontend `[PENDING]`.
+    *   Tier Setup & Documentation: `[COMPLETED - Documentation]` (`docs/pioneer_program_tiers_definition.md`).
+    *   Application Process (Form Fields, SLA): `[COMPLETED - Documentation]` (`docs/pioneer_program_application_process.md`).
+    *   Application Portal (Frontend/Backend): `[PENDING - Frontend]`, `[PENDING - Backend]`.
+    *   Verification Tools & Checks: `[PENDING - Backend]`.
+    *   MOU/Agreement Creation: `[PENDING - Policy]` (Legal task).
+    *   Token Allocation & Vesting (Smart Contract): `[PENDING - Further AI Dev/Integration]` (Specialized blockchain dev).
+    *   Backend for application management, deliverable tracking: `[PENDING - Backend]`.
+    *   Marketing & Outreach: `[PENDING]` (Execution task).
+    *   Community Channel Integration: `[PENDING]` (Execution task).
+
+*   **Foundational AI Agent Architecture (FastAPI/MCP):**
+    *   **Status:** `[COMPLETED - Backend]` Core Shopping Assistant & Product Service functional with A2A communication and real data.
+    *   FastAPI Backend Infrastructure for AI Agents: `[COMPLETED - Backend]` (`fastapi_ai_backend`).
+    *   MCPUs Library Integration: `[COMPLETED - Backend]` (using `mcp` and `mcp-use`).
+    *   Initial AI Shopping Assistant: `[COMPLETED - Backend]` (`shopping_assistant_agent.py` capable of understanding queries, calling Product Service, handling CJ product enrichment via CJ Agent, and generating responses).
+    *   Foundational Product Data Access Tools (Product Service Agent): `[COMPLETED - Backend]` (`product_service_agent.py` serving unified product/variant data from DB with advanced filtering).
+
+*   **Advanced Product Filtering (from Issue "Critical Taken for Granted"):**
+    *   **Status:** `[COMPLETED - Backend]` APIs support it. `[PENDING - Frontend]` UI.
+    *   Backend API in Product Service Agent: `[COMPLETED - Backend]` (Supports price and attribute filters).
+    *   Shopping Assistant understanding of advanced filters: `[COMPLETED - Backend]`.
+    *   Frontend UI for filters: `[PENDING - Frontend]`.
+
+*   **Notification Service - Welcome Emails (from Issue "Expanded Transactional Email Flows"):**
+    *   **Status:** `[COMPLETED - Backend]` Utilities and placeholder integration. `[PENDING - Backend]` for actual integration with live registration.
+    *   Email Sending Utilities & Templates: `[COMPLETED - Backend]` (`email_utils.py` with simulated sending).
+    *   Placeholder Integration with conceptual registration endpoints: `[COMPLETED - Backend]` (`auth_placeholder.py`).
+    *   Actual integration with live registration flows: `[PENDING - Backend]`.
 
 ### Phase 2: Admin & Merchant Empowerment
 
-This phase focuses on providing robust tools for administrators and merchants, enhancing platform control and usability.
+This phase focuses on providing robust tools for administrators and merchants.
 
 *   **Multi-vendor Marketplace Controls (Admin):**
-    *   **Description:** Provide administrators with comprehensive tools to manage a multi-vendor marketplace.
-    *   **Admin Portal:**
-        *   View a comprehensive list of all registered merchants.
-        *   Review and approve/reject products uploaded by merchants before they are listed publicly on the platform, including their variants.
-    *   **Backend/DB:** Utilize and potentially enhance the `products` table's `merchant_id` and `approval_status` fields. Ensure variant approvals are linked to the base product approval.
+    *   **Status:** `[COMPLETED - Backend APIs for Product Approval]`, `[COMPLETED - Policy for Edit Re-approval]`. `[PENDING - Frontend]` for Admin Portal. `[PENDING - Backend]` for implementing re-approval logic in merchant product update APIs.
+    *   Admin APIs for Product Approval/Rejection: `[COMPLETED - Backend]` (`admin.py` router). Sets `is_active`.
+    *   Policy for Product Edit Re-Approvals: `[COMPLETED - Policy]` (`docs/product_edit_re_approval_policy.md`).
+    *   Admin Portal UI for review: `[PENDING - Frontend]`.
 
 *   **Admin Dashboard Enhancements:**
-    *   **Description:** Overhaul the Admin Dashboard into a centralized management hub for efficient platform oversight.
-    *   **Admin Portal:**
-        *   Implement quick access panels/widgets for key information: Shopper insights (e.g., new registrations, active users), Merchant insights (e.g., new applications, top performers), Sales overview (e.g., total revenue, transaction volume), Product insights (e.g., new listings, popular items).
-        *   Improve navigation with clear shortcuts to essential admin functions.
-    *   **Backend/DB:** Requires optimized aggregation queries and potentially new summary tables or materialized views to efficiently source data for dashboard widgets.
+    *   **Status:** `[COMPLETED - Backend APIs for Audit Log & Stats]`. `[PENDING - Frontend]` for dashboard UI.
+    *   Admin Audit Log:
+        *   DB Schema: `[COMPLETED - DB Schema]` (`admin_audit_log` table, `products.admin_review_notes` column).
+        *   Backend Utility & Integration: `[COMPLETED - Backend]` (`audit_utils.py` and integration into product review).
+        *   API to View Audit Logs: `[COMPLETED - Backend]` (GET `/api/admin/audit-logs` with filters/pagination).
+    *   Aggregated Data for Dashboard Widgets: `[COMPLETED - Backend]` (API `GET /api/admin/dashboard/stats`).
+    *   Admin Portal UI (Dashboard, Panels, Navigation): `[PENDING - Frontend]`.
 
 *   **Merchant Store Pages:**
-    *   **Description:** Provide each merchant with a dedicated, customizable store page.
-    *   **Frontend (Shopper):** Users can navigate to individual merchant store pages (e.g., `taic.com/store/merchant-slug`) to view all products listed by that specific merchant.
-    *   **Merchant Portal:**
-        *   Allow merchants to customize aspects of their store page (e.g., banner, logo, description).
-        *   System generates a unique, shareable URL for their store.
-        *   Enable merchants to easily copy and share their store link for customer invites.
-    *   **Backend/DB:**
-        *   Create a new table `merchant_store_profiles` (e.g., `merchant_id` (FK), `store_slug` (UNIQUE), `banner_url`, `logo_url`, `description`, `custom_settings` (JSONB)).
-        *   Implement logic for generating unique, SEO-friendly slugs from merchant names or business names.
+    *   **Status:** `[COMPLETED - DB Schema]`, `[COMPLETED - Backend APIs for Profile & Reviews]`. `[PENDING - Frontend]`.
+    *   DB Schema: `[COMPLETED - DB Schema]` (`merchant_store_profiles`, `store_reviews` tables).
+    *   Backend APIs for Merchant Store Profile Management: `[COMPLETED - Backend]` (CRUD, slug generation).
+    *   Backend APIs for Store-Level Reviews & Ratings: `[COMPLETED - Backend]` (Create, List).
+    *   Frontend (Shopper view, Merchant customization): `[PENDING - Frontend]`.
+
+*   **Shipping Management for Merchants (from Issue "Critical Taken for Granted"):**
+    *   **Status:** `[PENDING - Backend]`, `[PENDING - Frontend]`.
+    *   Merchant Portal UI for defining shipping (zones, rates): `[PENDING - Frontend]`.
+    *   Backend logic to store configs & integrate with checkout: `[PENDING - Backend]`.
+
+*   **Tax Calculation Engine V1 (from Issue "Critical Taken for Granted"):**
+    *   **Status:** `[PENDING - Backend]`, `[PENDING - Frontend]`.
+    *   Merchant Portal UI for basic tax settings: `[PENDING - Frontend]`.
+    *   Backend for initial tax calculation: `[PENDING - Backend]`.
+
+*   **User Social Sharing (from Issue):**
+    *   **Status:** `[PENDING - Frontend]`.
+    *   Frontend buttons on product/store pages: `[PENDING - Frontend]`.
+
+*   **On-Platform Messaging Center (from Issue "Potential New Features"):**
+    *   **Status:** `[PENDING - Backend]`, `[PENDING - Frontend]`.
+    *   Backend/DB for messages/conversations: `[PENDING - Backend]`.
+    *   Frontend UI: `[PENDING - Frontend]`.
+
+*   **Global Search Enhancement (from Issue "Potential New Features"):**
+    *   **Status:** `[PENDING - Backend]`, `[PENDING - Frontend]`.
+    *   Backend search API enhancements: `[PENDING - Backend]`.
+    *   Frontend UI for categorized results: `[PENDING - Frontend]`.
+
+*   **Notification Service - Phase 2 Expansion (from Issue "System-Wide Notification Service"):**
+    *   **Status:** `[PENDING - Backend]`.
+    *   Functionality for order updates, low stock, new messages: `[PENDING - Backend]`.
 
 ### Phase 3: User Experience & Advanced AI Features
 
-This phase concentrates on refining the shopper experience, introducing advanced authentication, and rolling out sophisticated AI capabilities based on the new architecture.
+This phase concentrates on refining the shopper experience, introducing advanced authentication, and rolling out sophisticated AI capabilities.
 
 *   **User Authentication Options:**
-    *   **Description:** Expand user authentication methods to include crypto wallets and traditional logins, while ensuring continued support for existing payment methods.
-    *   **Frontend (Shopper):**
-        *   Implement Wallet Connect support for user authentication and TAIC token transactions.
-        *   Provide a traditional email/password login and registration system with appropriate validation and security measures.
-        *   Ensure continued support and seamless integration for credit card payments (e.g., via Stripe).
-    *   **Backend/DB:**
-        *   Extend or create a comprehensive `users` table (essential, though not fully detailed in the provided `schema.sql`) to store wallet addresses (for Wallet Connect), traditional login credentials (e.g., `email`, `hashed_password`, `salt`), and roles.
-        *   Develop mechanisms to manage different authentication states, link multiple auth methods to a single user account if desired, and handle user profiles securely.
+    *   **Status:** `[COMPLETED - Backend APIs for Email/Password & Wallet Auth, Account Linking]`. `[PENDING - Frontend]` for UI integration.
+    *   DB Schema: `[COMPLETED - DB Schema]` (`users` table).
+    *   Backend APIs:
+        *   Email/Password Registration & Login (JWT): `[COMPLETED - Backend]`.
+        *   Wallet-Based Login/Registration (Signature Verification, JWT): `[COMPLETED - Backend]`.
+        *   Account Linking (Wallet-to-Email, Email-to-Wallet): `[COMPLETED - Backend]`.
+    *   Frontend (Shopper) UI for all auth flows: `[PENDING - Frontend]`.
+    *   Confirmations:
+        *   Account Linking Flow (Backend logic): `[COMPLETED - Backend]`. Seamless frontend flow: `[PENDING - Frontend]`.
 
 *   **Shopper Account Management:**
-    *   **Description:** Enhance the shopper account management dashboard with comprehensive and user-friendly operations.
-    *   **Frontend (Shopper):**
-        *   Review existing account management features (e.g., order history, address book, as indicated in `PRODUCTION_ROADMAP.md`).
-        *   Identify and implement missing/necessary user-friendly operations, such as: updating profile details, managing communication preferences, viewing TAIC token balance and cashback history, managing linked wallet addresses or payment methods.
-    *   **Backend/DB:** Ensure user profile tables (`users`, and potentially related tables for addresses, etc.) can store and provide all relevant information securely and efficiently.
+    *   **Status:** `[COMPLETED - Backend APIs for Profile, Export, Deletion]`. `[PENDING - Frontend]` for UI.
+    *   Backend APIs:
+        *   Fetch User Profile (`GET /me`): `[COMPLETED - Backend]`.
+        *   Update User Profile (`PUT /me` for `full_name`): `[COMPLETED - Backend]`.
+        *   Data Portability (Data Export API): `[COMPLETED - Backend]`.
+        *   Account Deletion (Soft delete/anonymize API): `[COMPLETED - Backend]`.
+    *   Frontend (Shopper) Dashboard for these features: `[PENDING - Frontend]`.
+    *   Confirmations:
+        *   Data Portability & Deletion (Backend APIs): `[COMPLETED - Backend]`. Self-service frontend options: `[PENDING - Frontend]`.
 
-*   **AI Agent Architecture Rollout (Foundation):**
-    *   **Description:** Implement the foundational elements of the new AI agent architecture as outlined in `PRODUCTION_ROADMAP.md`.
-    *   **Backend/DB:**
-        *   Develop the FastAPI backend infrastructure for hosting AI agents.
-        *   Integrate the `MCPUs` library to structure agent capabilities and enable tool exposure/consumption.
-        *   Develop the initial AI Shopping Assistant (focusing on conversational search, basic product queries, and information retrieval) as a FastAPI service.
-        *   Create foundational product data access tools (MCP-compatible) that allow AI agents to query product information (including variants, stock, pricing) from the database.
+*   **AI Agent Architecture Rollout (FastAPI/MCP & Genkit/Next.js):**
+    *   **Status:** FastAPI foundation `[COMPLETED - Backend]`. Specific agent development `[IN PROGRESS]`.
+    *   FastAPI Backend & MCP Integration: `[COMPLETED - Backend]`.
+    *   AI Shopping Assistant (FastAPI): `[COMPLETED - Backend]` (core logic with A2A to Product & CJ Agents).
+    *   Product Service Agent (FastAPI): `[COMPLETED - Backend]` (serves unified product data with advanced filters).
+    *   Gift Recommendation AI Agent: `[REVISED - See Phase 4]`.
+    *   AI Agent Feedback Loop:
+        *   Backend API for feedback submission: `[COMPLETED - Backend]`.
+        *   DB Schema: `[COMPLETED - DB Schema]` (`ai_agent_feedback` table).
+        *   Frontend Integration: `[PENDING - Frontend]`.
 
 ### Phase 4: Advanced AI Capabilities, Long-term & Optimization
 
-This phase will build upon the new AI architecture, introducing more sophisticated AI agents and focusing on platform optimization and future growth.
+This phase will build upon the AI architecture, introducing more sophisticated AI agents and focusing on platform optimization.
 
-*   **Gift Recommendation AI Agent:**
-    *   **Description:** An AI agent dedicated to helping shoppers find suitable gifts, leveraging the "Gift Idea" mode conceptualized in `docs/ideas.md`.
-    *   **Frontend (Shopper):** Integrate with the main AI Shopping Assistant or provide a dedicated interface/flow for gift finding.
-    *   **Backend/DB:**
-        *   Built on the FastAPI/MCPUs architecture.
-        *   Develop sophisticated logic for understanding recipient details (age, gender, interests), occasion, and budget.
-        *   The agent will utilize the product data access tools to query the product catalog and suggest suitable gifts.
+*   **Gift Recommendation AI Agent (Enhancement of Existing Genkit Flow):**
+    *   **Description:** Enhance the existing Gift Recommendation capability (within `src/ai/flows/product-idea-generator.ts` using Genkit/Gemini) for shoppers.
+    *   **Status:** `[COMPLETED - Backend]` (Enhanced prompt engineering in existing Genkit flow for strategic tool use). `[PENDING - Frontend]` (Integration improvements if needed).
+    *   **Backend:** `[COMPLETED - Backend]` Refined prompt in `product-idea-generator.ts` (gift mode) to better utilize the `getProductCatalogTool` and synthesize results. Refactored for better code structure.
+    *   **Confirmations (AI Agent Feedback Loop):** Applicable here. Feedback API `[COMPLETED - Backend]`. Frontend integration `[PENDING - Frontend]`.
 
-*   **Merchant-Specific AI Agents (Initial):**
-    *   **Description:** Develop initial AI agents tailored for specific merchant needs or integrations, starting with a CJ Dropshipping Agent.
-    *   **Backend/DB:**
-        *   Create a CJ Dropshipping Agent (FastAPI service, MCP-compatible) that can be queried by the main AI Shopping Assistant for up-to-date product information, stock levels, and estimated shipping times related to CJ products.
-        *   Implement robust Agent-to-Agent (A2A) communication protocols between the main Shopping Assistant and specialized agents like the CJ Agent. (Ref: `PRODUCTION_ROADMAP.md` - AI Agent Architecture Strategy)
+*   **Merchant-Specific AI Agents (Initial - CJ Dropshipping Agent):**
+    *   **Status:** `[COMPLETED - Backend]` (Agent with tools for details, stock, placeholder shipping from local DB; A2A with Shopping Assistant).
+    *   CJ Dropshipping Agent (FastAPI, MCP-compatible): `[COMPLETED - Backend]` (`cj_dropshipping_agent.py`).
+        *   Tool for Details (improved variant summary): `[COMPLETED - Backend]`.
+        *   Tool for Stock: `[COMPLETED - Backend]`.
+        *   Tool for Shipping (placeholder/heuristic): `[COMPLETED - Backend]`.
+    *   A2A Communication with Shopping Assistant: `[COMPLETED - Backend]` (Shopping Assistant calls CJ Agent for details, stock, and shipping).
 
-*   **Virtual Try-On (Full Integration):**
-    *   **Description:** Fully integrate the AI-powered virtual try-on feature, moving from UI mockups to a functional service.
-    *   **Frontend (Shopper):** Provide a clear UI for users to upload their image and view the generated try-on image with the selected product.
-    *   **Backend/DB:**
-        *   Develop a Genkit flow or a dedicated FastAPI service that utilizes an advanced image generation model (e.g., Gemini or similar).
-        *   Implement secure storage for user-uploaded images, adhering to privacy best practices.
-        *   Ensure the AI model can accurately integrate product images with user images. (Ref: `PROJECT_PLAN.md` - Phase 3, `PRODUCTION_ROADMAP.md` - Phase 4.2)
+*   **Virtual Try-On (Full Integration - Strategy Update Needed):**
+    *   **Description:** Existing VTO flow in Next.js/TypeScript using OpenAI. Roadmap also mentions Genkit/Gemini VTO. Strategy needs clarification.
+    *   **Status:** `[NEEDS CLARIFICATION/DECISION]` on whether to enhance existing OpenAI VTO or migrate to/build new Genkit/Gemini VTO.
+    *   **Work Done (towards a potential FastAPI/Genkit VTO, may be redundant):**
+        *   DB Schema for VTO image metadata: `[COMPLETED - DB Schema]` (`vto_images` table).
+        *   VTO Data Privacy Policy: `[COMPLETED - Documentation]` (`docs/vto_data_privacy_policy.md`).
+        *   FastAPI Image Upload API for VTO: `[COMPLETED - Backend]`.
+        *   FastAPI VTO Trigger API (placeholder AI logic): `[COMPLETED - Backend]`.
+    *   **Frontend (Shopper):** `[PARTIALLY COMPLETE - Existing UI]` (Existing UI calls Next.js API). Needs update if backend changes.
+    *   **Backend (AI Model Integration):** `[PENDING - Further AI Dev/Integration]` (Actual AI model calls for Genkit/Gemini path, or enhancing existing OpenAI flow).
+    *   **Confirmations (VTO Data Privacy):** Policy document `[COMPLETED - Documentation]`. Implementation of user controls for data `[PENDING - Frontend]`.
 
-## 3. Database (SQL) Considerations
+*   **Promotions & Discount Engine (from Issue "Potential New Features" - moved to Phase 4 or Future):**
+    *   **Status:** `[PENDING - Backend]`, `[PENDING - Frontend]`.
+    *   Merchant Portal for creating promotions: `[PENDING - Frontend]`.
+    *   Backend logic & DB for discounts: `[PENDING - Backend]`.
 
-This section summarizes necessary database schema updates based on `schema.sql` and the features outlined above. Consistent naming conventions, defined types, and clear relationships are crucial for maintainability and scalability.
+*   **Merchant Financial Dashboard (from Issue "Potential New Features" - moved to Phase 4 or Future):**
+    *   **Status:** `[PENDING - Backend]`, `[PENDING - Frontend]`.
+    *   Merchant Portal dashboard: `[PENDING - Frontend]`.
+    *   Backend data aggregation: `[PENDING - Backend]`.
 
-*   **Product Variants:**
-    *   The existing `variants_json` field in `cj_products` is a placeholder and insufficient for robust variant management.
-    *   **Recommendation:** Create a new table `product_variants` (e.g., `id` (PK), `product_id` (FK to a unified `products` table), `sku` (VARCHAR, UNIQUE for inventory tracking), `attributes` (JSONB, e.g., `{"size": "M", "color": "Blue"}`), `price_modifier` (DECIMAL, if price varies from base product), `specific_price` (DECIMAL, if variant has its own price), `stock_quantity` (INTEGER), `image_url` (VARCHAR, for variant-specific image)).
-    *   A unified `products` table model is the goal, encompassing both merchant-uploaded and CJ-sourced products to simplify variant and overall product management. The `product_id` in `product_variants` would then refer to this unified table.
+*   **Advanced User Reviews & Q&A (from Issue "Potential New Features" - moved to Phase 4 or Future):**
+    *   **Status:** `[PENDING - Backend]`, `[PENDING - Frontend]`.
+    *   Frontend for media uploads with reviews, Q&A section: `[PENDING - Frontend]`.
+    *   Backend for extended reviews/Q&A, media storage: `[PENDING - Backend]`.
 
-*   **Merchant-Specific Data:**
-    *   **Merchant Store Pages:** A new table `merchant_store_profiles` (e.g., `merchant_id` (FK to `users` table where role is 'merchant'), `store_slug` (VARCHAR, UNIQUE), `display_name` (VARCHAR), `banner_url` (VARCHAR), `logo_url` (VARCHAR), `store_description` (TEXT), `custom_settings` (JSONB for theme, etc.)).
-    *   The `products` table already includes `merchant_id` and `approval_status`, essential for multi-vendor controls.
+## 3. Database (SQL) Considerations (Updated Summary)
 
-*   **Service-Type Categories:**
-    *   The `categories` table (`id`, `name`, `description`, `parent_category_id`, `is_active`) can support services.
-    *   **Recommendation:** Add a `category_type` field (e.g., ENUM('PRODUCT', 'SERVICE') or VARCHAR with a check constraint) to explicitly differentiate service categories from product categories. This aids in filtering and specific logic for services.
-    *   The hierarchical structure (`parent_category_id`) should be leveraged to appropriately model service offerings (e.g., "Digital Services" > "Graphic Design").
+*   **Unified Product Model:** `products` table enhanced to accommodate `cj_products` data (new columns: `base_price`, `additional_image_urls`, `cashback_percentage`, `external_shipping_rules_id`, `original_source_data`). Migration strategy documented in `docs/cj_products_migration_strategy.md`. `cj_products` table still exists pending migration. `products.id` to store `cj_products.cj_product_id` for migrated items.
+*   **Product Variants:** `product_variants` table implemented and linked to `products`. APIs for CRUD and bulk upload backend exist.
+*   **Merchant Store Profiles & Reviews:** `merchant_store_profiles` and `store_reviews` tables implemented. APIs for profile and review management exist.
+*   **Service Categories:** `categories` table enhanced with `category_type` and `custom_attributes`. APIs for management exist.
+*   **Users Table:** Comprehensive `users` table implemented supporting email/password and wallet auth, roles, and profile info. APIs for registration, login, account linking, profile management, data export, and account deletion exist.
+    *   `orders.user_id` type changed to `VARCHAR(255)` and FK to `users.id` added. Documented in `docs/schema_evolution_notes.md`.
+*   **Admin Features:** `admin_audit_log` table implemented for audit trails. `products` table has `admin_review_notes`. APIs for product review, audit log viewing, and dashboard stats exist.
+*   **AI-Related Tables:** `ai_agent_feedback` table implemented for user feedback on AI. `vto_images` table implemented for VTO image metadata.
+*   **General Schema Notes:** Continue to maintain consistency, define relationships, use appropriate types, and ensure indexing.
 
-*   **User Table Enhancements (Implicit `users` table):**
-    *   A central `users` table is fundamental and needs to be fully defined. It should include:
-        *   `id` (PK, e.g., UUID or SERIAL)
-        *   `email` (VARCHAR, UNIQUE, for traditional login & communication)
-        *   `hashed_password` (VARCHAR, for traditional login)
-        *   `password_salt` (VARCHAR, for traditional login security)
-        *   `wallet_address` (VARCHAR, UNIQUE, nullable, for Wallet Connect login/association)
-        *   `role` (VARCHAR or ENUM, e.g., 'SHOPPER', 'MERCHANT', 'ADMIN')
-        *   Profile information: `first_name`, `last_name`, `phone_number`, etc.
-        *   Separate tables for shipping addresses (`user_addresses`) linked by `user_id` are recommended for normalization.
-        *   `created_at`, `updated_at`, `last_login_at` (TIMESTAMPTZ).
+## 4. Suggestions & Potential Improvements (Future Considerations - from original roadmap & issue)
 
-*   **General Schema Notes:**
-    *   **Consistency:** Strictly maintain consistent naming conventions (e.g., `snake_case` for columns and tables, `_id` for foreign keys, `_at` for timestamps).
-    *   **Relationships:** Clearly define foreign key relationships with appropriate `ON DELETE` and `ON UPDATE` actions. Ensure comprehensive indexing for performance.
-    *   **Data Types:** Use appropriate data types (`JSONB` for flexible structured data, `NUMERIC` or `DECIMAL` for currency, `TIMESTAMPTZ` for time zone aware timestamps).
-    *   The existing `admin_users` table (for API key access) should be distinct from user accounts with an 'ADMIN' role in the main `users` table, who would use the standard login mechanisms for dashboard access.
-
-## 4. Suggestions & Potential Improvements (Future Considerations)
-
-This section lists items identified as potential future enhancements, drawn from the issue description and existing project documents. These are not yet assigned to specific phases but represent opportunities for platform growth and refinement.
-
-*   **Variant Inventory Management:** Granular inventory tracking specifically at the product variant level, possibly with alerts.
-*   **Pricing Rules:**
-    *   Support for dynamic pricing strategies.
-    *   Bulk pricing update tools and templates for merchants.
-*   **Store Customization for Merchants (Advanced):** Beyond basic settings, allow more extensive theme customization, possibly through a templating system or controlled CSS overrides for merchant store pages.
-*   **Analytics Dashboard for Merchants:** Provide merchants with detailed sales analytics, customer insights, traffic reports, and product performance metrics.
-*   **SEO for Merchant Stores/Products:** Implement tools and best practices for enhancing search engine optimization of merchant pages and individual product listings (e.g., customizable meta tags, structured data).
-*   **Notifications & Alerts:** Develop a comprehensive system-wide notification service for users and merchants (e.g., low stock warnings, new order confirmations, order status changes, new promotional offers).
-*   **TAIC "Stake to Shop" Program:** Design and implement staking mechanisms for TAIC tokens that unlock exclusive benefits for shoppers, such as enhanced cashback or early access. (Ref: `PRODUCTION_ROADMAP.md`)
-*   **Community Building Features:** Introduce features like user forums, product Q&A sections, discussion groups, or gamification elements to foster community engagement. (Ref: `PRODUCTION_ROADMAP.md`)
+(This section can largely remain as is, or items can be moved into phased rollouts if prioritized)
+*   Variant Inventory Management (Alerts)
+*   Pricing Rules (Dynamic, Bulk)
+*   Store Customization for Merchants (Advanced)
+*   Analytics Dashboard for Merchants
+*   SEO for Merchant Stores/Products
+*   System-Wide Notification Service (Full - beyond welcome/Phase 2 emails)
+*   TAIC "Stake to Shop" Program
+*   Community Building Features (Forums, Q&A)
+*   (Items moved from "Potential New Features" in issue if not yet placed in a phase)
 
 ## 5. Document Review & Consolidation Notes
 
-This "Build Plan Roadmap" document consolidates and synthesizes information from the following existing documents:
-*   `PROJECT_PLAN.md`
-*   `docs/PRODUCTION_ROADMAP.md`
-*   `docs/ideas.md`
-
-It aims to provide a unified and comprehensive view of the development trajectory for the TAIC platform. For future planning and tracking, this document shall be considered the primary source of truth, superseding the specific roadmap sections of the aforementioned files. The `schema.sql` will continue to be the source of truth for database structure, and this roadmap will reflect its implications for feature development.
+This "Build Plan Roadmap" document consolidates and synthesizes information from previous project plans and the initial comprehensive issue statement. It aims to provide a unified and comprehensive view of the development trajectory for the TAIC platform. For future planning and tracking, this document shall be considered the primary source of truth. The `schema.sql` will continue to be the source of truth for database structure, and this roadmap will reflect its implications for feature development.
 
 This document is intended to be a living document and will be updated as the project evolves, priorities shift, and new information becomes available.

@@ -7,3 +7,8 @@ mcp
 openai>=1.0.0
 asyncpg
 psycopg2-binary
+python-slugify
+passlib[bcrypt]
+python-jose[cryptography]
+eth-account
+resend

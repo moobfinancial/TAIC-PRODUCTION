@@ -20,10 +20,46 @@ from app.routers.product_variants import router as product_variants_router
 from app.routers.bulk_operations import router as bulk_operations_router
 # Import the new categories router
 from app.routers.categories import router as categories_router
-# Import the placeholder auth router
-from app.routers.auth_placeholder import router as auth_placeholder_router
+# Import the new auth router (replacing placeholder)
+from app.routers.auth import router as auth_router
 # Import the admin router
 from app.routers.admin import router as admin_router
+# Import the admin dashboard data router
+from app.routers.admin_dashboard_data import router as admin_dashboard_router
+# Import the merchant store profiles router
+from app.routers.merchant_store_profiles import router as merchant_store_profiles_router
+# Import the store reviews router
+from app.routers.store_reviews import router as store_reviews_router
+# Import the user profile router
+from app.routers.user_profile import router as user_profile_router
+# Import the gift recommendation agent MCP server
+from app.agents.gift_recommendation_agent import gift_recommendation_mcp_server
+# Import the AI feedback router
+from app.routers.ai_feedback import router as ai_feedback_router
+# Import the VTO router
+from app.routers.vto import router as vto_router
+# Import the Pioneer Applications router
+from app.routers.pioneer_applications import router as pioneer_applications_router
+# Import the Merchant Shipping router
+from app.routers.merchant_shipping import router as merchant_shipping_router
+# Import the Merchant Tax Settings router
+from app.routers.merchant_tax import router as merchant_tax_router
+# Import the Messaging router
+from app.routers.messaging import router as messaging_router
+# Import the Global Search router
+from app.routers.global_search import router as global_search_router
+# Import the Placeholder Orders router
+from app.routers.orders_placeholder import router as orders_placeholder_router
+# Import the Merchant Products router
+from app.routers.merchant_products import router as merchant_products_router
+# Import the Checkout router
+from app.routers.checkout import router as checkout_router
+# Import the Pioneer Portal router
+from app.routers.pioneer_portal import router as pioneer_portal_router
+# Import the User Addresses router
+from app.routers.addresses import router as user_addresses_router
+# Import the CJ Dropshipping agent MCP server
+from app.agents.cj_dropshipping_agent import cj_dropshipping_mcp_server
 from app.agents.shopping_assistant_agent import shopping_assistant_mcp_server, UserQueryInput, ShoppingAssistantResponse
 from app.models.product import Product
 
@@ -68,10 +104,25 @@ app.include_router(products_router, prefix="/api", tags=["Products"])
 app.include_router(product_variants_router, prefix="/api", tags=["Product Variants"])
 app.include_router(bulk_operations_router, prefix="/api/bulk", tags=["Bulk Operations"])
 app.include_router(categories_router, prefix="/api/categories", tags=["Categories"])
-app.include_router(auth_placeholder_router, prefix="/api/auth", tags=["Authentication (Placeholder)"])
-app.include_router(admin_router, prefix="/api/admin", tags=["Admin"]) # Add the admin router
-
-
+# app.include_router(auth_placeholder_router, prefix="/api/auth", tags=["Authentication (Placeholder)"]) # Commented out placeholder
+app.include_router(auth_router, prefix="/api/auth", tags=["Authentication"]) # Added new auth router
+app.include_router(admin_router, prefix="/api/admin", tags=["Admin"])
+app.include_router(admin_dashboard_router, prefix="/api/admin/dashboard", tags=["Admin Dashboard"])
+app.include_router(merchant_store_profiles_router, prefix="/api/merchant", tags=["Merchant Store Profiles"])
+app.include_router(store_reviews_router, prefix="/api", tags=["Store Reviews"])
+app.include_router(user_profile_router, prefix="/api/users", tags=["User Profile"])
+app.include_router(ai_feedback_router, prefix="/api/ai", tags=["AI Agent Feedback"])
+app.include_router(vto_router, prefix="/api/vto", tags=["Virtual Try-On (VTO)"])
+app.include_router(pioneer_applications_router, prefix="/api/pioneer-program", tags=["Pioneer Program"])
+app.include_router(merchant_shipping_router, prefix="/api/merchant/shipping", tags=["Merchant Shipping Management"])
+app.include_router(merchant_tax_router, prefix="/api/merchant/tax", tags=["Merchant Tax Settings"])
+app.include_router(messaging_router, prefix="/api/messaging", tags=["Messaging Center"])
+app.include_router(global_search_router, prefix="/api/search", tags=["Global Search"])
+app.include_router(orders_placeholder_router, prefix="/api/orders", tags=["Orders (Placeholder)"])
+app.include_router(merchant_products_router, prefix="/api/merchant/products", tags=["Merchant - Product Management"])
+app.include_router(checkout_router, prefix="/api/checkout", tags=["Checkout Orchestration"])
+app.include_router(pioneer_portal_router, prefix="/api/pioneer/me", tags=["Pioneer Portal - Deliverables"])
+app.include_router(user_addresses_router, prefix="/api", tags=["User Addresses"]) # Mounted at /api/users/me/addresses due to router prefix
 
 
 def get_pydantic_schema(type_hint_value: typing.Any) -> typing.Optional[typing.Dict[str, typing.Any]]:
@@ -333,6 +384,8 @@ async def call_process_user_query_manual(input_data: UserQueryInput):
 # The path "/mcp_product_service" should match PRODUCT_SERVICE_AGENT_MOUNT_PATH in shopping_assistant_agent.py
 app.mount("/mcp_product_service", product_service_mcp)
 app.mount("/mcp_shopping_assistant_service", shopping_assistant_mcp_server)
+app.mount("/mcp_gift_recommendation", gift_recommendation_mcp_server)
+app.mount("/mcp_cj_dropshipping", cj_dropshipping_mcp_server) # Mount the new CJ Dropshipping agent
 
 
 @app.get("/", tags=["Root"], summary="Root path of the API")

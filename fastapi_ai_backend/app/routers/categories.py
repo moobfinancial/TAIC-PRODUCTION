@@ -12,7 +12,23 @@ router = APIRouter(
     # prefix="/api/categories" # Prefix will be set in main.py
 )
 
-@router.post("/", response_model=Category, status_code=status.HTTP_201_CREATED)
+@router.post(
+    "/",
+    response_model=Category,
+    status_code=status.HTTP_201_CREATED,
+    summary="Create New Category",
+    description="""
+Creates a new category for organizing products or services.
+- `name`: Name of the category (required).
+- `description`: Optional detailed description.
+- `parent_category_id`: Optional ID of a parent category to create a sub-category.
+- `is_active`: Defaults to `True`. Set to `False` to make the category hidden/unusable.
+- `category_type`: Either 'PRODUCT' (default) or 'SERVICE'.
+- `custom_attributes`: For 'SERVICE' categories, allows defining a schema for service-specific attributes (e.g., duration, location type). Must be null or empty for 'PRODUCT' categories.
+- Returns the created category details, including its new system-generated ID.
+- **Protected Endpoint:** (Typically requires admin or merchant rights with specific permissions).
+    """
+)
 async def create_category(category_in: CategoryCreate):
     conn = None
     try:
@@ -69,8 +85,20 @@ async def create_category(category_in: CategoryCreate):
         if conn:
             await release_db_connection(conn)
 
-@router.get("/", response_model=List[Category])
-async def list_categories(category_type: Optional[str] = None):
+@router.get(
+    "/",
+    response_model=List[Category],
+    summary="List All Categories",
+    description="""
+Retrieves a list of all categories.
+- Optionally filters by `category_type` ('PRODUCT' or 'SERVICE').
+- Categories are returned ordered by name.
+- **Protected Endpoint:** (Access level may vary; public for browsing, restricted for management).
+    """
+)
+async def list_categories(
+    category_type: Optional[str] = Query(default=None, pattern="^(PRODUCT|SERVICE)$", description="Filter categories by type ('PRODUCT' or 'SERVICE').")
+):
     conn = None
     try:
         conn = await get_db_connection()
@@ -94,7 +122,16 @@ async def list_categories(category_type: Optional[str] = None):
         if conn:
             await release_db_connection(conn)
 
-@router.get("/{category_id}", response_model=Category)
+@router.get(
+    "/{category_id}",
+    response_model=Category,
+    summary="Get Category by ID",
+    description="""
+Retrieves a specific category by its unique ID.
+- Returns a 404 error if no category with the given ID is found.
+- **Protected Endpoint:** (Access level may vary).
+    """
+)
 async def get_category(category_id: int):
     conn = None
     try:
@@ -113,7 +150,20 @@ async def get_category(category_id: int):
         if conn:
             await release_db_connection(conn)
 
-@router.put("/{category_id}", response_model=Category)
+@router.put(
+    "/{category_id}",
+    response_model=Category,
+    summary="Update Category",
+    description="""
+Updates an existing category's details.
+- Requires the `category_id` in the path.
+- The request body should contain only the fields to be updated.
+- Handles `custom_attributes` validation based on `category_type` (must be null/empty for 'PRODUCT' type).
+- Returns the complete updated category details.
+- Returns a 404 error if the category is not found.
+- **Protected Endpoint:** (Typically requires admin or specific merchant rights).
+    """
+)
 async def update_category(category_id: int, category_upd: CategoryUpdate):
     conn = None
     try:
@@ -187,7 +237,21 @@ async def update_category(category_id: int, category_upd: CategoryUpdate):
         if conn:
             await release_db_connection(conn)
 
-@router.delete("/{category_id}", status_code=status.HTTP_204_NO_CONTENT)
+@router.delete(
+    "/{category_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    summary="Delete Category",
+    description="""
+Deletes a specific category by its ID.
+- **Important:** The current database schema uses `ON DELETE SET NULL` for `parent_category_id` in the `categories` table and for `platform_category_id` in the `products` table. This means:
+    - Sub-categories of the deleted category will become top-level categories (their `parent_category_id` becomes NULL).
+    - Products assigned to the deleted category will have their `platform_category_id` set to NULL.
+- Consider business logic implications (e.g., preventing deletion if category is actively used by many products, or reassigning products/sub-categories). For this endpoint, a direct delete is performed as per schema rules.
+- Returns a 204 No Content response on successful deletion.
+- Returns a 404 error if the category is not found.
+- **Protected Endpoint:** (Typically requires admin rights).
+    """
+)
 async def delete_category(category_id: int):
     conn = None
     try:
