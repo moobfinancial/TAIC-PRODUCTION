@@ -38,6 +38,26 @@ from app.agents.gift_recommendation_agent import gift_recommendation_mcp_server
 from app.routers.ai_feedback import router as ai_feedback_router
 # Import the VTO router
 from app.routers.vto import router as vto_router
+# Import the Pioneer Applications router
+from app.routers.pioneer_applications import router as pioneer_applications_router
+# Import the Merchant Shipping router
+from app.routers.merchant_shipping import router as merchant_shipping_router
+# Import the Merchant Tax Settings router
+from app.routers.merchant_tax import router as merchant_tax_router
+# Import the Messaging router
+from app.routers.messaging import router as messaging_router
+# Import the Global Search router
+from app.routers.global_search import router as global_search_router
+# Import the Placeholder Orders router
+from app.routers.orders_placeholder import router as orders_placeholder_router
+# Import the Merchant Products router
+from app.routers.merchant_products import router as merchant_products_router
+# Import the Checkout router
+from app.routers.checkout import router as checkout_router
+# Import the Pioneer Portal router
+from app.routers.pioneer_portal import router as pioneer_portal_router
+# Import the User Addresses router
+from app.routers.addresses import router as user_addresses_router
 # Import the CJ Dropshipping agent MCP server
 from app.agents.cj_dropshipping_agent import cj_dropshipping_mcp_server
 from app.agents.shopping_assistant_agent import shopping_assistant_mcp_server, UserQueryInput, ShoppingAssistantResponse
@@ -92,9 +112,17 @@ app.include_router(merchant_store_profiles_router, prefix="/api/merchant", tags=
 app.include_router(store_reviews_router, prefix="/api", tags=["Store Reviews"])
 app.include_router(user_profile_router, prefix="/api/users", tags=["User Profile"])
 app.include_router(ai_feedback_router, prefix="/api/ai", tags=["AI Agent Feedback"])
-app.include_router(vto_router, prefix="/api/vto", tags=["Virtual Try-On (VTO)"]) # Add VTO router
-
-
+app.include_router(vto_router, prefix="/api/vto", tags=["Virtual Try-On (VTO)"])
+app.include_router(pioneer_applications_router, prefix="/api/pioneer-program", tags=["Pioneer Program"])
+app.include_router(merchant_shipping_router, prefix="/api/merchant/shipping", tags=["Merchant Shipping Management"])
+app.include_router(merchant_tax_router, prefix="/api/merchant/tax", tags=["Merchant Tax Settings"])
+app.include_router(messaging_router, prefix="/api/messaging", tags=["Messaging Center"])
+app.include_router(global_search_router, prefix="/api/search", tags=["Global Search"])
+app.include_router(orders_placeholder_router, prefix="/api/orders", tags=["Orders (Placeholder)"])
+app.include_router(merchant_products_router, prefix="/api/merchant/products", tags=["Merchant - Product Management"])
+app.include_router(checkout_router, prefix="/api/checkout", tags=["Checkout Orchestration"])
+app.include_router(pioneer_portal_router, prefix="/api/pioneer/me", tags=["Pioneer Portal - Deliverables"])
+app.include_router(user_addresses_router, prefix="/api", tags=["User Addresses"]) # Mounted at /api/users/me/addresses due to router prefix
 
 
 def get_pydantic_schema(type_hint_value: typing.Any) -> typing.Optional[typing.Dict[str, typing.Any]]:

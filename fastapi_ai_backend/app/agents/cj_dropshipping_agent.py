@@ -314,7 +314,7 @@ async def get_cj_product_stock(ctx: ToolContext, request_data: CJProductStockReq
     output_model=CJProductShippingInfo
 )
 async def get_cj_product_shipping_info(ctx: ToolContext, request_data: CJProductShippingRequest) -> CJProductShippingInfo:
-    logger.info(f"Received shipping info request for CJ Product ID: {request_data.cj_product_id}, SKU: {request_data.sku}, Country: {request_data.destination_country}")
+    logger.info(f"Received old shipping info request for CJ Product ID: {request_data.cj_product_id}, SKU: {request_data.sku}, Country: {request_data.destination_country}")
 
     conn: Optional[asyncpg.Connection] = None
     try:
@@ -458,3 +458,173 @@ async def get_cj_product_shipping_info(ctx: ToolContext, request_data: CJProduct
 #     #     finally:
 #     #         await close_db_pool()
 #     # asyncio.run(main_test())
+
+
+# --- New Tool: Get Live CJ Product Update ---
+import httpx # For making async HTTP requests to Next.js API
+import os   # For environment variables
+
+# Configuration for Next.js API
+NEXTJS_INTERNAL_APP_URL = os.getenv("NEXTJS_INTERNAL_APP_URL", "http://localhost:3000")
+
+
+@cj_dropshipping_mcp_server.tool(
+    name="get_live_cj_product_update",
+    description="Fetches live product details for a specific CJ Dropshipping product ID from the Next.js API, updates the local cj_products database with this live data, and returns the standardized Product model.",
+    input_model=CJProductDetailRequest, # Reuses the same input model as get_cj_product_details
+    output_model=Product
+)
+async def get_live_cj_product_update(ctx: ToolContext, request_data: CJProductDetailRequest) -> Product:
+    cj_product_id = request_data.cj_product_id
+    logger.info(f"Initiating live update for CJ Product ID: {cj_product_id}")
+
+    # 1. Call Next.js API to get live data
+    live_cj_data: Optional[Dict[str, Any]] = None
+    nextjs_api_url = f"{NEXTJS_INTERNAL_APP_URL}/api/cj/live-product-details?pid={cj_product_id}"
+
+    try:
+        async with httpx.AsyncClient() as client:
+            logger.info(f"Calling Next.js API for live CJ data: {nextjs_api_url}")
+            response = await client.get(nextjs_api_url, timeout=30.0) # 30 second timeout
+            response.raise_for_status() # Raises HTTPStatusError for 4xx/5xx responses
+            live_cj_data = response.json()
+            logger.info(f"Successfully fetched live data for CJ Product ID {cj_product_id} from Next.js API.")
+            # logger.debug(f"Live CJ Data received: {json.dumps(live_cj_data, indent=2)}")
+    except httpx.HTTPStatusError as e:
+        logger.error(f"HTTP error calling Next.js API for CJ Product {cj_product_id}: {e.response.status_code} - {e.response.text}")
+        raise HTTPException(status_code=e.response.status_code, detail=f"Failed to fetch live data from Next.js API: {e.response.text}")
+    except httpx.RequestError as e:
+        logger.error(f"Request error calling Next.js API for CJ Product {cj_product_id}: {e}")
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=f"Could not connect to Next.js API to fetch live data: {str(e)}")
+    except json.JSONDecodeError as e:
+        logger.error(f"Failed to decode JSON response from Next.js API for CJ Product {cj_product_id}: {e}")
+        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail="Invalid JSON response from Next.js API for live data.")
+    except Exception as e:
+        logger.error(f"Unexpected error fetching live data for CJ Product {cj_product_id} from Next.js API: {type(e).__name__} - {e}")
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"An unexpected error occurred while fetching live data: {str(e)}")
+
+    if not live_cj_data:
+        logger.error(f"No live data returned from Next.js API for CJ Product ID {cj_product_id}, though no HTTP error was raised.")
+        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail="Empty response from Next.js API for live data.")
+
+    # 2. Update Local Database (cj_products table)
+    conn: Optional[asyncpg.Connection] = None
+    try:
+        conn = await get_db_connection()
+
+        # --- Data Mapping from Live CJ Response to cj_products columns ---
+        # This mapping needs to be robust and align with the actual structure of `live_cj_data`
+        # and the columns in `cj_products`.
+        # Example mapping (adjust based on actual CJ API response structure):
+
+        # Assuming live_cj_data directly mirrors the structure CJ API provides for a single product query.
+        # This structure might include keys like:
+        # 'productName', 'productSku' (often same as cj_product_id for main product),
+        # 'productImage', 'productWeight', 'productUnit', 'productType' (category name),
+        # 'sellPrice', 'productPrice' (likely cj_base_price),
+        # 'description', 'variants' (list of variant objects), etc.
+
+        # For `cj_products` table, we need to map to:
+        # cj_product_data_json, display_name, display_description, selling_price, cj_base_price,
+        # image_url, additional_image_urls_json, variants_json, etc.
+
+        # The full `live_cj_data` itself should be stored in `cj_product_data_json`.
+        cj_product_data_json_to_store = live_cj_data
+
+        display_name = live_cj_data.get('productName', cj_product_id) # Fallback to ID if name missing
+
+        # Description might be in a nested field or a simple string
+        description_html = live_cj_data.get('description') # Often HTML
+        display_description = description_html # Store HTML as is, or sanitize/convert to text if needed elsewhere
+
+        selling_price = live_cj_data.get('sellPrice') # Or 'productDeclareValue' or 'productPriceValue', depends on CJ context
+        if selling_price is None: selling_price = live_cj_data.get('productPrice') # Fallback
+
+        cj_base_price = live_cj_data.get('productPrice') # Or 'costPrice'
+
+        image_url = live_cj_data.get('productImage')
+
+        # Additional images might be in a list or a specific field.
+        # Example: live_cj_data.get('imagesList') or similar. For now, assume it's a simple list if present.
+        additional_image_urls_json = live_cj_data.get('imagesList') # Assuming this key holds a list of image URLs
+
+        # Variants: CJ API usually returns variants in a list, e.g., live_cj_data.get('variants')
+        # This list needs to be stored as JSONB in `variants_json`.
+        variants_json_to_store = live_cj_data.get('variants')
+        if variants_json_to_store is not None and not isinstance(variants_json_to_store, (list, dict)):
+            logger.warning(f"Live CJ data for {cj_product_id} has 'variants' field but it's not a list/dict. Type: {type(variants_json_to_store)}. Storing as null.")
+            variants_json_to_store = None
+        elif isinstance(variants_json_to_store, list) and not variants_json_to_store: # Empty list
+            variants_json_to_store = None # Store as NULL if empty list
+
+
+        # is_active: This might not come from CJ live data, or could be inferred.
+        # For now, let's assume we keep the existing is_active status unless explicitly changed.
+        # platform_category_id: CJ's category name ('productType') needs mapping to our internal category ID.
+        # This is complex. For now, we might not update it from live data unless a mapping service exists.
+        # Let's keep existing platform_category_id for now.
+
+        update_query = """
+            UPDATE cj_products SET
+                cj_product_data_json = $1,
+                display_name = $2,
+                display_description = $3,
+                selling_price = $4,
+                cj_base_price = $5,
+                image_url = $6,
+                additional_image_urls_json = $7,
+                variants_json = $8,
+                updated_at = NOW()
+            WHERE cj_product_id = $9
+        """
+
+        # Convert numeric types carefully
+        try:
+            db_selling_price = float(selling_price) if selling_price is not None else None
+            db_cj_base_price = float(cj_base_price) if cj_base_price is not None else None
+        except (ValueError, TypeError) as e:
+            logger.error(f"Error converting prices for CJ Product ID {cj_product_id} during live update: {e}. Prices: sell={selling_price}, base={cj_base_price}")
+            raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=f"Invalid price format in live CJ data for {cj_product_id}.")
+
+        result = await conn.execute(
+            update_query,
+            json.dumps(cj_product_data_json_to_store) if cj_product_data_json_to_store is not None else None,
+            display_name,
+            display_description,
+            db_selling_price,
+            db_cj_base_price,
+            image_url,
+            json.dumps(additional_image_urls_json) if additional_image_urls_json is not None else None,
+            json.dumps(variants_json_to_store) if variants_json_to_store is not None else None,
+            cj_product_id
+        )
+
+        if result == "UPDATE 0":
+            logger.warning(f"CJ Product ID {cj_product_id} not found in local cj_products table for live update, though live data was fetched.")
+            # This case is unlikely if the ID came from our system, but good to log.
+            # We could choose to insert it here if that's desired behavior for new CJ products found via live API.
+            # For now, assuming it must exist if we're "updating" it.
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Product {cj_product_id} not found in local DB for update after fetching live data.")
+
+        logger.info(f"Successfully updated local cj_products table for CJ Product ID: {cj_product_id} with live data.")
+
+    except HTTPException:
+        raise
+    except asyncpg.exceptions.UndefinedTableError:
+        logger.critical("CRITICAL: 'cj_products' table does not exist for live update.")
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="Product data system is temporarily unavailable for live update.")
+    except Exception as e:
+        logger.error(f"Unexpected error updating local DB for CJ Product {cj_product_id}: {type(e).__name__} - {e}")
+        import traceback
+        logger.error(traceback.format_exc())
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"Failed to update local product data: {str(e)}")
+    finally:
+        if conn:
+            await release_db_connection(conn) # Ensure connection is released
+
+    # 3. Map to Standard Product Model (re-fetch or use updated live_cj_data to map)
+    # For consistency and to reflect any DB triggers/defaults, re-fetching is often safer.
+    # The `get_cj_product_details` tool already has the logic to map from `cj_products` row to `Product`.
+    # We can call it here.
+    logger.info(f"Re-fetching product details for CJ Product ID {cj_product_id} after live update to map to Product model.")
+    return await get_cj_product_details(ctx, request_data) # Pass existing context and original request

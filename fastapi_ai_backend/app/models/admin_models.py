@@ -1,15 +1,22 @@
 from typing import Optional, List, Dict, Any
-from pydantic import BaseModel, Field, validator, RootModel
+from pydantic import BaseModel, Field, validator, RootModel, PositiveFloat
 from datetime import datetime
+from decimal import Decimal # For cashback_percentage validation if needed
 
 # Re-using the existing Product model for responses, as it includes variants.
 # If admin-specific views of Product are needed later, ProductForAdminReview can be a distinct model.
 # from .product import Product as ProductForAdminReview
 
 class ProductReviewAction(BaseModel):
-    """Schema for an administrator's action on a product review."""
-    new_status: str = Field(..., description="The new approval status to set for the product (e.g., 'approved', 'rejected').")
+    """Schema for an administrator's action on a product review, including setting cashback."""
+    new_status: str = Field(..., description="The new approval status to set for the product (e.g., 'approved', 'rejected', 'pending').")
     admin_notes: Optional[str] = Field(default=None, description="Optional notes from the administrator regarding the review decision.")
+    cashback_percentage: Optional[PositiveFloat] = Field(
+        default=None,
+        description="Cashback percentage for the product (e.g., 5.00 for 5%). Set to 0 to remove cashback if previously set, or null to make no change. Max 99.99.",
+        ge=0.0, # Allow 0
+        le=99.99 # Max cashback, can be adjusted
+    )
 
     @validator('new_status')
     def status_must_be_valid(cls, value):
@@ -23,7 +30,8 @@ class ProductReviewAction(BaseModel):
         json_schema_extra = {
             "example": {
                 "new_status": "approved",
-                "admin_notes": "Product looks good and meets all criteria."
+                "admin_notes": "Product looks good and meets all criteria.",
+                "cashback_percentage": 5.00
             }
         }
 

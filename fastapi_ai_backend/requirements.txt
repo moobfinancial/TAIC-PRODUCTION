@@ -11,3 +11,4 @@ python-slugify
 passlib[bcrypt]
 python-jose[cryptography]
 eth-account
+resend
