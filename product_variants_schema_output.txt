@@ -1,0 +1,30 @@
+                                         Table "public.product_variants"
+     Column     |           Type           | Collation | Nullable |                   Default                    
+----------------+--------------------------+-----------+----------+----------------------------------------------
+ id             | integer                  |           | not null | nextval('product_variants_id_seq'::regclass)
+ sku            | character varying(255)   |           | not null | 
+ name_override  | character varying(512)   |           |          | 
+ price          | numeric(10,2)            |           | not null | 
+ image_url      | character varying(255)   |           |          | 
+ stock_quantity | integer                  |           | not null | 0
+ weight_grams   | integer                  |           |          | 
+ attributes     | jsonb                    |           |          | 
+ is_active      | boolean                  |           |          | true
+ cj_variant_id  | character varying(255)   |           |          | 
+ created_at     | timestamp with time zone |           |          | CURRENT_TIMESTAMP
+ updated_at     | timestamp with time zone |           |          | CURRENT_TIMESTAMP
+ product_id     | integer                  |           | not null | 
+Indexes:
+    "product_variants_pkey" PRIMARY KEY, btree (id)
+    "idx_product_variants_attributes" gin (attributes)
+    "idx_product_variants_cj_variant_id" btree (cj_variant_id)
+    "idx_product_variants_sku" btree (sku)
+    "product_variants_cj_variant_id_key" UNIQUE CONSTRAINT, btree (cj_variant_id)
+    "product_variants_sku_key" UNIQUE CONSTRAINT, btree (sku)
+Foreign-key constraints:
+    "fk_product_variants_product" FOREIGN KEY (product_id) REFERENCES products(id) ON DELETE CASCADE
+Referenced by:
+    TABLE "products" CONSTRAINT "fk_products_default_variant" FOREIGN KEY (default_variant_id) REFERENCES product_variants(id) ON DELETE SET NULL
+Triggers:
+    update_product_variants_updated_at BEFORE UPDATE ON product_variants FOR EACH ROW EXECUTE FUNCTION update_updated_at_column()
+

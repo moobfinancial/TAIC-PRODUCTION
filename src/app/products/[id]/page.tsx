@@ -6,7 +6,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { useRouter } from 'next/navigation';
 import { storage } from '@/lib/firebase';
-import type { Product } from '@/lib/types';
+import type { Product, ProductVariant } from '@/lib/types';
 import Image from 'next/image';
 import Link from 'next/link';
 import { Button } from '@/components/ui/button';
@@ -47,6 +47,134 @@ export default function ProductDetailPage() {
   const [translatedName, setTranslatedName] = useState<string>('');
   const [translatedDescription, setTranslatedDescription] = useState<string>('');
 
+  const [currentPrice, setCurrentPrice] = useState<number | null>(null);
+
+  // Helper function to validate HTTP/HTTPS URLs
+  const isValidHttpUrl = (stringToValidate: string | undefined | null): stringToValidate is string => {
+    if (!stringToValidate || typeof stringToValidate !== 'string' || stringToValidate.trim() === '') {
+      return false;
+    }
+    try {
+      const url = new URL(stringToValidate);
+      return url.protocol === "http:" || url.protocol === "https:" || url.protocol === "firebase:"; // Added firebase for Firebase Storage URLs
+    } catch (_) {
+      return false;
+    }
+  };
+
+  const [attributeOptions, setAttributeOptions] = useState<Record<string, string[]>>({});
+  const [selectedAttributes, setSelectedAttributes] = useState<Record<string, string>>({});
+
+  // Effect to initialize attributes and selected variant when product loads
+  useEffect(() => {
+    if (product && product.variants && product.variants.length > 0) {
+      const options: Record<string, Set<string>> = {};
+      product.variants.forEach((variant: ProductVariant) => {
+        if (variant.attributes && typeof variant.attributes === 'object') {
+          for (const key in variant.attributes) {
+          if (!options[key]) {
+            options[key] = new Set();
+          }
+            options[key].add(String(variant.attributes[key]));
+          }
+        } // End if variant.attributes is an object
+      });
+      const finalOptions: Record<string, string[]> = {};
+      for (const key in options) {
+        finalOptions[key] = Array.from(options[key]).sort(); // Sort options for consistent display
+      }
+      setAttributeOptions(finalOptions);
+
+      // Initialize selectedAttributes with the first option for each attribute
+      // Or, ideally, from a default variant if specified (e.g., product.default_variant_id)
+      const initialAttributes: Record<string, string> = {};
+      let firstVariantAttributes = product.variants[0].attributes;
+      // If product.default_variant_id is available and corresponds to a variant in the list, use its attributes.
+      // This logic can be enhanced if default_variant_id directly gives attributes or if we match by variant ID.
+      // For now, using attributes of the first variant as a simple default, or from product's initial state if no variants.
+      if (Object.keys(finalOptions).length > 0) {
+        Object.keys(finalOptions).forEach(key => {
+            // Attempt to use attributes from the first variant if they exist for this key
+            if (firstVariantAttributes && firstVariantAttributes[key]) {
+                initialAttributes[key] = String(firstVariantAttributes[key]);
+            } else if (finalOptions[key].length > 0) {
+                // Fallback to the first available option for this attribute key
+                initialAttributes[key] = String(finalOptions[key][0]);
+            }
+        });
+      }
+      setSelectedAttributes(initialAttributes);
+
+      // Initial image and price are already set by the API to reflect the default variant
+      if (isValidHttpUrl(product.imageUrl)) {
+        setSelectedImage(product.imageUrl);
+      } else if (allImages.length > 0) { // allImages is now pre-filtered
+        setSelectedImage(allImages[0]);
+      } else {
+        setSelectedImage(''); // Fallback to empty if no valid images
+      }
+      setCurrentPrice(product.price);
+
+    } else {
+      setAttributeOptions({});
+      setSelectedAttributes({});
+      if (product) { // Product exists but no variants
+        if (isValidHttpUrl(product.imageUrl)) {
+          setSelectedImage(product.imageUrl);
+        } else if (allImages.length > 0) { // allImages is now pre-filtered
+          setSelectedImage(allImages[0]);
+        } else {
+          setSelectedImage('');
+        }
+        setCurrentPrice(product.price);
+      }
+    }
+  }, [product]);
+
+  // Effect to update display (image, price) when selectedAttributes change
+  useEffect(() => {
+    if (product && product.variants && product.variants.length > 0 && Object.keys(selectedAttributes).length > 0) {
+      const matchedVariant = product.variants.find((variant: ProductVariant) => {
+        const attributes = variant.attributes;
+        if (!attributes || typeof attributes !== 'object') return false;
+        return Object.keys(selectedAttributes).every(key => {
+          // Ensure the variant has the attribute and it matches the selected value
+          return attributes.hasOwnProperty(key) && attributes[key] === selectedAttributes[key];
+        });
+      });
+
+      if (matchedVariant) {
+        let newSelectedImageCandidate = '';
+        if (isValidHttpUrl(matchedVariant.imageUrl)) {
+          newSelectedImageCandidate = matchedVariant.imageUrl;
+        } else if (isValidHttpUrl(product.imageUrl)) {
+          newSelectedImageCandidate = product.imageUrl;
+        } else if (allImages.length > 0) { // allImages is pre-filtered
+          newSelectedImageCandidate = allImages[0];
+        }
+        setSelectedImage(newSelectedImageCandidate);
+        setCurrentPrice(matchedVariant.price !== undefined ? matchedVariant.price : product.price);
+      } else {
+        // If no matching variant, reset to product's main image or first available from allImages
+        if (isValidHttpUrl(product.imageUrl)) {
+          setSelectedImage(product.imageUrl);
+        } else if (allImages.length > 0) { // allImages is pre-filtered
+          setSelectedImage(allImages[0]);
+        } else {
+          setSelectedImage('');
+        }
+        setCurrentPrice(product.price);
+      }
+    }
+  }, [selectedAttributes, product]);
+
+  const handleAttributeChange = (attrName: string, value: string) => {
+    setSelectedAttributes(prev => ({
+      ...prev,
+      [attrName]: value,
+    }));
+  };
+
   const currentId = params?.id;
 
   useEffect(() => {
@@ -63,7 +191,7 @@ export default function ProductDetailPage() {
       
       try {
         // Fetch from the CJ products API
-        const response = await fetch(`/api/products/cj/${currentId}`);
+        const response = await fetch(`/api/storefront/products/${currentId}`);
         
         if (response.ok) {
           const data = await response.json();
@@ -166,12 +294,51 @@ export default function ProductDetailPage() {
   };
   
   const handleAddToCart = () => {
-    addToCart(product);
-    toast({
-      title: "Added to cart",
-      description: `${product.name} has been added to your cart.`
-    });
-  };
+    if (!product) return;
+
+    let itemToAdd: Product | null = null; 
+
+    if (product.variants && product.variants.length > 0 && Object.keys(selectedAttributes).length > 0) {
+      const matchedVariant = product.variants.find((variant: ProductVariant) => {
+        const attributes = variant.attributes;
+        if (!attributes || typeof attributes !== 'object') return false;
+        return Object.keys(selectedAttributes).every(key => attributes.hasOwnProperty(key) && attributes[key] === selectedAttributes[key]);
+      }
+      );
+
+      if (matchedVariant) {
+        itemToAdd = {
+          ...product, // Spread base product info
+          id: matchedVariant.id, // Override with variant ID
+          name: matchedVariant.name || product.name, 
+          price: matchedVariant.price ?? product.price,
+          imageUrl: matchedVariant.imageUrl || product.imageUrl,
+          sku: matchedVariant.sku, 
+          // Clear or adjust other fields like variants, additionalImages for the cart item
+          variants: undefined, // A cart item is a single variant, not a list of them
+          additionalImages: matchedVariant.imageUrl ? [matchedVariant.imageUrl] : [],
+        };
+      }
+    } else if (!product.variants || product.variants.length === 0) {
+      // Product has no variants, add the base product itself
+      itemToAdd = product;
+    }
+
+    if (itemToAdd) {
+      addToCart(itemToAdd);
+      toast({
+        title: "Added to cart",
+        description: `${itemToAdd.name} has been added to your cart.`
+      });
+    } else {
+      // Optional: Notify user if no item could be added (e.g., variant selection issue)
+      toast({
+        title: "Unable to Add to Cart",
+        description: "Please ensure product options are correctly selected.",
+        variant: "destructive"
+      });
+    }
+  }; // End of handleAddToCart
 
   const handleVirtualTryOn = async () => {
     if (!user || !user.profileImageUrl) {
@@ -340,8 +507,11 @@ export default function ProductDetailPage() {
     return canShow;
   };
 
-  // Combine main image and additional images for the gallery
-  const allImages = product ? [product.imageUrl, ...(product.additionalImages || [])] : [];
+  // Combine main image and additional images for the gallery, ensuring they are valid URLs
+  const allImages = product
+    ? [product.imageUrl, ...(product.additionalImages || [])]
+        .filter(isValidHttpUrl)
+    : [];
 
   return (
     <div className="container mx-auto py-8 px-4">
@@ -358,14 +528,15 @@ export default function ProductDetailPage() {
         {/* Main Product Image */}
         <div className="space-y-4">
           <div className="relative aspect-[4/3] bg-card rounded-lg shadow-xl overflow-hidden border">
-            {selectedImage ? (
+            {/* Cascade Debugging: Log selectedImage before main image render */}
+            {isValidHttpUrl(selectedImage) ? (
               <Image
                 src={selectedImage}
                 alt={product?.name || 'Product image'}
                 fill
                 sizes="(max-width: 640px) 100vw, (max-width: 1024px) 50vw, 33vw"
                 className="object-contain"
-                priority
+
               />
             ) : (
               <div className="flex items-center justify-center h-full">
@@ -385,15 +556,23 @@ export default function ProductDetailPage() {
                     "relative h-20 w-20 rounded border cursor-pointer transition-all",
                     selectedImage === img ? "border-primary border-2" : "border-gray-200 hover:border-gray-300"
                   )}
-                  onClick={() => setSelectedImage(img)}
+                  onClick={() => {
+                    if (isValidHttpUrl(img)) setSelectedImage(img);
+                  }}
                 >
-                  <Image
-                    src={img}
-                    alt={`${product?.name || 'Product'} - view ${index + 1}`}
-                    fill
-                    sizes="80px"
-                    className="object-contain p-1"
-                  />
+                  {isValidHttpUrl(img) ? (
+                    <Image
+                      src={img}
+                      alt={`${product?.name || 'Product'} - view ${index + 1}`}
+                      fill
+                      sizes="80px"
+                      className="object-contain p-1"
+                    />
+                  ) : (
+                    <div className="flex items-center justify-center h-full w-full bg-muted">
+                      <AlertCircle className="h-6 w-6 text-muted-foreground" />
+                    </div>
+                  )}
                 </div>
               ))}
             </div>
@@ -414,9 +593,7 @@ export default function ProductDetailPage() {
           <div className="space-y-2">
             <div className="flex items-center">
               <Gem className="h-6 w-6 text-primary mr-2" />
-              <span className="text-2xl font-bold">
-                {product?.price?.toLocaleString()} TAIC
-              </span>
+              <span className="text-3xl font-bold text-primary">${currentPrice !== null ? currentPrice.toFixed(2) : 'N/A'}</span>
               {product?.cashbackPercentage && product.cashbackPercentage > 0 && (
                 <span className="ml-2 px-2 py-0.5 bg-green-100 text-green-800 text-xs rounded-full">
                   {product.cashbackPercentage}% Cashback
@@ -435,13 +612,31 @@ export default function ProductDetailPage() {
             )}
           </div>
 
-          {/* Description */}
-          <div>
-            <h2 className="text-xl font-semibold mb-2">Description</h2>
-            <p className="text-muted-foreground">
-              {translatedDescription.trim() || 'No description available for this product.'}
-            </p>
-          </div>
+          {/* Variant Selectors */}
+          {Object.keys(attributeOptions).length > 0 && (
+            <div className="my-6 space-y-4">
+              {Object.entries(attributeOptions).map(([attrName, values]) => (
+                <div key={attrName} className="flex items-center space-x-3">
+                  <label htmlFor={`select-${attrName}`} className="text-sm font-medium text-gray-700 capitalize">
+                    {attrName}:
+                  </label>
+                  <select
+                    id={`select-${attrName}`}
+                    name={attrName}
+                    value={selectedAttributes[attrName] || ''}
+                    onChange={(e) => handleAttributeChange(attrName, e.target.value)}
+                    className="block w-full max-w-xs pl-3 pr-10 py-2 text-base border-gray-300 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm rounded-md shadow-sm"
+                  >
+                    {values.map(value => (
+                      <option key={value} value={value}>
+                        {value}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              ))}
+            </div>
+          )}
 
           {/* Action Buttons */}
           <div className="pt-6 space-y-3">
@@ -530,12 +725,34 @@ export default function ProductDetailPage() {
                   <pre className="whitespace-pre-wrap break-all">{tryOnResult.generatedTextPrompt || "No text prompt was generated."}</pre>
                 </div>
                 <div className="border rounded-md overflow-hidden aspect-square relative">
-                  <Image
-                    src={tryOnResult.generatedImageUrl || product.imageUrl} // Fallback to product image if URL is somehow empty
-                    alt="Virtual Try-On Result (Placeholder)"
-                    fill
-                    className="object-contain"
-                  />
+                  {(() => {
+                    const tryOnGeneratedUrl = tryOnResult?.generatedImageUrl;
+                    const productMainImageUrl = product?.imageUrl;
+                    let displayUrl = '';
+
+                    if (isValidHttpUrl(tryOnGeneratedUrl)) {
+                      displayUrl = tryOnGeneratedUrl;
+                    } else if (isValidHttpUrl(productMainImageUrl)) {
+                      displayUrl = productMainImageUrl;
+                    }
+                    
+                    /* Cascade Debugging: Log try-on image URLs */
+                    console.log('[Try-On Modal Image Check] tryOnGeneratedUrl:', tryOnGeneratedUrl, 'productMainImageUrl:', productMainImageUrl, 'displayUrl:', displayUrl, 'isValid:', isValidHttpUrl(displayUrl));
+
+                    return isValidHttpUrl(displayUrl) ? (
+                      <Image
+                        src={displayUrl}
+                        alt="Virtual Try-On Result"
+                        fill
+                        className="object-contain"
+                      />
+                    ) : (
+                      <div className="flex flex-col items-center justify-center h-full">
+                        <AlertCircle className="h-10 w-10 text-muted-foreground mb-2" />
+                        <p className="text-sm text-muted-foreground text-center px-4">Image not available for try-on.</p>
+                      </div>
+                    );
+                  })()}
                 </div>
                  <p className="text-xs text-center text-muted-foreground">
                     (Placeholder image currently shown. Actual image generation is pending model integration.)
@@ -552,3 +769,4 @@ export default function ProductDetailPage() {
     </div>
   );
 }
+

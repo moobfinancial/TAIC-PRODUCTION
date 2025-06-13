@@ -376,9 +376,12 @@ export default function BrowseCjProductsPage() {
     });
   };
 
-const handleImportProduct = async () => { // Removed (e: FormEvent) and e.preventDefault() as it's called directly now
-  console.log('[handleImportProduct] Triggered. Modal state:', JSON.stringify(importModal, null, 2));
-
+const handleImportProduct = async (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    console.log('[handleImportProduct] Function called. Raw importModal:', importModal);
+    if (importModal) {
+      console.log('[handleImportProduct] Stringified importModal:', JSON.stringify(importModal, null, 2));
+    }
   if (!adminApiKey || adminAuthLoading) { // Added check for adminApiKey
     toast({
       title: "Authentication Error",
@@ -387,6 +390,17 @@ const handleImportProduct = async () => { // Removed (e: FormEvent) and e.preven
     });
     return;
   }
+
+  if (!importModal) {
+    console.error('[handleImportProduct] CRITICAL: importModal object itself is null/undefined.');
+    toast({
+      title: "Critical Internal Error",
+      description: "Import data structure is unexpectedly missing. Please refresh the page and try again.",
+      variant: "destructive",
+    });
+    return;
+  }
+  console.log('[handleImportProduct] importModal object confirmed to exist.');
 
   if (!importModal.productToImport) {
     console.error('[handleImportProduct] Validation Error: productToImport is null.');
@@ -418,11 +432,19 @@ const handleImportProduct = async () => { // Removed (e: FormEvent) and e.preven
       return;
   }
   
+  console.log('[handleImportProduct] All pre-try validations passed. Setting isImporting to true.');
   setIsImporting(true); 
   try {
+    console.log('[handleImportProduct] Entering try block.');
+    console.log('[handleImportProduct] platformCategoryId (raw):', importModal.platformCategoryId);
     const platformCategoryIdNum = parseInt(importModal.platformCategoryId, 10);
-    const sellingPriceNum = parseFloat(importModal.sellingPrice);
+    console.log('[handleImportProduct] platformCategoryIdNum (parsed):', platformCategoryIdNum);
 
+    console.log('[handleImportProduct] sellingPrice (raw):', importModal.sellingPrice);
+    const sellingPriceNum = parseFloat(importModal.sellingPrice);
+    console.log('[handleImportProduct] sellingPriceNum (parsed):', sellingPriceNum);
+
+    console.log('[handleImportProduct] Before platformCategoryIdNum validation.');
     if (isNaN(platformCategoryIdNum) || platformCategoryIdNum <= 0) {
       console.error('[handleImportProduct] Validation Error: Parsed platformCategoryId is invalid.');
       toast({
@@ -433,6 +455,7 @@ const handleImportProduct = async () => { // Removed (e: FormEvent) and e.preven
       throw new Error("Platform category ID must be a positive number."); // This will be caught by the main catch
     }
 
+    console.log('[handleImportProduct] Before sellingPriceNum validation.');
     if (isNaN(sellingPriceNum) || sellingPriceNum < 0) { 
       console.error('[handleImportProduct] Validation Error: Parsed sellingPrice is invalid.');
       toast({
@@ -443,6 +466,7 @@ const handleImportProduct = async () => { // Removed (e: FormEvent) and e.preven
       throw new Error("Selling price must be a non-negative number."); // This will be caught by the main catch
     }
 
+    console.log('[handleImportProduct] Before payload construction. productToImport:', importModal.productToImport);
     const payload = {
       cjProductId: importModal.productToImport.pid,
       platform_category_id: platformCategoryIdNum,
@@ -451,9 +475,12 @@ const handleImportProduct = async () => { // Removed (e: FormEvent) and e.preven
       display_description: importModal.displayDescription || '', 
     };
 
+    console.log('[handleImportProduct] After payload construction, before apiUrl.');
+    const apiUrl = `${window.location.origin}/api/admin/cj/import-product`;
+    console.log(`[handleImportProduct] Attempting to fetch: ${apiUrl}`);
     console.log('[handleImportProduct] Sending import request with payload:', payload);
     
-    const response = await fetch('/api/admin/cj/import-product', {
+    const response = await fetch(apiUrl, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',

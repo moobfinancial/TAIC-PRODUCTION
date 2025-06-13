@@ -57,11 +57,11 @@ export default function ProductsPage() {
       setHasNextPage(data.pagination.hasNextPage);
       setHasPreviousPage(data.pagination.hasPreviousPage);
       
-      // Extract unique categories from products
+            // Extract unique categories from products
       const uniqueCategories = new Set<string>();
       uniqueCategories.add('all');
       data.products.forEach((product: any) => {
-        if (product.category) {
+        if (product.category) { // Assuming product object has a 'category' string field
           uniqueCategories.add(product.category);
         }
       });

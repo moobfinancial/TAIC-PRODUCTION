@@ -53,7 +53,9 @@ export async function POST(request: NextRequest) {
   let validatedData: z.infer<typeof ImportProductInputSchema> | null = null;
   
   try {
-    const body = await request.json();
+    const rawBody = await request.text();
+    console.log('[Supplier Import] Raw request body:', rawBody);
+    const body = JSON.parse(rawBody);
     const validationResult = ImportProductInputSchema.safeParse(body);
 
     if (!validationResult.success) {

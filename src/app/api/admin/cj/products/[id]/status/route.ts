@@ -22,15 +22,16 @@ const UpdateStatusInputSchema = z.object({
 });
 
 
-export async function PUT(request: NextRequest, context: { params: { id: string } }) {
+export async function PUT(request: NextRequest, { params }: { params: { id: string } }) {
   const apiKey = request.headers.get('X-Admin-API-Key');
   const authResult = await validateAdminApiKey(apiKey);
   if (!authResult.valid) {
     return NextResponse.json({ success: false, message: 'Invalid or missing Admin API Key.' }, { status: 401 });
   }
 
-  const { params } = context;
-  const platformProductId = parseInt(params.id, 10);
+  // In Next.js App Router, params should be awaited before use
+  const resolvedParams = await Promise.resolve(params);
+  const platformProductId = parseInt(resolvedParams.id, 10);
   if (isNaN(platformProductId)) {
     return NextResponse.json({ error: 'Invalid product ID format.' }, { status: 400 });
   }

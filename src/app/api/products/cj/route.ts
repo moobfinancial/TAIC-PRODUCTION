@@ -56,7 +56,7 @@ export async function GET(request: NextRequest) {
 
     // Add category filter if provided
     if (category && category !== 'all') {
-      query += ` AND pc.name = $${paramIndex}`;
+      query += ` AND c.name = $${paramIndex}`;
       queryParams.push(category);
       paramIndex++;
     }
@@ -104,7 +104,7 @@ export async function GET(request: NextRequest) {
     }
 
     if (category && category !== 'all') {
-      countQuery += ` AND pc.name = $${countParamIndex}`;
+      countQuery += ` AND c.name = $${countParamIndex}`;
       countParams.push(category);
       countParamIndex++;
     }

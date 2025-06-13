@@ -6,6 +6,7 @@ export interface Product {
   base_price?: number | string; // Original cash price
   imageUrl: string;
   category: string;
+  sku?: string; // Added SKU for base product
   dataAiHint?: string;
   additionalImages?: string[];
   variants?: ProductVariant[];
@@ -14,9 +15,13 @@ export interface Product {
 
 export interface ProductVariant {
   id: string;
-  name: string;
-  price?: number;
-  options?: Record<string, string>;
+  name: string; // This might be a combined name like "Red / Large"
+  sku?: string;
+  price?: number; // Variant-specific price
+  imageUrl?: string; // Variant-specific image URL
+  attributes?: Record<string, string | number>; // Renamed from options, allows number values
+  stock_quantity?: number;
+  is_active?: boolean;
 }
 
 export interface CartItem extends Product {

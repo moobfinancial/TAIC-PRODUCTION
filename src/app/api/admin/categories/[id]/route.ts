@@ -44,13 +44,13 @@ async function getDescendantIds(client: PoolClient, categoryId: number): Promise
 }
 
 
-export async function PUT(request: NextRequest, context: any) {
+export async function PUT(request: NextRequest, { params }: { params: { id: string } }) {
     const apiKey = request.headers.get('X-Admin-API-Key');
   if (!validateAdminApiKey(apiKey)) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
 
-  const { params } = context; // Assuming context will be typed as 'any' or fixed later
+  // params is already destructured from the function parameters
   const categoryId = parseInt(params.id, 10);
   if (isNaN(categoryId)) {
     return NextResponse.json({ error: 'Invalid category ID format' }, { status: 400 });
@@ -154,13 +154,13 @@ export async function PUT(request: NextRequest, context: any) {
   }
 }
 
-export async function DELETE(request: NextRequest, context: any) {
+export async function DELETE(request: NextRequest, { params }: { params: { id: string } }) {
   const apiKey = request.headers.get('X-Admin-API-Key');
   if (!validateAdminApiKey(apiKey)) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
 
-  const { params } = context;
+  // params is already destructured from the function parameters
   const categoryId = parseInt(params.id, 10);
   if (isNaN(categoryId)) {
     return NextResponse.json({ error: 'Invalid category ID format' }, { status: 400 });

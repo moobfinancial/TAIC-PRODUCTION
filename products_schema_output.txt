@@ -1,0 +1,35 @@
+                                              Table "public.products"
+        Column        |           Type           | Collation | Nullable |                 Default                  
+----------------------+--------------------------+-----------+----------+------------------------------------------
+ name                 | character varying(255)   |           | not null | 
+ description          | text                     |           |          | 
+ price                | numeric(10,2)            |           | not null | 
+ image_url            | character varying(255)   |           |          | 
+ category             | character varying(100)   |           |          | 
+ data_ai_hint         | text                     |           |          | 
+ created_at           | timestamp with time zone |           |          | CURRENT_TIMESTAMP
+ updated_at           | timestamp with time zone |           |          | CURRENT_TIMESTAMP
+ platform_category_id | integer                  |           |          | 
+ is_active            | boolean                  |           | not null | false
+ approval_status      | character varying(50)    |           | not null | 'pending'::character varying
+ merchant_id          | character varying(255)   |           |          | 
+ default_variant_id   | integer                  |           |          | 
+ id                   | integer                  |           | not null | nextval('products_new_id_seq'::regclass)
+Indexes:
+    "products_pkey" PRIMARY KEY, btree (id)
+    "idx_products_approval_status" btree (approval_status)
+    "idx_products_is_active" btree (is_active)
+    "idx_products_merchant_id" btree (merchant_id)
+    "idx_products_name" btree (name)
+    "idx_products_platform_category_id" btree (platform_category_id)
+    "idx_products_price" btree (price)
+Check constraints:
+    "check_products_approval_status" CHECK (approval_status::text = ANY (ARRAY['pending'::character varying, 'approved'::character varying, 'rejected'::character varying]::text[]))
+Foreign-key constraints:
+    "fk_products_default_variant" FOREIGN KEY (default_variant_id) REFERENCES product_variants(id) ON DELETE SET NULL
+    "products_platform_category_id_fkey" FOREIGN KEY (platform_category_id) REFERENCES categories(id) ON DELETE SET NULL
+Referenced by:
+    TABLE "product_variants" CONSTRAINT "fk_product_variants_product" FOREIGN KEY (product_id) REFERENCES products(id) ON DELETE CASCADE
+Triggers:
+    update_products_updated_at BEFORE UPDATE ON products FOR EACH ROW EXECUTE FUNCTION update_updated_at_column()
+

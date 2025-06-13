@@ -5,22 +5,61 @@ const nextConfig = {
   
   // Image optimization configuration
   images: {
-    domains: [
-      'oss-cf.cjdropshipping.com',
-      'cf.cjdropshipping.com',
-      'cbu01.alicdn.com',
-      'placehold.co',
-      'storage.googleapis.com',
-      'firebasestorage.googleapis.com',
-      'storage.cloud.google.com',
-      'lh3.googleusercontent.com',
-      'taic-3c401.firebasestorage.app',
-      'taic-3c401.appspot.com',
-      'api.resort-accessories.shop',
-      'localhost',
-      'localhost:9002'
-    ],
+    // Migrated from deprecated domains to remotePatterns
     remotePatterns: [
+      {
+        protocol: 'https',
+        hostname: 'oss-cf.cjdropshipping.com',
+      },
+      {
+        protocol: 'https',
+        hostname: 'cf.cjdropshipping.com',
+      },
+      {
+        protocol: 'https',
+        hostname: 'cbu01.alicdn.com',
+      },
+      {
+        protocol: 'https',
+        hostname: 'placehold.co',
+      },
+      {
+        protocol: 'https',
+        hostname: 'storage.googleapis.com',
+      },
+      {
+        protocol: 'https',
+        hostname: 'firebasestorage.googleapis.com',
+      },
+      {
+        protocol: 'https',
+        hostname: 'storage.cloud.google.com',
+      },
+      {
+        protocol: 'https',
+        hostname: 'lh3.googleusercontent.com',
+      },
+      {
+        protocol: 'https',
+        hostname: 'taic-3c401.firebasestorage.app',
+      },
+      {
+        protocol: 'https',
+        hostname: 'taic-3c401.appspot.com',
+      },
+      {
+        protocol: 'https',
+        hostname: 'api.resort-accessories.shop',
+      },
+      {
+        protocol: 'http',
+        hostname: 'localhost',
+      },
+      {
+        protocol: 'http',
+        hostname: 'localhost',
+        port: '9002',
+      },
       {
         protocol: 'https',
         hostname: '**.firebasestorage.googleapis.com',
