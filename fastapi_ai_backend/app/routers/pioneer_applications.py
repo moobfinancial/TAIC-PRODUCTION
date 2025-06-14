@@ -8,18 +8,21 @@ from app.models.pioneer_application_models import (
     PioneerApplicationResponse
 )
 from app.db import get_db_connection, release_db_connection
-# Assuming get_optional_current_user_id might exist in app.dependencies
-# If not, a local placeholder might be needed or created in dependencies.py
-# For this subtask, we'll assume it can be imported or defined simply.
+from app.dependencies import get_current_active_user_id
+
 
 # Placeholder for the dependency if not already available globally
-# from app.dependencies import get_optional_current_user_id
-async def get_optional_current_user_id() -> Optional[str]:
+# For the /apply endpoint, we might want a way to get user_id if logged in, but not require login.
+# For /my-application, login is required.
+async def get_optional_current_user_id() -> Optional[str]: # This could be replaced by a more robust optional auth dependency
     """
-    Placeholder dependency to simulate getting a user ID if a user is authenticated.
+    Placeholder dependency to simulate getting a user ID if a user is authenticated but not required.
     In a real app, this would involve checking an optional authentication token.
     """
-    # To simulate: return "test_user_id_123" or None
+    # This is a simplified placeholder. A real implementation would check an optional token.
+    # For the purpose of this file, if a real optional auth dependency is added, this can be removed.
+    # For now, let's assume it might return a user ID or None.
+    # Example: return "simulated_user_id_if_present"
     return None
 
 logger = logging.getLogger(__name__)
@@ -128,4 +131,65 @@ async def submit_pioneer_application(
         )
     finally:
         if conn: # conn might not be assigned if get_db_connection itself fails.
+            await release_db_connection(conn)
+
+
+@router.get(
+    "/my-application",
+    response_model=PioneerApplicationResponse,
+    summary="Get My Pioneer Program Application",
+    description="Allows an authenticated user to retrieve their submitted Pioneer Program application, if one exists linked to their user ID or email.",
+    status_code=status.HTTP_200_OK
+)
+async def get_my_pioneer_application(
+    current_user_id: str = Depends(get_current_active_user_id),
+    conn: asyncpg.Connection = Depends(get_db_connection)
+):
+    try:
+        # 1. Fetch the current user's email from the users table
+        user_email_row = await conn.fetchrow("SELECT email FROM users WHERE id = $1", current_user_id)
+        if not user_email_row:
+            # This should ideally not happen if get_current_active_user_id worked correctly,
+            # as it implies the user_id from token is not in the users table.
+            logger.error(f"Authenticated user ID {current_user_id} not found in users table.")
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Authenticated user not found."
+            )
+        user_email = user_email_row['email']
+
+        # 2. Query the pioneer_applications table
+        # Try by user_id first, then by email, get the most recent.
+        # Email is unique in pioneer_applications, so ORDER BY might be redundant if only one app per email.
+        # But user_id is not unique (a user could theoretically help someone else apply under their email before linking their own account)
+        # However, the common case is user_id OR email.
+        query = """
+            SELECT * FROM pioneer_applications
+            WHERE user_id = $1 OR email = $2
+            ORDER BY submitted_at DESC
+            LIMIT 1;
+        """
+        application_row = await conn.fetchrow(query, current_user_id, user_email)
+
+        if not application_row:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="No Pioneer Program application found for your account."
+            )
+
+        # Map to PioneerApplicationResponse and return
+        return PioneerApplicationResponse(**dict(application_row))
+
+    except HTTPException:
+        raise # Re-raise HTTPExceptions directly
+    except Exception as e:
+        logger.error(f"Error retrieving pioneer application for user_id {current_user_id}: {type(e).__name__} - {e}")
+        import traceback
+        logger.error(traceback.format_exc())
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="An unexpected error occurred while retrieving your application."
+        )
+    finally:
+        if conn:
             await release_db_connection(conn)
