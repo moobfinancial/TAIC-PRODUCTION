@@ -7,35 +7,37 @@ from typing import Dict, Any, Optional, List # Ensure List is imported
 from contextlib import asynccontextmanager
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware # Import CORS middleware
-from .db import init_db_pool, close_db_pool # Updated import names
+from . import db  # Import the db module itself to access db.POOL
+import asyncio # Ensure asyncio is imported for TimeoutError
+# from .db import init_db_pool, close_db_pool # These are now called via db.init_db_pool()
 from .models.mcp_context import MCPContext, MCPServerInfo, MCPToolSchema
 from pydantic import BaseModel
 # Import the new product service agent
-from app.agents.product_service_agent import product_service_mcp
+from .agents.product_service_agent import product_service_mcp
 # Keep existing product router for other API endpoints if needed, but MCP part will be from the new agent
-from app.routers.products import router as products_router, ListProductsToolInput
+from .routers.products import router as products_router, ListProductsToolInput
 # Import the new product variants router
-from app.routers.product_variants import router as product_variants_router
+from .routers.product_variants import router as product_variants_router
 # Import the new bulk operations router
-from app.routers.bulk_operations import router as bulk_operations_router
+from .routers.bulk_operations import router as bulk_operations_router
 # Import the new categories router
-from app.routers.categories import router as categories_router
+from .routers.categories import router as categories_router
 # Import the new auth router (replacing placeholder)
-from app.routers.auth import router as auth_router
+from .routers.auth import router as auth_router
 # Import the admin router
-from app.routers.admin import router as admin_router
+from .routers.admin import router as admin_router
 # Import the admin dashboard data router
-from app.routers.admin_dashboard_data import router as admin_dashboard_router
+from .routers.admin_dashboard_data import router as admin_dashboard_router
 # Import the merchant store profiles router
-from app.routers.merchant_store_profiles import router as merchant_store_profiles_router
+from .routers.merchant_store_profiles import router as merchant_store_profiles_router
 # Import the store reviews router
-from app.routers.store_reviews import router as store_reviews_router
+from .routers.store_reviews import router as store_reviews_router
 # Import the user profile router
-from app.routers.user_profile import router as user_profile_router
+from .routers.user_profile import router as user_profile_router
 # Import the gift recommendation agent MCP server
-from app.agents.gift_recommendation_agent import gift_recommendation_mcp_server
+from .agents.gift_recommendation_agent import gift_recommendation_mcp_server
 # Import the AI feedback router
-from app.routers.ai_feedback import router as ai_feedback_router
+from .routers.ai_feedback import router as ai_feedback_router
 # Import the VTO router
 from app.routers.vto import router as vto_router
 # Import the Pioneer Applications router
@@ -60,7 +62,8 @@ from app.routers.pioneer_portal import router as pioneer_portal_router
 from app.routers.addresses import router as user_addresses_router
 # Import the CJ Dropshipping agent MCP server
 from app.agents.cj_dropshipping_agent import cj_dropshipping_mcp_server
-from app.agents.shopping_assistant_agent import shopping_assistant_mcp_server, UserQueryInput, ShoppingAssistantResponse
+from app.agents.ai_shopping_assistant_agent import get_ai_shopping_assistant_mcp, ShoppingAssistantQueryInputModel, ShoppingAssistantResponseModel
+from app.routers import users # Added users router import
 from app.models.product import Product
 
 logger = logging.getLogger(__name__)
@@ -69,12 +72,51 @@ logger = logging.getLogger(__name__)
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # Load resources and connect to DB
-    await init_db_pool() # Updated function call
-    # The print statement is now inside init_db_pool
-    yield
-    # Release resources and close DB connection
-    await close_db_pool() # Updated function call
-    # The print statement is now inside close_db_pool
+    print("Lifespan: Initializing database pool...")
+    await db.init_db_pool() # Ensure db module is imported or init_db_pool sets db.POOL
+    if db.POOL:
+        app.state.pool = db.POOL
+        print(f"Lifespan: Database pool {app.state.pool} (ID: {id(app.state.pool)}) assigned to app.state.pool.")
+    else:
+        print("Lifespan: db.POOL was not initialized after init_db_pool(). app.state.pool not set.")
+        # Potentially raise an error here if DB is critical for startup
+
+    try:
+        yield
+    finally:
+        # Release resources and close DB connection
+        print("Lifespan: Shutting down. Attempting to close database pool...")
+        if hasattr(app.state, 'pool') and app.state.pool:
+            current_pool_to_close = app.state.pool
+            print(f"Lifespan: Closing pool {current_pool_to_close} (ID: {id(current_pool_to_close)}) from app.state.pool...")
+            try:
+                await asyncio.wait_for(current_pool_to_close.close(), timeout=10.0)
+                print(f"Lifespan: Pool {current_pool_to_close} (ID: {id(current_pool_to_close)}) closed successfully via app.state.pool.close().")
+            except asyncio.TimeoutError:
+                print(f"Lifespan: Timeout closing database pool {current_pool_to_close} (ID: {id(current_pool_to_close)}) from app.state.pool.")
+            except Exception as e:
+                print(f"Lifespan: Error closing database pool {current_pool_to_close} (ID: {id(current_pool_to_close)}) from app.state.pool: {e!r}")
+            finally:
+                app.state.pool = None
+                db.POOL = None # Also nullify the global POOL in db.py
+                print("Lifespan: app.state.pool and db.POOL set to None.")
+        elif db.POOL: # Fallback if app.state.pool wasn't set but db.POOL exists
+            current_pool_to_close = db.POOL
+            print(f"Lifespan: app.state.pool not found or None. Closing global db.POOL {current_pool_to_close} (ID: {id(current_pool_to_close)}) directly...")
+            try:
+                await asyncio.wait_for(current_pool_to_close.close(), timeout=10.0)
+                print(f"Lifespan: Global db.POOL {current_pool_to_close} (ID: {id(current_pool_to_close)}) closed successfully.")
+            except asyncio.TimeoutError:
+                print(f"Lifespan: Timeout closing global db.POOL {current_pool_to_close} (ID: {id(current_pool_to_close)}).")
+            except Exception as e:
+                print(f"Lifespan: Error closing global db.POOL {current_pool_to_close} (ID: {id(current_pool_to_close)}): {e!r}")
+            finally:
+                db.POOL = None
+                if hasattr(app.state, 'pool'):
+                    app.state.pool = None
+                print("Lifespan: db.POOL (and app.state.pool if exists) set to None.")
+        else:
+            print("Lifespan: No active database pool found in app.state.pool or db.POOL to close.")
 
 app = FastAPI(lifespan=lifespan,
     title="TAIC AI Shopping Assistant Backend",
@@ -101,7 +143,8 @@ app.add_middleware(
 
 
 app.include_router(products_router, prefix="/api", tags=["Products"])
-app.include_router(product_variants_router, prefix="/api", tags=["Product Variants"])
+app.include_router(users.router, prefix="/api/users", tags=["Users"]) # Added users router
+app.include_router(product_variants_router, prefix="/api/v1", tags=["Product Variants"])
 app.include_router(bulk_operations_router, prefix="/api/bulk", tags=["Bulk Operations"])
 app.include_router(categories_router, prefix="/api/categories", tags=["Categories"])
 # app.include_router(auth_placeholder_router, prefix="/api/auth", tags=["Authentication (Placeholder)"]) # Commented out placeholder
@@ -228,14 +271,15 @@ async def get_product_mcp_context():
 async def get_shopping_assistant_mcp_context():
     # print("Attempting to generate Shopping Assistant MCP context...", file=sys.stderr)
     try:
+        current_ai_shopping_assistant_mcp = get_ai_shopping_assistant_mcp()
         server_info = MCPServerInfo(
-            name=shopping_assistant_mcp_server.name,
-            instructions=shopping_assistant_mcp_server.instructions,
+            name=current_ai_shopping_assistant_mcp.name,
+            instructions=current_ai_shopping_assistant_mcp.instructions,
         )
 
         tools_schemas = []
-        if hasattr(shopping_assistant_mcp_server, '_tool_manager'):
-            tool_manager_instance = shopping_assistant_mcp_server._tool_manager
+        if hasattr(current_ai_shopping_assistant_mcp, '_tool_manager'):
+            tool_manager_instance = current_ai_shopping_assistant_mcp._tool_manager
             if hasattr(tool_manager_instance, 'list_tools'):
                 list_of_tool_objects = tool_manager_instance.list_tools()
                 for tool_object in list_of_tool_objects:
@@ -346,14 +390,15 @@ async def call_get_all_products_manual(input_data: ListProductsToolInput):
         raise HTTPException(status_code=500, detail=f"Error calling product service tool 'get_all_products': {str(e)}")
 
 
-@app.post("/mcp_shopping_assistant_service/call_tool/process_user_query", response_model=ShoppingAssistantResponse, tags=["MCP Shopping Assistant Tools"], summary="Manually call process_user_query tool")
-async def call_process_user_query_manual(input_data: UserQueryInput):
+@app.post("/mcp_shopping_assistant_service/call_tool/process_user_query", response_model=ShoppingAssistantResponseModel, tags=["MCP Shopping Assistant Tools"], summary="Manually call process_user_query tool")
+async def call_process_user_query_manual(input_data: ShoppingAssistantQueryInputModel):
     try:
-        if not hasattr(shopping_assistant_mcp_server, '_tool_manager') or not hasattr(shopping_assistant_mcp_server._tool_manager, 'list_tools'):
+        current_ai_shopping_assistant_mcp = get_ai_shopping_assistant_mcp()
+        if not hasattr(current_ai_shopping_assistant_mcp, '_tool_manager') or not hasattr(current_ai_shopping_assistant_mcp._tool_manager, 'list_tools'):
             logger.error("Tool manager or list_tools method not found on shopping_assistant_mcp_server")
             raise HTTPException(status_code=500, detail="Server configuration error: Tool manager not available")
 
-        tool_manager = shopping_assistant_mcp_server._tool_manager
+        tool_manager = current_ai_shopping_assistant_mcp._tool_manager
         tool_object = None
         for t in tool_manager.list_tools():
             if t.name == "process_user_query": # Ensure this matches the registered tool name
@@ -370,7 +415,7 @@ async def call_process_user_query_manual(input_data: UserQueryInput):
 
         # The tool function is async
         logger.info(f"Manually calling tool 'process_user_query' with input: {input_data}")
-        result = await tool_object.fn(input_data)
+        result = await tool_object.fn(None, input_data) # Pass None for ctx as it's a manual call
         logger.info(f"Tool 'process_user_query' returned: {result}")
         return result
     except HTTPException: # Re-raise HTTPException to preserve status code and detail
@@ -383,7 +428,7 @@ async def call_process_user_query_manual(input_data: UserQueryInput):
 # Mount the MCP server applications
 # The path "/mcp_product_service" should match PRODUCT_SERVICE_AGENT_MOUNT_PATH in shopping_assistant_agent.py
 app.mount("/mcp_product_service", product_service_mcp)
-app.mount("/mcp_shopping_assistant_service", shopping_assistant_mcp_server)
+app.mount("/mcp_shopping_assistant_service", get_ai_shopping_assistant_mcp())
 app.mount("/mcp_gift_recommendation", gift_recommendation_mcp_server)
 app.mount("/mcp_cj_dropshipping", cj_dropshipping_mcp_server) # Mount the new CJ Dropshipping agent
 

@@ -8,14 +8,14 @@ import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 // Switch to the new AuthContext
 import { useAuth } from '@/contexts/AuthContext';
-import WalletConnectButton from '@/components/wallet/WalletConnectButton'; // Import the new button
 import { useCart } from '@/hooks/useCart';
 import { useWishlist } from '@/hooks/useWishlist';
 import { Logo } from '@/components/Logo';
+import { shortenAddress, getUserDisplayName } from '@/utils/formatters';
 
 export function Navbar() {
   // Use new state from AuthContext
-  const { user, isAuthenticated } = useAuth(); // logout removed as WalletConnectButton handles it
+  const { user, isAuthenticated, logout } = useAuth();
   const { getCartItemCount } = useCart();
   const { getWishlistItemCount } = useWishlist();
 
@@ -28,13 +28,7 @@ export function Navbar() {
     { href: '/affiliate', label: 'Affiliate', icon: <Users /> },
   ];
 
-  // Helper function (if not already globally available or part of user model)
-  const shortenAddress = (address: string, chars = 4): string => {
-    if (!address) return "";
-    const prefix = address.substring(0, chars + 2); // 0x + chars
-    const suffix = address.substring(address.length - chars);
-    return `${prefix}...${suffix}`;
-  };
+  // We now use the imported shortenAddress utility function
 
   return (
     <header className="sticky top-0 z-50 w-full border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
@@ -74,58 +68,66 @@ export function Navbar() {
             </Button>
           </Link>
 
-          <WalletConnectButton />
-
-          {isAuthenticated && user && (
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <Button variant="ghost" className="relative h-8 w-8 rounded-full">
-                  <Avatar className="h-8 w-8">
-                    <AvatarImage src={user.profileImageUrl || `https://avatar.vercel.sh/${user.username || user.walletAddress}.png?size=32`} alt={user.username || user.walletAddress} />
-                    <AvatarFallback>{(user.username || user.walletAddress).substring(0, 2).toUpperCase()}</AvatarFallback>
-                  </Avatar>
-                </Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent className="w-56" align="end" forceMount>
-                <DropdownMenuLabel className="font-normal">
-                  <div className="flex flex-col space-y-1">
-                    <p className="text-sm font-medium leading-none">{user.username || shortenAddress(user.walletAddress)}</p>
-                    {user.email && (
-                       <p className="text-xs leading-none text-muted-foreground">
-                         {user.email}
-                       </p>
-                    )}
-                    <p className="text-xs leading-none text-muted-foreground flex items-center">
-                      <Gem className="mr-1 h-3 w-3 text-primary" /> {user.taicBalance?.toLocaleString() || 0} TAIC
-                    </p>
-                     {/* Added Cashback Balance display */}
-                    <p className="text-xs leading-none text-muted-foreground flex items-center">
-                      <Coins className="mr-1 h-3 w-3 text-yellow-500" /> {user.cashbackBalance?.toLocaleString() || 0} Cashback
-                    </p>
-                  </div>
-                </DropdownMenuLabel>
-                <DropdownMenuSeparator />
-                <DropdownMenuItem asChild>
-                  <Link href="/dashboard" className="flex items-center">
-                    <LayoutDashboard className="mr-2 h-4 w-4" />
-                    Dashboard
-                  </Link>
-                </DropdownMenuItem>
-                <DropdownMenuItem asChild>
-                  <Link href="/account" className="flex items-center">
-                    <UserCircle className="mr-2 h-4 w-4" />
-                    Account
-                  </Link>
-                </DropdownMenuItem>
-                <DropdownMenuItem asChild>
-                  <Link href="/account/gallery" className="flex items-center">
-                    <ImageIcon className="mr-2 h-4 w-4" />
-                    My Gallery
-                  </Link>
-                </DropdownMenuItem>
-                {/* Logout is handled by WalletConnectButton, so no explicit logout item here. */}
-              </DropdownMenuContent>
-            </DropdownMenu>
+          {!isAuthenticated ? (
+            <Button asChild>
+              <Link href="/login">Login / Sign Up</Link>
+            </Button>
+          ) : (
+            user && (
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button variant="ghost" className="relative h-8 w-8 rounded-full">
+                    <Avatar className="h-8 w-8">
+                      <AvatarImage src={user.profileImageUrl || `https://avatar.vercel.sh/${user.displayName || user.username || user.walletAddress || 'default'}.png?size=32`} alt={getUserDisplayName(user)} />
+                      <AvatarFallback>{(user.displayName || user.username || user.walletAddress || 'XX').substring(0, 2).toUpperCase()}</AvatarFallback>
+                    </Avatar>
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent className="w-56" align="end" forceMount>
+                  <DropdownMenuLabel className="font-normal">
+                    <div className="flex flex-col space-y-1">
+                      <p className="text-sm font-medium leading-none">{getUserDisplayName(user)}</p>
+                      {user.email && (
+                         <p className="text-xs leading-none text-muted-foreground">
+                           {user.email}
+                         </p>
+                      )}
+                      <p className="text-xs leading-none text-muted-foreground flex items-center">
+                        <Gem className="mr-1 h-3 w-3 text-primary" /> {user.taicBalance?.toLocaleString() || 0} TAIC
+                      </p>
+                       {/* Added Cashback Balance display */}
+                      <p className="text-xs leading-none text-muted-foreground flex items-center">
+                        <Coins className="mr-1 h-3 w-3 text-yellow-500" /> {user.cashbackBalance?.toLocaleString() || 0} Cashback
+                      </p>
+                    </div>
+                  </DropdownMenuLabel>
+                  <DropdownMenuSeparator />
+                  <DropdownMenuItem asChild>
+                    <Link href="/dashboard" className="flex items-center">
+                      <LayoutDashboard className="mr-2 h-4 w-4" />
+                      Dashboard
+                    </Link>
+                  </DropdownMenuItem>
+                  <DropdownMenuItem asChild>
+                    <Link href="/account" className="flex items-center">
+                      <UserCircle className="mr-2 h-4 w-4" />
+                      Account
+                    </Link>
+                  </DropdownMenuItem>
+                  <DropdownMenuItem asChild>
+                    <Link href="/account/gallery" className="flex items-center">
+                      <ImageIcon className="mr-2 h-4 w-4" />
+                      My Gallery
+                    </Link>
+                  </DropdownMenuItem>
+                  <DropdownMenuSeparator />
+                  <DropdownMenuItem onClick={logout} className="cursor-pointer">
+                    <LogOut className="mr-2 h-4 w-4" />
+                    <span>Logout</span>
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
+            )
           )}
         </div>
       </div>

@@ -14,6 +14,15 @@ import { VTOModal } from '@/components/vto/VTOModal'; // Import VTOModal
 import { useToast } from '@/hooks/use-toast';
 import { cn } from '@/lib/utils';
 import { useState, useEffect } from 'react';
+
+const PLACEHOLDER_IMAGE_URL = 'https://placehold.co/600x400/EEE/31343C?text=No+Image';
+
+const isValidImageUrl = (url: string | undefined | null): boolean => {
+  if (!url || typeof url !== 'string' || url.trim() === '') {
+    return false;
+  }
+  return url.startsWith('http://') || url.startsWith('https://') || url.startsWith('/');
+};
 import { translateText, containsChineseCharacters } from '../../lib/translationUtils';
 
 interface ProductCardProps {
@@ -92,7 +101,7 @@ export function ProductCard({ product, showVirtualTryOnButton = false, productCo
       <CardHeader className="p-0 relative">
         <div className="aspect-video relative w-full">
           <Image
-            src={product.imageUrl}
+            src={isValidImageUrl(product.imageUrl) ? product.imageUrl! : PLACEHOLDER_IMAGE_URL}
             alt={product.name}
             fill
             sizes="(max-width: 640px) 100vw, (max-width: 1024px) 50vw, 33vw"
@@ -137,11 +146,11 @@ export function ProductCard({ product, showVirtualTryOnButton = false, productCo
               <span className="font-medium">
                 ${parseFloat(String(product.price)).toFixed(2)} 
               </span>
-              {product.cashbackPercentage && product.cashbackPercentage > 0 && (
+              {(product.cashbackPercentage && product.cashbackPercentage > 0) ? (
                 <span className="ml-2 px-2 py-0.5 bg-green-100 text-green-800 text-xs rounded-full">
                   {product.cashbackPercentage}% Cashback
                 </span>
-              )}
+              ) : null}
             </div>
           )}
         </div>

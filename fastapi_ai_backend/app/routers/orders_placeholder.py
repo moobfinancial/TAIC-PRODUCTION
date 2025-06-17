@@ -1,4 +1,5 @@
 import logging
+import json
 import uuid
 from datetime import datetime, timezone
 from decimal import Decimal
@@ -10,10 +11,9 @@ import asyncpg
 from app.models.order_placeholder_models import (
     OrderCreatePlaceholder,
     OrderResponsePlaceholder,
-    OrderItemPlaceholder,
-    CartItemInput # Used by checkout_item_service
+    OrderItemPlaceholder
 )
-from app.models.checkout_models import MerchantItemDetail # For the result of item detail fetching
+from app.models.checkout_models import MerchantItemDetail, CartItemInput # For the result of item detail fetching
 from app.db import get_db_connection, release_db_connection
 from app.dependencies import get_current_active_user_id
 from app.services.checkout_item_service import get_checkout_item_details # New service for authoritative item data
@@ -22,27 +22,6 @@ from app.email_utils import (
     send_new_order_to_merchant_email,
     FRONTEND_BASE_URL # For constructing links
 )
-
-logger = logging.getLogger(__name__)
-
-router = APIRouter(
-    tags=["Orders (Placeholder)"],
-    # prefix will be /api/orders (from main.py)
-)
-
-@router.post(
-    "/placeholder-create-order",
-    response_model=OrderResponsePlaceholder,
-    status_code=status.HTTP_201_CREATED,
-    summary="Create Placeholder Order & Trigger Emails",
-    description="Simulates order creation and triggers Order Confirmation (shopper) and New Order Received (merchant) email notifications."
-)
-async def create_placeholder_order(
-    order_payload: OrderCreatePlaceholder,
-    current_shopper_id: str = Depends(get_current_active_user_id),
-    conn: asyncpg.Connection = Depends(get_db_connection) # For fetching shopper details
-):
-import json # For variant_attributes_snapshot
 
 logger = logging.getLogger(__name__)
 

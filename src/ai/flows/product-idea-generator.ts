@@ -1,4 +1,5 @@
-'use server';
+// This file doesn't need 'use server' directive as it's not directly exposed as a Server Action
+// The API route that uses this file will handle the server-side aspects
 
 /**
  * @fileOverview AI flow for generating product ideas based on user input.
@@ -10,8 +11,10 @@
 
 import {ai} from '@/ai/genkit';
 import {z} from 'genkit';
+import * as genkit from 'genkit';
+// Use direct string for model name instead of importing gemini
 
-const GenerateProductIdeasInputSchema = z.object({
+export const GenerateProductIdeasInputSchema = z.object({
   productDescription: z
     .string()
     .describe('A textual description of the product idea or context for gift suggestions.'),
@@ -35,7 +38,7 @@ const ProductAISchema = z.object({
 });
 export type ProductForAI = z.infer<typeof ProductAISchema>;
 
-const GenerateProductIdeasOutputSchema = z.object({
+export const GenerateProductIdeasOutputSchema = z.object({
   suggestions: z
     .string()
     .describe('Suggestions for improving the product idea or gift suggestions. This may also include a summary of any matching products found from the catalog.'),
@@ -88,8 +91,8 @@ export function constructPromptParts(input: GenerateProductIdeasInput): any[] {
       } else {
         promptParts.push({ text: "\nBased on the text description, provide innovative suggestions to enhance or complement the product idea." });
       }
-    }
   }
+  
   promptParts.push({text: "\nFormat your response clearly. If suggesting multiple ideas, use bullet points or numbered lists. Ensure your final output is just the suggestions, without repeating your analysis steps unless it's part of the explanation for a gift or product idea."});
   return promptParts;
 }
@@ -162,7 +165,7 @@ export function processLlmResponse(
 
   // Process product image_urls
   if (output && output.products && Array.isArray(output.products)) {
-    output.products = output.products.map(product => {
+    output.products = output.products.map((product: z.infer<typeof ProductAISchema>) => {
       let currentImageUrl = product.image_url;
       if (currentImageUrl && typeof currentImageUrl === 'string') {
         if (currentImageUrl.startsWith('[') && currentImageUrl.endsWith(']')) {
@@ -195,9 +198,9 @@ const generateProductIdeasFlow = ai.defineFlow(
     let toolsToUse : any[] = [];
     // The tool name here must match the name of the tool registered with the Genkit instance running this flow
     if (input.generatorMode === 'gift') {
-        toolsToUse.push(ai.tool('getProductCatalogTool') || 'getProductCatalogTool');
-        // Using ai.tool() is safer if tool is an object, else string name.
-        // Or, if getProductCatalogTool (the actual function/object) were imported: toolsToUse.push(getProductCatalogTool);
+        // Use string name directly since ai.tool() may not be available in this context
+        toolsToUse.push('getProductCatalogTool');
+        // Alternative approach if tool function were imported: toolsToUse.push(getProductCatalogTool);
     }
 
     console.log('[generateProductIdeasFlow] Constructed prompt parts:', JSON.stringify(promptParts.filter(p => p.text), null, 2));
@@ -208,7 +211,7 @@ const generateProductIdeasFlow = ai.defineFlow(
     try {
       const llmResponse = await ai.generate({
         messages: [{role: 'user', content: promptParts}], // Ensure structure is {role: 'user', content: ...}
-        model: gemini('gemini-1.5-flash'), // Use the gemini utility for model name
+        model: 'gemini-1.5-flash', // Direct string reference to model name
         ...(toolsToUse.length > 0 && { tools: toolsToUse }),
         config: { temperature: 0.7 },
         // No outputSchema here, will rely on processLlmResponse for parsing and validation
@@ -218,7 +221,7 @@ const generateProductIdeasFlow = ai.defineFlow(
       console.log('[generateProductIdeasFlow] LLM call successful. Usage:', JSON.stringify(usage, null, 2));
       console.log('[generateProductIdeasFlow] LLM Raw Response:', JSON.stringify(llmResponse, null, 2));
 
-      const rawTextFromMessage = llmResponse.message.content[0]?.text;
+      const rawTextFromMessage = llmResponse.message?.content?.[0]?.text;
       const finalOutput = processLlmResponse(llmResponse, rawTextFromMessage);
 
       console.log('[generateProductIdeasFlow] Succeeded. Processed Output:', JSON.stringify(finalOutput, null, 2));

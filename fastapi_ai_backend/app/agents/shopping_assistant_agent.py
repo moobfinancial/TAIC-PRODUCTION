@@ -1,7 +1,7 @@
 from mcp.server.fastmcp import FastMCP
 from app.models.shopping_assistant_models import UserQueryInput, ShoppingAssistantResponse
 from app.models.product import Product, ListProductsToolInput # For type hinting and input model
-from typing import List, Optional
+from typing import List, Optional, Dict
 import httpx
 import os
 import json # For parsing LLM JSON output
@@ -577,83 +577,8 @@ async def process_user_query_tool(input_data: UserQueryInput) -> ShoppingAssista
         suggested_products=suggested_products,
         debug_info=debug_info
     )
-                    "provide a helpful and natural language response. "
-                    "If products are found, briefly mention a few or summarize them, and indicate how many were found if it's a large number. "
-                    "If a product has multiple options or variants, mention this and suggest the user can ask for more details about specific options if they are interested. " # Added instruction for variants
-                    "If no products are found, politely inform the user. "
-                    "Do not repeat the product list verbatim unless very short. Focus on a conversational summary."
-                )
-                response_gen_user_prompt_parts = [f"User query: \"{user_query}\""]
-                if suggested_products:
-                    product_summary_for_llm = "\n\nProducts found (summary):\n"
-                    for i, p in enumerate(suggested_products[:3]): # Show first 3 products in summary
-                        base_info = f"- {p.name} (Category: {p.category}, Price: {p.price:.2f})" # Ensure price is formatted
-                        if p.has_variants and p.variants:
-                            variant_info = f" - Available in {len(p.variants)} options (e.g., different "
-                            # Try to get some example attribute names
-                            example_attrs = set()
-                            for v_attr_dict in [var.attributes for var in p.variants if var.attributes]:
-                                for attr_name in v_attr_dict.keys():
-                                    example_attrs.add(attr_name.lower())
-                                    if len(example_attrs) >= 2: break
-                                if len(example_attrs) >= 2: break
-                            if example_attrs:
-                                variant_info += ", ".join(list(example_attrs))
-                            else:
-                                variant_info += "styles" # Fallback if no attributes found
-                            variant_info += ")."
-                            product_summary_for_llm += f"{base_info}{variant_info}\n"
-                        else:
-                            product_summary_for_llm += f"{base_info}\n"
-                    if len(suggested_products) > 3:
-                        product_summary_for_llm += f"...and {len(suggested_products) - 3} more.\n"
-                    response_gen_user_prompt_parts.append(product_summary_for_llm)
-                else:
-                    response_gen_user_prompt_parts.append("\n\nNo products were found matching the query.")
-                
-                response_gen_user_prompt = "".join(response_gen_user_prompt_parts)
 
-                try:
-                    print(f"ASA: Calling LLM for final response generation. Model: {OPENROUTER_MODEL_NAME}")
-                    completion = await openai_client.chat.completions.create(
-                        model=OPENROUTER_MODEL_NAME,
-                        messages=[
-                            {"role": "system", "content": response_gen_system_prompt},
-                            {"role": "user", "content": response_gen_user_prompt}
-                        ],
-                        max_tokens=300,
-                        temperature=0.7
-                    )
-                    natural_language_response = completion.choices[0].message.content
-                    print(f"ASA: LLM final response: {natural_language_response}")
-                except Exception as e_llm_final:
-                    error_message_llm_final = f"Error during final LLM response generation: {str(e_llm_final)}"
-                    print(f"ASA: {error_message_llm_final}")
-                    if suggested_products:
-                        natural_language_response = f"I found {len(suggested_products)} products, but had a bit of trouble crafting a summary. You can review them in the list."
-                    else:
-                        natural_language_response = "I couldn't find any products and also had an issue summarizing. Please try a different search."
-                    llm_model_used_for_response_gen = f"{OPENROUTER_MODEL_NAME} (Error: {e_llm_final})"
-    
-    # --- End Conditional Logic ---
 
-        # Debug information
-        debug_info = {
-        "user_query": user_query,
-        "llm_filter_extraction_error": llm_filter_extraction_error,
-        "extracted_search_query_param": extracted_filters.search_query,
-        "extracted_category_param": extracted_filters.category,
-        "product_service_url": product_service_tool_url_debug,
-        "product_service_payload": tool_input_payload_debug,
-        "product_service_error": product_service_error_message,
-        "llm_model_used_for_response_gen": llm_model_used_for_response_gen,
-        "raw_product_count_from_service": raw_product_count_debug
-    }
-        return ShoppingAssistantResponse(
-        natural_language_response=natural_language_response,
-        suggested_products=suggested_products,
-        debug_info=debug_info
-    )
 
 
 # TODO:

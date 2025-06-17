@@ -97,6 +97,7 @@ export interface User {
   taicBalance: number;
   cashbackBalance: number;
   profileImageUrl?: string | null; // Added back as ProfileSection uses it
+  displayName?: string | null; // Added for user's full/preferred name
 }
 
 export interface AuthContextType {
@@ -155,10 +156,10 @@ export interface ProductForAI {
   id: string; // This is likely the original product ID from the main 'products' table
   name: string;
   description: string;
-  price: string; // Note: string price
+  price: number; // Price as number
   imageUrl: string;
-  dataAiHint?: string;
-  category?: string;
+  dataAiHint: string;
+  category: string;
 }
 
 export interface ChatMessage {

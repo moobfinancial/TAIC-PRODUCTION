@@ -3,10 +3,11 @@ import httpx
 import os
 import json # For parsing LLM JSON output
 from typing import List, Optional, Dict, Any, Set # Added Set for deduplication
+from pydantic import BaseModel, Field # Added BaseModel and Field
 from dotenv import load_dotenv
 import openai # For OpenRouter
 
-from fastapi_mcp import FastMCP, ToolContext
+from mcp.server.fastmcp.server import FastMCP, Context as ToolContext # Corrected import for ToolContext
 from app.models.gift_recommendation_models import (
     GiftRecommendationRequest,
     GiftRecommendationResponse,
@@ -64,9 +65,8 @@ class LLMDerivedSearchParams(BaseModel):
 
 @gift_recommendation_mcp_server.tool(
     name="get_gift_suggestions",
-    description="Generates gift suggestions based on recipient information, occasion, budget, and any additional context.",
-    input_model=GiftRecommendationRequest,
-    output_model=GiftRecommendationResponse
+    description="Generates gift suggestions based on recipient information, occasion, budget, and any additional context."
+    # input_model and output_model are inferred from type hints
 )
 async def get_gift_suggestions(ctx: ToolContext, request_data: GiftRecommendationRequest) -> GiftRecommendationResponse:
     logger.info(f"Received gift recommendation request: {request_data.model_dump_json(indent=2, exclude_none=True)}")

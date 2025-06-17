@@ -10,6 +10,7 @@ import { AIConversationHistory } from '@/components/dashboard/AIConversationHist
 import { LayoutDashboard, ShieldAlert } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import Link from 'next/link';
+import { getUserDisplayName, shortenAddress } from '@/utils/formatters';
 
 export default function DashboardPage() {
   // Use isLoading and isAuthenticated from the new AuthContext
@@ -46,15 +47,18 @@ export default function DashboardPage() {
       );
   }
 
-  // Fallback for username if it's null (e.g., only wallet address is available)
-  const displayName = user.username || `User ${user.walletAddress.substring(0, 6)}...`;
+  // Use the utility function to get a consistent display name
+  // Our enhanced getUserDisplayName will automatically truncate wallet addresses
+  const displayName = getUserDisplayName(user);
 
   return (
     <div className="space-y-12">
       <header className="text-center">
         <LayoutDashboard className="mx-auto h-16 w-16 text-primary mb-4" />
         {/* Use displayName which handles null username */}
-        <h1 className="text-4xl font-headline font-bold tracking-tight sm:text-5xl">Welcome to Your Dashboard, {displayName}!</h1>
+        <h1 className="text-4xl font-headline font-bold tracking-tight sm:text-5xl">
+          Welcome to Your Dashboard, {displayName}!
+        </h1>
         <p className="text-lg text-muted-foreground mt-2">Manage your account, view orders, and track AI interactions.</p>
       </header>
       

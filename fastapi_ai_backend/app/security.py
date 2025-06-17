@@ -24,6 +24,40 @@ def hash_password(password: str) -> str:
 def verify_password(plain_password: str, hashed_password_with_salt: str) -> bool:
     return pwd_context.verify(plain_password, hashed_password_with_salt)
 
+# --- Wallet Signature Verification ---
+def verify_wallet_signature(wallet_address: str, original_message: str, signed_message: str) -> bool:
+    """
+    Verifies an EIP-191 signed message (personal_sign style).
+    Compares the recovered address with the provided wallet_address.
+
+    Args:
+        wallet_address: The Ethereum address that supposedly signed the message.
+        original_message: The original string message that was signed (e.g., a nonce).
+        signed_message: The signature string (hex format) produced by the wallet.
+
+    Returns:
+        True if the signature is valid and matches the wallet_address, False otherwise.
+    """
+    try:
+        # EIP-191 prepends a specific string and the message length before hashing.
+        # encode_defunct creates a signable message according to this standard.
+        # The `defunct_hash_message` function is suitable if the message was already hashed client-side in a specific way.
+        # However, `encode_defunct` is generally used to prepare the message for signing or recovery if it's a plain text string.
+        signable_message = encode_defunct(text=original_message)
+        
+        # Recover the address from the signature and the signable message
+        recovered_address = Account.recover_message(signable_message, signature=signed_message)
+        
+        # Compare the recovered address with the provided wallet_address (case-insensitive)
+        return recovered_address.lower() == wallet_address.lower()
+    except ValueError as ve:
+        # This can happen if the signature is malformed
+        logger.error(f"ValueError during signature recovery for address {wallet_address}: {ve}. Signature: {signed_message}")
+        return False
+    except Exception as e:
+        logger.error(f"Unexpected error during signature verification for address {wallet_address}: {e}")
+        return False
+
 # --- JWT Token Handling ---
 SECRET_KEY = os.getenv("JWT_SECRET_KEY", "your-super-secret-key-for-jwt-replace-this-in-production")
 ALGORITHM = os.getenv("JWT_ALGORITHM", "HS256")
@@ -62,27 +96,7 @@ def verify_token(token: str, credentials_exception: Exception) -> Optional[Dict[
         logger.error(f"JWTError during token verification: {e}")
         raise credentials_exception
 
-# --- Wallet Signature Verification ---
-def verify_wallet_signature(wallet_address: str, original_message: str, signed_message: str) -> bool:
-    """
-    Verifies an EIP-191 signed message (personal_sign style).
-    Compares the recovered address with the provided wallet_address.
-    """
-    try:
-        # EIP-191 prepends "\x19Ethereum Signed Message:\n" + len(message) before hashing
-        # encode_defunct handles this prepending.
-        message_hash_bytes = defunct_hash_message(text=original_message) # Correctly use defunct_hash_message
 
-        recovered_address = Account.recover_hash(message_hash_bytes, signature=signed_message)
-
-        # Compare addresses (case-insensitive for Ethereum, though checksum is common)
-        return recovered_address.lower() == wallet_address.lower()
-    except ValueError as ve: # Handles issues like malformed signature
-        logger.error(f"ValueError during signature recovery (e.g., malformed signature): {ve}")
-        return False
-    except Exception as e:
-        logger.error(f"An unexpected error occurred during wallet signature verification: {e}")
-        return False
 
 
 # Example Usage (for direct testing of this module)

@@ -14,6 +14,7 @@ const CategoryInputSchema = z.object({
   name: z.string().min(1, { message: "Category name is required." }).max(255),
   description: z.string().optional().nullable(),
   parent_category_id: z.number().int().positive().optional().nullable(), // Assuming ID is integer
+  slug: z.string().min(1, { message: "Slug is required." }).max(255).optional(), // Make slug optional in API but generate if not provided
 });
 
 interface Category {
@@ -110,8 +111,15 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Invalid input', details: validationResult.error.flatten() }, { status: 400 });
     }
 
-    const { name, description, parent_category_id } = validationResult.data;
-    console.log('[API POST /admin/categories] Validated data:', { name, description, parent_category_id });
+    const { name, description, parent_category_id, slug: providedSlug } = validationResult.data;
+    
+    // Generate slug if not provided
+    const slug = providedSlug || name.toLowerCase()
+      .replace(/[^a-z0-9]+/g, '-') // Replace non-alphanumeric chars with hyphens
+      .replace(/^-|-$/g, '')       // Remove leading/trailing hyphens
+      .substring(0, 50);           // Limit length to 50 chars
+    
+    console.log('[API POST /admin/categories] Validated data:', { name, description, parent_category_id, slug });
 
     client = await pool.connect();
     console.log('[API POST /admin/categories] Database client connected.');
@@ -128,8 +136,8 @@ export async function POST(request: NextRequest) {
     }
 
     const { rows } = await client.query(
-      'INSERT INTO categories (name, description, parent_category_id) VALUES ($1, $2, $3) RETURNING *',
-      [name, description || null, parent_category_id === undefined ? null : parent_category_id] // Ensure undefined parent_id is stored as null
+      'INSERT INTO categories (name, description, parent_category_id, slug) VALUES ($1, $2, $3, $4) RETURNING *',
+      [name, description || null, parent_category_id === undefined ? null : parent_category_id, slug] // Include slug
     );
     console.log('[API POST /admin/categories] Category created:', rows[0]);
 

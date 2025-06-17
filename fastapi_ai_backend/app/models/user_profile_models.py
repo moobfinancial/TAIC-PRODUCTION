@@ -39,12 +39,16 @@ class UserProfileResponse(BaseModel):
 
 class UserProfileUpdate(BaseModel):
     """Schema for updating a user's profile information. Only fields to be updated should be included."""
-    full_name: Optional[str] = Field(default=None, min_length=1, max_length=100, description="User's full name. Provide to update. Set to null to clear.")
+    full_name: Optional[str] = Field(default=None, min_length=1, max_length=100, description="User's full name. Provide to update.")
+    email: Optional[EmailStr] = Field(default=None, description="User's email address. Provide to update. If changed, email_verified will be set to False.")
+    password: Optional[str] = Field(default=None, min_length=8, description="New password for the user. Provide to update. Will be hashed before saving.")
 
     class Config:
         json_schema_extra = {
             "example": {
-                "full_name": "Jane Smith-Doe"
+                "full_name": "Jane Smith-Doe",
+                "email": "jane.new@example.com",
+                "password": "newSecurePassword123"
             }
         }
 
@@ -92,6 +96,34 @@ class UserExportData(BaseModel):
                 "merchant_profile": None,
                 "merchant_products_listed_count": None,
                 "export_generated_at": "2023-10-27T10:00:00Z"
+            }
+        }
+
+# --- Models for Wallet Linking ---
+
+class WalletChallengeResponse(BaseModel):
+    """Response containing a nonce for wallet signature challenge."""
+    nonce: str = Field(..., description="A unique, single-use nonce to be signed by the user's wallet.")
+
+    class Config:
+        json_schema_extra = {
+            "example": {
+                "nonce": "a1b2c3d4e5f67890"
+            }
+        }
+
+class LinkWalletRequest(BaseModel):
+    """Request to link a new wallet address to the user's account."""
+    wallet_address: str = Field(..., description="The new wallet address to link.")
+    signature: str = Field(..., description="The signature from the wallet, proving ownership of the wallet_address by signing the nonce.")
+    nonce: str = Field(..., description="The nonce that was signed by the wallet.")
+
+    class Config:
+        json_schema_extra = {
+            "example": {
+                "wallet_address": "0x1234567890abcdef1234567890abcdef12345678",
+                "signature": "0xS1gn4tur3H4shVa1u3",
+                "nonce": "a1b2c3d4e5f67890"
             }
         }
 

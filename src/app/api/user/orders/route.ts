@@ -1,14 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { Pool } from 'pg';
+// import { Pool } from 'pg'; // Replaced with shared pool
 import jwt from 'jsonwebtoken'; // For JWT verification
 import { z } from 'zod'; // For POST request validation
 
-// Assume a shared db pool, e.g., from 'src/lib/db.ts'
-// For this example, creating a new pool.
-const pool = new Pool({
-  connectionString: process.env.DATABASE_URL ||
-    `postgresql://${process.env.PGUSER}:${process.env.PGPASSWORD}@${process.env.PGHOST}:${process.env.PGPORT}/${process.env.PGDATABASE}`,
-});
+import { pool } from '@/lib/db'; // Use the shared pool
 
 const JWT_SECRET = process.env.JWT_SECRET || 'your-fallback-jwt-secret'; // Ensure this is in .env
 
@@ -82,9 +77,9 @@ export async function GET(request: NextRequest) {
         status,
         created_at AS date,
         cashback_awarded AS "cashbackAwarded",
-        cj_order_id AS "cjOrderId",
-        cj_shipping_status AS "cjShippingStatus",
-        shipping_carrier AS "shippingCarrier",
+        -- cj_order_id AS "cjOrderId", -- Column does not exist in orders table
+        -- cj_shipping_status AS "cjShippingStatus", -- Column does not exist in orders table
+        shipping_carrier AS "shippingCarrier", -- Reverted to shipping_carrier as carrier_name column does not exist
         tracking_number AS "trackingNumber"
       FROM orders
       WHERE user_id = $1
@@ -104,7 +99,7 @@ export async function GET(request: NextRequest) {
       const itemsResult = await client.query(itemsQuery, [order.id]);
       ordersWithItems.push({
         id: order.id,
-        totalAmount: parseFloat(order.totalamount),
+        totalAmount: parseFloat(order.totalAmount), // Corrected case to match query alias
         currency: order.currency,
         status: order.status,
         date: new Date(order.date).toISOString(),

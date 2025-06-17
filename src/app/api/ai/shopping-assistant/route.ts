@@ -3,7 +3,6 @@ import { NextRequest, NextResponse } from 'next/server';
 import { ai } from '@/ai/genkit'; // Import the configured ai instance
 
 import { googleAI, gemini } from '@genkit-ai/googleai'; // To specify model instance and gemini helper
-import { z } from 'zod';
 
 // Import schemas from the centralized file
 import {
@@ -16,6 +15,8 @@ import {
 
 // Import the prompt builder
 import { buildProductRecommendationsMessages } from '@/ai/prompts/shopping-assistant-prompts';
+// Import the keyword extractor prompt and schema
+import { buildKeywordExtractorMessages, KeywordExtractorOutputSchema } from '@/ai/prompts/keyword-extractor-prompt';
 // ProductAISchema is needed for fetchProductsDirectly
 import { ProductAISchema } from '@/ai/schemas/shopping-assistant-schemas';
 
@@ -48,26 +49,37 @@ async function fetchProductsDirectly(userQuery: string | undefined): Promise<Pro
       return [];
     }
 
-    const productsData: any[] = await response.json();
+    const responseJson = await response.json();
+    const productsData: any[] = responseJson.data || []; // Ensure productsData is an array
     console.log('[fetchProductsDirectly] Received productsData count:', productsData.length);
 
     const validatedProducts: ProductForAI[] = [];
     for (const product of productsData) {
+      let finalImageUrl = product.image_url || product.imageUrl;
+      if (typeof finalImageUrl === 'string' && finalImageUrl.startsWith('[')) {
+        try {
+          const images = JSON.parse(finalImageUrl);
+          if (Array.isArray(images) && images.length > 0) {
+            finalImageUrl = images[0];
+          } else {
+            finalImageUrl = undefined;
+          }
+        } catch (e) {
+          console.error(`[fetchProductsDirectly] Failed to parse imageUrl for product ID ${product.id}:`, e);
+          finalImageUrl = undefined;
+        }
+      }
+
       const mappedProduct = {
         id: product.id?.toString(),
         name: product.name,
         description: product.description,
-        category: product.category,
-        brand: product.brand,
         price: typeof product.price === 'string' ? parseFloat(product.price) : product.price,
-        currency: product.currency || 'USD',
-        sku: product.sku,
-        imageUrl: product.image_url || product.imageUrl,
-        productUrl: product.product_url || product.productUrl,
-        attributes: product.attributes || [],
-        inventory: product.inventory || { stockQuantity: 0, availability: 'out of stock' },
-        dataAiHint: product.dataAiHint || `Product: ${product.name}, Category: ${product.category}, Brand: ${product.brand}`
+        imageUrl: finalImageUrl,
+        category: product.category, // Default is handled by Zod schema if undefined
+        dataAiHint: product.dataAiHint || `Product: ${product.name}, Category: ${product.category || 'N/A'}`,
       };
+
       const validation = ProductAISchema.safeParse(mappedProduct);
       if (validation.success) {
         validatedProducts.push(validation.data);
@@ -88,16 +100,49 @@ const shoppingAssistantFlow = ai.defineFlow({
   name: 'shoppingAssistantFlow',
   inputSchema: GetProductRecommendationsInputSchema,
   outputSchema: GetProductRecommendationsOutputSchema, // Output schema for the flow itself
-}, async (input /* Type will be inferred */): Promise<GetProductRecommendationsOutput> => {
+}, async (input: GetProductRecommendationsInput): Promise<GetProductRecommendationsOutput> => {
   console.log('[API Shopping Assistant Flow] Initiated with input:', JSON.stringify(input, null, 2));
 
-  // Step 1: Fetch products directly using the input query
-  const productsFound = await fetchProductsDirectly(input.query);
-  console.log('[API Shopping Assistant Flow] Products found directly:', JSON.stringify(productsFound.slice(0,2), null, 2)); // Log first 2
+  // Step 1: Extract keywords from the user's query
+  let extractedKeywords = input.query; // Default to original query if extraction fails
+  try {
+    const keywordMessages = buildKeywordExtractorMessages(input.query);
+    const keywordLlmResponse = await ai.generate({
+      model: gemini('gemini-2.0-flash'),
+      messages: keywordMessages,
+      config: { temperature: 0.1 }, // Low temperature for precise extraction
+    });
+    const rawKeywordResponseText = keywordLlmResponse.message?.content?.[0]?.text;
+    if (rawKeywordResponseText) {
+      let cleanedKeywordJsonString = rawKeywordResponseText;
+      const keywordJsonBlockMatch = cleanedKeywordJsonString.match(/```json\s*([\s\S]*?)\s*```/s);
+      if (keywordJsonBlockMatch && keywordJsonBlockMatch[1]) {
+        cleanedKeywordJsonString = keywordJsonBlockMatch[1];
+      }
+      cleanedKeywordJsonString = cleanedKeywordJsonString.trim();
+      const parsedKeywordJson = JSON.parse(cleanedKeywordJsonString);
+      const validatedKeywords = KeywordExtractorOutputSchema.safeParse(parsedKeywordJson);
+      if (validatedKeywords.success) {
+        extractedKeywords = validatedKeywords.data.keywords;
+        console.log('[API Shopping Assistant Flow] Extracted keywords:', extractedKeywords);
+      } else {
+        console.warn('[API Shopping Assistant Flow] Keyword extraction JSON did not match schema:', validatedKeywords.error.flatten());
+      }
+    } else {
+      console.warn('[API Shopping Assistant Flow] Keyword extraction LLM response was empty.');
+    }
+  } catch (keywordError: any) {
+    console.error('[API Shopping Assistant Flow] Error during keyword extraction:', keywordError.message);
+    // Fallback to original query already handled by default assignment
+  }
 
-  // Step 2: Build messages for the LLM, now including the fetched product data
-  // The buildProductRecommendationsMessages function will need to be updated to accept productsFound
+  // Step 2: Fetch products directly using the extracted keywords
+  const productsFound = await fetchProductsDirectly(extractedKeywords);
+  console.log('[API Shopping Assistant Flow] Products found directly (using extracted keywords):', JSON.stringify(productsFound.slice(0,2), null, 2)); // Log first 2
+
+  // Step 3: Build messages for the LLM, using original input query for context and fetched product data
   const messages = buildProductRecommendationsMessages(input, productsFound);
+  // Note: 'input' still contains the original user query, which is good for the LLM's final response generation.
 
   try {
     // Step 3: Call LLM to formulate the final JSON response based on fetched data

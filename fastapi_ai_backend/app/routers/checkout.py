@@ -10,9 +10,10 @@ from app.models.checkout_models import (
     MerchantSubtotal,
     MerchantItemDetail,
     CalculatedShippingOption,
-    CartItemInput # For iterating
+    CartItemInput, # For iterating
+    ShippingAddressInput # For passing to service
 )
-from app.models.shipping_models import ShippingAddressInput # For passing to service
+
 from app.db import get_db_connection, release_db_connection
 from app.dependencies import get_current_active_user_id
 from app.services.shipping_rate_calculator_service import get_available_shipping_options

@@ -370,6 +370,99 @@ This strategic shift aims to create a flexible, powerful, and maintainable AI sy
 - Extend product schema for merchant-specific attributes
 - Implement cashback configuration tables
 
+## Automated Testing Strategy
+
+### 1. The Testing Philosophy: The Pyramid of Efficiency
+
+The most effective testing strategy follows the Testing Pyramid, focusing on writing many fast, cheap tests at the bottom and fewer slow, expensive tests at the top.
+
+#### Level 1: Unit Tests (The Base - ~70% of tests):
+- **What**: Test individual functions or components in isolation
+- **Why**: Fast to run, pinpoint exact sources of bugs, and cheap to write
+- **Example**: Testing a function that calculates variant pricing
+
+#### Level 2: Integration Tests (~20% of tests):
+- **What**: Test how multiple parts work together
+- **Why**: Verify the "plumbing" between components
+- **Example**: Testing that the "Add to Cart" button correctly calls the backend API
+
+#### Level 3: End-to-End (E2E) Tests (The Peak - ~10% of tests):
+- **What**: Simulate full user journeys in a real browser
+- **Why**: Verify the application works as a whole from the user's perspective
+- **Example**: Complete user flow from product search to checkout
+
+### 2. Recommended Tools & Setup
+
+#### Backend (FastAPI):
+- **Framework**: Pytest
+- **HTTP Client**: HTTPX
+- **Mocking**: unittest.mock
+- **Database**: Test containers for isolated database testing
+
+#### Frontend (Next.js):
+- **Unit/Integration**: Jest with React Testing Library
+- **E2E Testing**: Cypress
+- **Visual Testing**: Storybook with Chromatic
+
+#### CI/CD:
+- GitHub Actions for automated test execution
+- Automated test reporting and coverage
+- Parallel test execution for faster feedback
+
+### 3. Implementation Plan by Phase
+
+#### Phase 1: Core Infrastructure & Authentication
+- **Unit Tests**:
+  - Wallet connection logic
+  - Authentication flows
+  - Token validation
+- **Integration Tests**:
+  - API endpoints with database interaction
+  - Authentication middleware
+- **E2E Tests**:
+  - User registration and login flow
+  - Wallet connection and verification
+
+#### Phase 2: Merchant Platform
+- **Unit Tests**:
+  - Product validation logic
+  - Price calculation functions
+- **Integration Tests**:
+  - Product CRUD operations
+  - Merchant dashboard APIs
+- **E2E Tests**:
+  - Merchant onboarding flow
+  - Product management workflows
+
+#### Phase 3: Payment Processing
+- **Unit Tests**:
+  - Transaction validation
+  - Currency conversion logic
+- **Integration Tests**:
+  - Payment gateway integration
+  - Order processing pipeline
+- **E2E Tests**:
+  - Complete checkout flow
+  - Payment method selection and processing
+
+### 4. Setting Up for Automated Success
+
+#### Test Environment
+- Separate test database with automatic cleanup
+- Isolated test containers for dependencies
+- Mock external services and APIs
+
+#### CI/CD Pipeline
+- Automated test execution on every push/PR
+- Parallel test execution
+- Test coverage reporting
+- Automated deployment to staging on success
+
+#### Monitoring and Maintenance
+- Test flakiness monitoring
+- Performance benchmarking
+- Regular dependency updates
+
 ## Risk Management
 
 ### Technical Risks

@@ -1,0 +1,26 @@
+# Test dependencies
+pytest>=7.0.0,<8.0.0
+pytest-asyncio>=0.18.0,<0.19.0
+pytest-cov>=4.0.0,<5.0.0
+httpx>=0.24.0
+asyncpg>=0.29.0
+SQLAlchemy>=1.4.0,<2.0.0
+pytest-env>=0.8.0,<0.9.0
+pytest-mock>=3.10.0,<4.0.0
+pytest-xdist>=3.0.0,<4.0.0
+pytest-sugar>=0.9.0,<1.0.0
+pytest-html>=3.2.0,<4.0.0
+pytest-instafail>=0.4.0,<0.5.0
+pytest-randomly>=3.10.0,<4.0.0
+pytest-rerunfailures>=10.0,<11.0
+pytest-timeout>=2.0.0,<3.0.0
+pytest-benchmark>=4.0.0,<5.0.0
+pytest-dependency>=0.5.0,<0.6.0
+pytest-order>=1.0.0,<2.0.0
+pytest-snapshot>=0.9.0,<0.10.0
+pytest-freezegun>=0.4.0,<0.5.0
+pytest-mock-resources>=2.0.0,<3.0.0
+pytest-postgresql>=4.0.0,<5.0.0
+pytest-docker>=1.0.0,<2.0.0
+python-dotenv>=1.0.0
+pydantic[email]

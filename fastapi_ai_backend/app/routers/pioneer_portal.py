@@ -71,8 +71,8 @@ async def list_my_pioneer_deliverables(
     description="Allows an authenticated pioneer to submit content for one of their assigned deliverables. Sets the status to 'submitted_for_review'."
 )
 async def submit_pioneer_deliverable(
-    deliverable_id: int = FastApiPath(..., description="ID of the deliverable being submitted."),
     payload: PioneerDeliverableSubmitPioneer,
+    deliverable_id: int = FastApiPath(..., description="ID of the deliverable being submitted."),
     application_id: int = Depends(get_current_pioneer_application_id_or_403), # Ensures user is an active pioneer
     conn: asyncpg.Connection = Depends(get_db_connection)
 ):

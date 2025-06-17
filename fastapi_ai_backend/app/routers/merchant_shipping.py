@@ -150,7 +150,7 @@ async def list_shipping_methods(
     description="Retrieves details of a specific shipping method belonging to the authenticated merchant."
 )
 async def get_shipping_method(
-    method_id: int = FastApiPath(..., description="ID of the shipping method to retrieve."),
+    method_id: int = Path(..., description="ID of the shipping method to retrieve."),
     merchant_id: str = Depends(get_current_merchant_id),
     conn: asyncpg.Connection = Depends(get_db_connection)
 ):
@@ -171,8 +171,8 @@ async def get_shipping_method(
     description="Allows a merchant to update the name or active status of their shipping method."
 )
 async def update_shipping_method(
-    method_id: int = FastApiPath(..., description="ID of the shipping method to update."),
     method_data: MerchantShippingMethodUpdate,
+    method_id: int = Path(..., description="ID of the shipping method to update."),
     merchant_id: str = Depends(get_current_merchant_id),
     conn: asyncpg.Connection = Depends(get_db_connection)
 ):
@@ -228,7 +228,7 @@ async def update_shipping_method(
     description="Deletes a shipping method for the authenticated merchant. This will also delete associated shipping zones and rates due to CASCADE constraints."
 )
 async def delete_shipping_method(
-    method_id: int = FastApiPath(..., description="ID of the shipping method to delete."),
+    method_id: int = Path(..., description="ID of the shipping method to delete."),
     merchant_id: str = Depends(get_current_merchant_id),
     conn: asyncpg.Connection = Depends(get_db_connection)
 ):
@@ -257,8 +257,8 @@ async def delete_shipping_method(
     description="Creates a new shipping zone under a specified shipping method for the merchant."
 )
 async def create_shipping_zone(
-    method_id: int = FastApiPath(..., description="ID of the parent shipping method."),
     zone_data: ShippingZoneCreate,
+    method_id: int = Path(..., description="ID of the parent shipping method."),
     merchant_id: str = Depends(get_current_merchant_id),
     conn: asyncpg.Connection = Depends(get_db_connection)
 ):
@@ -288,7 +288,7 @@ async def create_shipping_zone(
     description="Lists all shipping zones associated with a specific shipping method of the merchant."
 )
 async def list_shipping_zones_for_method(
-    method_id: int = FastApiPath(..., description="ID of the parent shipping method."),
+    method_id: int = Path(..., description="ID of the parent shipping method."),
     merchant_id: str = Depends(get_current_merchant_id),
     conn: asyncpg.Connection = Depends(get_db_connection)
 ):
@@ -312,7 +312,7 @@ async def list_shipping_zones_for_method(
     description="Retrieves details of a specific shipping zone, including its defined locations. Ensures the zone belongs to the merchant."
 )
 async def get_shipping_zone_detail(
-    zone_id: int = FastApiPath(..., description="ID of the shipping zone to retrieve."),
+    zone_id: int = Path(..., description="ID of the shipping zone to retrieve."),
     merchant_id: str = Depends(get_current_merchant_id),
     conn: asyncpg.Connection = Depends(get_db_connection)
 ):
@@ -343,8 +343,8 @@ async def get_shipping_zone_detail(
     description="Allows a merchant to update the name of their shipping zone."
 )
 async def update_shipping_zone(
-    zone_id: int = FastApiPath(..., description="ID of the shipping zone to update."),
     zone_data: ShippingZoneUpdate,
+    zone_id: int = Path(..., description="ID of the shipping zone to update."),
     merchant_id: str = Depends(get_current_merchant_id),
     conn: asyncpg.Connection = Depends(get_db_connection)
 ):
@@ -383,7 +383,7 @@ async def update_shipping_zone(
     description="Deletes a shipping zone for the merchant. Associated locations and rates will also be deleted due to CASCADE constraints."
 )
 async def delete_shipping_zone(
-    zone_id: int = FastApiPath(..., description="ID of the shipping zone to delete."),
+    zone_id: int = Path(..., description="ID of the shipping zone to delete."),
     merchant_id: str = Depends(get_current_merchant_id),
     conn: asyncpg.Connection = Depends(get_db_connection)
 ):
@@ -410,8 +410,8 @@ async def delete_shipping_zone(
     description="Adds a new location definition (country, state/province, postal code pattern) to a shipping zone."
 )
 async def add_location_to_zone(
-    zone_id: int = FastApiPath(..., description="ID of the shipping zone to add location(s) to."),
     location_data: ShippingZoneLocationCreate, # Single location for now
+    zone_id: int = Path(..., description="ID of the shipping zone to add location(s) to."),
     merchant_id: str = Depends(get_current_merchant_id),
     conn: asyncpg.Connection = Depends(get_db_connection)
 ):
@@ -457,7 +457,7 @@ async def add_location_to_zone(
     description="Removes a specific location definition from a shipping zone."
 )
 async def remove_location_from_zone(
-    location_id: int = FastApiPath(..., description="ID of the shipping zone location entry to delete."),
+    location_id: int = Path(..., description="ID of the shipping zone location entry to delete."),
     merchant_id: str = Depends(get_current_merchant_id),
     conn: asyncpg.Connection = Depends(get_db_connection)
 ):
@@ -517,8 +517,8 @@ async def get_merchant_shipping_rate(
     description="Creates a new shipping rate for a specific shipping zone owned by the merchant."
 )
 async def create_shipping_rate(
-    zone_id: int = FastApiPath(..., description="ID of the shipping zone to add this rate to."),
     rate_data: ShippingRateCreate,
+    zone_id: int = Path(..., description="ID of the shipping zone to add this rate to."),
     merchant_id: str = Depends(get_current_merchant_id),
     conn: asyncpg.Connection = Depends(get_db_connection)
 ):
@@ -558,7 +558,7 @@ async def create_shipping_rate(
     description="Lists all shipping rates associated with a specific shipping zone owned by the merchant."
 )
 async def list_shipping_rates_for_zone(
-    zone_id: int = FastApiPath(..., description="ID of the shipping zone."),
+    zone_id: int = Path(..., description="ID of the shipping zone."),
     merchant_id: str = Depends(get_current_merchant_id),
     conn: asyncpg.Connection = Depends(get_db_connection)
 ):
@@ -582,7 +582,7 @@ async def list_shipping_rates_for_zone(
     description="Retrieves details of a specific shipping rate, ensuring it belongs to the merchant."
 )
 async def get_shipping_rate(
-    rate_id: int = FastApiPath(..., description="ID of the shipping rate to retrieve."),
+    rate_id: int = Path(..., description="ID of the shipping rate to retrieve."),
     merchant_id: str = Depends(get_current_merchant_id),
     conn: asyncpg.Connection = Depends(get_db_connection)
 ):
@@ -602,8 +602,8 @@ async def get_shipping_rate(
     description="Allows a merchant to update the details of their shipping rate."
 )
 async def update_shipping_rate(
-    rate_id: int = FastApiPath(..., description="ID of the shipping rate to update."),
     rate_data: ShippingRateUpdate,
+    rate_id: int = Path(..., description="ID of the shipping rate to update."),
     merchant_id: str = Depends(get_current_merchant_id),
     conn: asyncpg.Connection = Depends(get_db_connection)
 ):
@@ -642,7 +642,7 @@ async def update_shipping_rate(
     description="Deletes a specific shipping rate for the merchant."
 )
 async def delete_shipping_rate(
-    rate_id: int = FastApiPath(..., description="ID of the shipping rate to delete."),
+    rate_id: int = Path(..., description="ID of the shipping rate to delete."),
     merchant_id: str = Depends(get_current_merchant_id),
     conn: asyncpg.Connection = Depends(get_db_connection)
 ):

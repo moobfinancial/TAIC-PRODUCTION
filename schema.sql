@@ -1,20 +1,25 @@
 -- Users Table (Comprehensive)
 CREATE TABLE users (
-    id VARCHAR(255) PRIMARY KEY, -- Application-generated unique ID (e.g., UUID)
-    email VARCHAR(255) UNIQUE, -- Nullable if user signs up with wallet only
-    hashed_password VARCHAR(255), -- Nullable if user signs up with wallet only
-    password_salt VARCHAR(255), -- Companion to hashed_password
-    wallet_address VARCHAR(255) UNIQUE, -- Nullable if user signs up with email only. Wallet addresses are typically case-sensitive or mixed-case checksummed. Store as received or normalize if appropriate for the specific blockchain.
-    role VARCHAR(50) NOT NULL DEFAULT 'SHOPPER' CHECK (role IN ('SHOPPER', 'MERCHANT', 'ADMIN')),
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    email VARCHAR(255) UNIQUE,
+    hashed_password VARCHAR(255),
     full_name VARCHAR(255),
-    is_active BOOLEAN DEFAULT TRUE NOT NULL,
-    email_verified BOOLEAN DEFAULT FALSE NOT NULL,
-    wallet_verified BOOLEAN DEFAULT FALSE NOT NULL, -- If wallet ownership verification is planned
+    role VARCHAR(50) NOT NULL DEFAULT 'SHOPPER',
+    wallet_address VARCHAR(255) UNIQUE,
+    is_active BOOLEAN DEFAULT TRUE,
+    is_superuser BOOLEAN DEFAULT FALSE,
+    email_verified BOOLEAN DEFAULT FALSE,
+    wallet_verified BOOLEAN DEFAULT FALSE,
     last_login_at TIMESTAMP WITH TIME ZONE,
-    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP NOT NULL,
-    updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP NOT NULL
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    username VARCHAR(50) NOT NULL,
+    business_name VARCHAR(100),
+    business_description TEXT,
+    CONSTRAINT users_role_check CHECK (role IN ('SHOPPER', 'MERCHANT', 'ADMIN'))
 );
 
+CREATE INDEX idx_users_username ON users(username);
 CREATE INDEX idx_users_email ON users(email);
 CREATE INDEX idx_users_wallet_address ON users(wallet_address);
 CREATE INDEX idx_users_role ON users(role);
@@ -89,16 +94,12 @@ EXECUTE FUNCTION update_updated_at_column();
 -- Categories Table
 CREATE TABLE categories (
     id SERIAL PRIMARY KEY,
-    name VARCHAR(255) NOT NULL,
+    name VARCHAR(100) NOT NULL,
+    slug VARCHAR(100) NOT NULL UNIQUE,
     description TEXT,
     parent_category_id INTEGER REFERENCES categories(id) ON DELETE SET NULL,
-    category_type VARCHAR(10) DEFAULT 'PRODUCT' NOT NULL,
-    custom_attributes JSONB,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
-    is_active BOOLEAN DEFAULT TRUE,
-    CONSTRAINT categories_name_parent_id_unique UNIQUE (name, parent_category_id),
-    CONSTRAINT check_category_type CHECK (category_type IN ('PRODUCT', 'SERVICE'))
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );
 
 CREATE INDEX idx_categories_parent_category_id ON categories(parent_category_id);
@@ -126,6 +127,9 @@ CREATE TABLE cj_products (
     shipping_rules_id VARCHAR(255),
     source VARCHAR(50) DEFAULT 'CJ',
     variants_json JSONB,
+    original_name TEXT,
+    original_description TEXT,
+    approval_status TEXT DEFAULT 'pending',
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );
@@ -149,19 +153,22 @@ CREATE TABLE admin_users (
 CREATE INDEX idx_admin_users_username ON admin_users(username);
 
 CREATE TABLE products (
-    id VARCHAR(255) PRIMARY KEY,
+    id SERIAL PRIMARY KEY,
     name VARCHAR(255) NOT NULL,
     description TEXT,
     price DECIMAL(10, 2) NOT NULL, 
-    base_price DECIMAL(10, 2) NULL, 
-    image_url VARCHAR(255),
+    category_id INTEGER REFERENCES categories(id) ON DELETE SET NULL,
+    stock_quantity INTEGER NOT NULL DEFAULT 0,
+    image_url TEXT,
+    is_active BOOLEAN DEFAULT TRUE,
+    has_variants BOOLEAN DEFAULT FALSE,
     additional_image_urls JSONB NULL, 
     category VARCHAR(100),
     platform_category_id INTEGER REFERENCES categories(id) ON DELETE SET NULL,
     data_ai_hint TEXT,
     is_active BOOLEAN DEFAULT false NOT NULL,
     approval_status VARCHAR(50) DEFAULT 'pending' NOT NULL,
-    merchant_id VARCHAR(255), 
+    merchant_id UUID REFERENCES users(id) ON DELETE SET NULL, 
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP NOT NULL,
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP NOT NULL,
     has_variants BOOLEAN DEFAULT FALSE,
@@ -193,19 +200,16 @@ CREATE INDEX idx_products_original_cj_product_id ON products(original_cj_product
 
 CREATE TABLE product_variants (
     id SERIAL PRIMARY KEY,
-    product_id VARCHAR(255) NOT NULL, 
-    sku VARCHAR(255) UNIQUE NOT NULL,
-    name_override VARCHAR(512),      
-    price DECIMAL(10, 2) NOT NULL,   
-    image_url VARCHAR(255),          
-    stock_quantity INTEGER NOT NULL DEFAULT 0,
-    weight_grams INTEGER,            
-    attributes JSONB,                
-    is_active BOOLEAN DEFAULT TRUE,  
-    cj_variant_id VARCHAR(255) UNIQUE, 
+    product_id INTEGER,
+    attributes JSONB NOT NULL,
+    sku VARCHAR(100) UNIQUE,
+    specific_price DECIMAL(10, 2),
+    stock_quantity INTEGER DEFAULT 0,
+    image_url VARCHAR(255),
+    price DECIMAL(10, 2) NOT NULL DEFAULT 0,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
-    CONSTRAINT fk_product_variants_product_id FOREIGN KEY (product_id) REFERENCES products(id) ON DELETE CASCADE
+    FOREIGN KEY (product_id) REFERENCES products(id) ON DELETE CASCADE
 );
 
 CREATE INDEX idx_product_variants_product_id ON product_variants(product_id);

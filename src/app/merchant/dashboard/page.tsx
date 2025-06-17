@@ -3,7 +3,7 @@
 
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
-import { LayoutDashboard, Package, ShoppingBag, DollarSign, Settings, BarChart3, LogOut, PlusCircle } from 'lucide-react';
+import { LayoutDashboard, Package, ShoppingBag, DollarSign, Settings, BarChart3, LogOut, PlusCircle, Lightbulb } from 'lucide-react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useMerchantAuth } from '@/contexts/MerchantAuthContext';
@@ -45,6 +45,7 @@ export default function MerchantDashboardPage() {
     { title: "View Orders", description: "Track incoming orders and manage their status.", icon: <ShoppingBag className="h-8 w-8 text-primary" />, href: "/merchant/orders", cta: "View Orders" },
     { title: "Financials & Payouts", description: "Review sales, commissions, and request payouts.", icon: <DollarSign className="h-8 w-8 text-primary" />, href: "/merchant/financials", cta: "View Financials" },
     { title: "Cashback & Promotions", description: "Configure cashback rewards and other promotions.", icon: <BarChart3 className="h-8 w-8 text-primary" />, href: "/merchant/promotions", cta: "Manage Promotions" },
+    { title: "Product Ideas", description: "Get AI-powered suggestions for new products and innovations.", icon: <Lightbulb className="h-8 w-8 text-primary" />, href: "/merchant/dashboard/tools/product-ideas", cta: "Generate Ideas" },
     { title: "Account Settings", description: "Update your store profile and payout information.", icon: <Settings className="h-8 w-8 text-primary" />, href: "/merchant/settings", cta: "Edit Settings" },
   ];
 

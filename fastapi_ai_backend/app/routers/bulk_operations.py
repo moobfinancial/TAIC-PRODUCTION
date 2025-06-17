@@ -2,11 +2,11 @@ import csv
 import io
 from typing import List, Dict, Any, Optional
 from fastapi import APIRouter, HTTPException, UploadFile, File, status
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 import asyncpg
 
-from app.db import get_db_connection, release_db_connection
-from app.models.product import ProductCreate, ProductVariantCreate # Assuming ProductCreate exists or can be adapted. For now, we'll build the dict manually.
+from ..db import get_db_connection, release_db_connection
+from ..models.product import ProductCreate, ProductVariantCreate # Assuming ProductCreate exists or can be adapted. For now, we'll build the dict manually.
 
 router = APIRouter(
     tags=["Bulk Operations"],

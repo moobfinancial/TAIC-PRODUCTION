@@ -47,10 +47,10 @@ export async function POST(req: NextRequest) {
     // Insert the new merchant user
     const result = await pool.query(
       `INSERT INTO users 
-        (username, email, password_hash, business_name, business_description, role) 
+        (username, email, hashed_password, business_name, business_description, role) 
        VALUES ($1, $2, $3, $4, $5, $6) 
        RETURNING id, username, email, business_name, role, created_at`,
-      [username, email, passwordHash, businessName, businessDescription || null, 'merchant']
+      [username, email, passwordHash, businessName, businessDescription || null, 'MERCHANT']
     );
     
     const newMerchant = result.rows[0];

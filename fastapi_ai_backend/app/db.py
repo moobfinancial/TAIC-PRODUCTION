@@ -6,7 +6,7 @@ from typing import Optional, cast
 load_dotenv()
 
 # Primary connection method: Use DATABASE_URL if set
-DATABASE_URL = os.getenv("POSTGRES_URL")
+DATABASE_URL = os.getenv("DATABASE_URL")
 
 # Fallback to individual components if DATABASE_URL is not set
 DB_USER = os.getenv("DB_USER", "taic_user")
@@ -101,6 +101,100 @@ async def get_db_pool() -> asyncpg.Pool:
         if POOL is None: # Check again
             raise ConnectionError("Failed to initialize database pool. Cannot get pool.")
     return cast(asyncpg.Pool, POOL)
+
+from contextlib import asynccontextmanager # Add this import if not already present at the top
+from typing import AsyncGenerator # Add this import if not already present at the top
+
+@asynccontextmanager
+async def get_verbose_db_connection(context_name: str = "UnknownContext") -> AsyncGenerator[asyncpg.Connection, None]:
+    """
+    Acquires a database connection from the global POOL with verbose logging,
+    and ensures it's released. To be used with 'async with'.
+    """
+    global POOL
+    if POOL is None:
+        print(f"DB Context [{context_name}]: Global POOL is None. Attempting to initialize.")
+        await init_db_pool()
+        if POOL is None:
+            raise ConnectionError(f"DB Context [{context_name}]: Failed to initialize global database pool.")
+
+    current_pool = cast(asyncpg.Pool, POOL)
+    connection: Optional[asyncpg.Connection] = None
+    conn_id_str = 'N/A'
+    try:
+        free_before = current_pool.get_freesize()
+        size_before = current_pool.get_size()
+        print(f"DB Context [{context_name}]: Acquiring connection from global pool {current_pool} (ID: {id(current_pool)}). Pool state: Size={size_before}, Free={free_before}")
+        
+        connection = await current_pool.acquire()
+        conn_id_str = str(id(connection))
+        
+        free_after_acquire = current_pool.get_freesize()
+        print(f"DB Context [{context_name}]: Acquired connection {connection} (ID: {conn_id_str}) from global pool {current_pool} (ID: {id(current_pool)}). Pool free: {free_after_acquire}")
+        
+        yield connection
+        
+        print(f"DB Context [{context_name}]: Returned from yield for connection {connection} (ID: {conn_id_str}).")
+    except Exception as e:
+        print(f"DB Context [{context_name}]: Exception with connection {connection} (ID: {conn_id_str}): {e!r}")
+        raise
+    finally:
+        if connection:
+            if not connection.is_closed():
+                free_before_release = current_pool.get_freesize()
+                print(f"DB Context [{context_name}]: Releasing connection {connection} (ID: {conn_id_str}) to global pool {current_pool} (ID: {id(current_pool)}). Pool free before release: {free_before_release}")
+                
+                await current_pool.release(connection)
+                
+                free_after_release = current_pool.get_freesize()
+                print(f"DB Context [{context_name}]: Released connection {connection} (ID: {conn_id_str}) to global pool {current_pool} (ID: {id(current_pool)}). Pool free after release: {free_after_release}")
+            else:
+                print(f"DB Context [{context_name}]: Connection {connection} (ID: {conn_id_str}) was already closed. Not releasing explicitly.")
+        else:
+            print(f"DB Context [{context_name}]: No connection was acquired from global pool, nothing to release.")
+
+@asynccontextmanager
+async def get_verbose_db_connection_from_pool(pool_to_use: asyncpg.Pool, context_name: str = "UnknownContext") -> AsyncGenerator[asyncpg.Connection, None]:
+    """
+    Acquires a database connection from a *specific* POOL with verbose logging,
+    and ensures it's released. To be used with 'async with'. For tests.
+    """
+    if pool_to_use is None:
+        raise ValueError(f"DB Context [{context_name}]: Provided pool_to_use is None.")
+
+    connection: Optional[asyncpg.Connection] = None
+    conn_id_str = 'N/A'
+    try:
+        free_before = pool_to_use._queue.qsize()
+        size_before = pool_to_use.get_size()
+        print(f"DB Context [{context_name}]: Acquiring connection from specific pool {pool_to_use} (ID: {id(pool_to_use)}). Pool state: Size={size_before}, Free={free_before}")
+        
+        connection = await pool_to_use.acquire()
+        conn_id_str = str(id(connection))
+        
+        free_after_acquire = pool_to_use._queue.qsize()
+        print(f"DB Context [{context_name}]: Acquired connection {connection} (ID: {conn_id_str}) from specific pool {pool_to_use} (ID: {id(pool_to_use)}). Pool free: {free_after_acquire}")
+        
+        yield connection
+        
+        print(f"DB Context [{context_name}]: Returned from yield for connection {connection} (ID: {conn_id_str}).")
+    except Exception as e:
+        print(f"DB Context [{context_name}]: Exception with connection {connection} (ID: {conn_id_str}): {e!r}")
+        raise
+    finally:
+        if connection:
+            if not connection.is_closed():
+                free_before_release = pool_to_use._queue.qsize()
+                print(f"DB Context [{context_name}]: Releasing connection {connection} (ID: {conn_id_str}) to specific pool {pool_to_use} (ID: {id(pool_to_use)}). Pool free before release: {free_before_release}")
+                
+                await pool_to_use.release(connection)
+                
+                free_after_release = pool_to_use._queue.qsize()
+                print(f"DB Context [{context_name}]: Released connection {connection} (ID: {conn_id_str}) to specific pool {pool_to_use} (ID: {id(pool_to_use)}). Pool free after release: {free_after_release}")
+            else:
+                print(f"DB Context [{context_name}]: Connection {connection} (ID: {conn_id_str}) was already closed. Not releasing explicitly.")
+        else:
+            print(f"DB Context [{context_name}]: No connection was acquired from specific pool, nothing to release.")
 
 # Example usage (optional, for direct testing of this module)
 if __name__ == "__main__":

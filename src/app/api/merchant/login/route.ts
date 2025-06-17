@@ -32,9 +32,9 @@ export async function POST(req: NextRequest) {
     
     // Find user by email
     const result = await pool.query(
-      `SELECT id, username, email, password_hash, role, business_name 
+      `SELECT id, username, email, hashed_password, role, business_name 
        FROM users 
-       WHERE email = $1 AND role = 'merchant'`,
+       WHERE email = $1 AND role = 'MERCHANT'`,
       [email]
     );
     
@@ -48,7 +48,7 @@ export async function POST(req: NextRequest) {
     const user = result.rows[0];
     
     // Verify password
-    const passwordValid = await verifyPassword(password, user.password_hash);
+    const passwordValid = await verifyPassword(password, user.hashed_password);
     if (!passwordValid) {
       return NextResponse.json(
         { error: 'Invalid email or password' },

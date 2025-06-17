@@ -1,11 +1,17 @@
 import logging
 import json
-from typing import List, Optional, Dict, Any
+from typing import List, Optional, Dict, Any, Set, TypeVar, Generic
 
 from fastapi import HTTPException, status
-from fastapi_mcp import FastMCP, ToolContext
+from mcp.server.fastmcp.server import FastMCP, Context as MCPContext, ServerSession, Request
 import asyncpg
-from typing import Set # Added Set
+
+# Define type variables for the Context generic
+ServerSessionT = TypeVar('ServerSessionT', bound=ServerSession)
+RequestT = TypeVar('RequestT', bound=Request)
+
+# Create a concrete context type with 2 type parameters
+ToolContext = MCPContext[ServerSessionT, RequestT] if 'ServerSessionT' in locals() else Any
 
 from app.models.cj_product_models import (
     CJProductDetailRequest,
@@ -26,9 +32,7 @@ cj_dropshipping_mcp_server = FastMCP(
 
 @cj_dropshipping_mcp_server.tool(
     name="get_cj_product_details",
-    description="Retrieves detailed information for a specific CJ Dropshipping product from the local database.",
-    input_model=CJProductDetailRequest,
-    output_model=Product
+    description="Retrieves detailed information for a specific CJ Dropshipping product from the local database."
 )
 async def get_cj_product_details(ctx: ToolContext, request_data: CJProductDetailRequest) -> Product:
     logger.info(f"Received request for CJ Product ID: {request_data.cj_product_id}")
@@ -182,9 +186,7 @@ async def get_cj_product_details(ctx: ToolContext, request_data: CJProductDetail
 
 @cj_dropshipping_mcp_server.tool(
     name="get_cj_product_stock",
-    description="Retrieves stock information for a specific CJ Dropshipping product, either overall or for a specific SKU.",
-    input_model=CJProductStockRequest,
-    output_model=CJProductStockStatus
+    description="Retrieves stock levels for a specific CJ Dropshipping product's variants from the local database."
 )
 async def get_cj_product_stock(ctx: ToolContext, request_data: CJProductStockRequest) -> CJProductStockStatus:
     logger.info(f"Received stock request for CJ Product ID: {request_data.cj_product_id}, SKU: {request_data.sku}")
@@ -309,9 +311,7 @@ async def get_cj_product_stock(ctx: ToolContext, request_data: CJProductStockReq
 
 @cj_dropshipping_mcp_server.tool(
     name="get_cj_product_shipping_info",
-    description="Retrieves estimated shipping information for a specific CJ Dropshipping product to a destination country. This data is based on stored information and may not be real-time.",
-    input_model=CJProductShippingRequest,
-    output_model=CJProductShippingInfo
+    description="Retrieves estimated shipping information for a specific CJ Dropshipping product to a destination country. This data is based on stored information and may not be real-time."
 )
 async def get_cj_product_shipping_info(ctx: ToolContext, request_data: CJProductShippingRequest) -> CJProductShippingInfo:
     logger.info(f"Received old shipping info request for CJ Product ID: {request_data.cj_product_id}, SKU: {request_data.sku}, Country: {request_data.destination_country}")
@@ -470,9 +470,7 @@ NEXTJS_INTERNAL_APP_URL = os.getenv("NEXTJS_INTERNAL_APP_URL", "http://localhost
 
 @cj_dropshipping_mcp_server.tool(
     name="get_live_cj_product_update",
-    description="Fetches live product details for a specific CJ Dropshipping product ID from the Next.js API, updates the local cj_products database with this live data, and returns the standardized Product model.",
-    input_model=CJProductDetailRequest, # Reuses the same input model as get_cj_product_details
-    output_model=Product
+    description="Fetches live product details for a specific CJ Dropshipping product ID from the Next.js API, updates the local cj_products database with this live data, and returns the standardized Product model."
 )
 async def get_live_cj_product_update(ctx: ToolContext, request_data: CJProductDetailRequest) -> Product:
     cj_product_id = request_data.cj_product_id

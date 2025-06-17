@@ -5,15 +5,15 @@ import asyncpg
 from datetime import timedelta, timezone # For token expiry and NOW()
 import uuid # For generating user ID for new wallet users
 
-from app.models.auth_models import (
+from ..models.auth_models import (
     UserRegisterSchema, UserResponse,
     UserLoginSchema, TokenResponse,
     WalletLoginSchema, LinkWalletSchema, LinkEmailPasswordSchema
 )
-from app.db import get_db_connection, release_db_connection
-from app.security import hash_password, verify_password, create_access_token, verify_wallet_signature
-from app.email_utils import send_shopper_welcome_email, send_merchant_welcome_email # For potential future verification email
-from app.dependencies import get_current_active_user_id # For protected endpoint
+from ..db import get_db_connection, release_db_connection
+from ..security import hash_password, verify_password, create_access_token, verify_wallet_signature
+from ..email_utils import send_shopper_welcome_email, send_merchant_welcome_email # For potential future verification email
+from ..dependencies import get_current_active_user_id # For protected endpoint
 
 logger = logging.getLogger(__name__)
 
@@ -49,6 +49,14 @@ async def register_user(user_in: UserRegisterSchema):
                 detail=f"User with email '{user_in.email}' already exists."
             )
 
+        # Check if username already exists
+        existing_user_username = await conn.fetchval("SELECT username FROM users WHERE username = $1", user_in.username)
+        if existing_user_username:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=f"User with username '{user_in.username}' already exists."
+            )
+
         # Generate UUID for user ID
         user_id = str(uuid.uuid4())
 
@@ -62,20 +70,21 @@ async def register_user(user_in: UserRegisterSchema):
         # `email_verified` defaults to FALSE. `is_active` defaults to TRUE.
 
         query = """
-            INSERT INTO users (id, email, hashed_password, full_name, role, created_at, updated_at)
-            VALUES ($1, $2, $3, $4, $5, NOW(), NOW())
-            RETURNING id, email, full_name, role, is_active, email_verified, created_at
-            -- Not returning updated_at as it's same as created_at here
-            -- Not returning hashed_password or salt
+            INSERT INTO users (id, username, email, hashed_password, full_name, role, business_name, business_description, created_at, updated_at)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, NOW(), NOW())
+            RETURNING id, username, email, full_name, role, business_name, business_description, is_active, email_verified, created_at, wallet_address, wallet_verified, last_login_at
         """
 
         created_user_row = await conn.fetchrow(
             query,
             user_id,
+            user_in.username,
             user_in.email,
             hashed_pw,
             user_in.full_name,
-            user_in.role # Already validated by Pydantic model
+            user_in.role, # Already validated by Pydantic model
+            user_in.business_name,
+            user_in.business_description
         )
 
         if not created_user_row:
@@ -89,7 +98,7 @@ async def register_user(user_in: UserRegisterSchema):
 
         # Send Welcome Email
         try:
-            user_name_for_email = created_user_row['full_name'] if created_user_row['full_name'] else created_user_row['email']
+            user_name_for_email = user_in.full_name if user_in.full_name else user_in.username
 
             if created_user_row['role'] == 'SHOPPER':
                 email_sent = await send_shopper_welcome_email(
@@ -97,11 +106,11 @@ async def register_user(user_in: UserRegisterSchema):
                     user_name=user_name_for_email
                 )
             elif created_user_row['role'] == 'MERCHANT':
-                # For merchant, user_name_for_email might be business name if collected differently,
-                # for now, using full_name or email.
+                # For merchant, use business_name if available, otherwise username or email.
+                merchant_display_name = user_in.business_name if user_in.business_name else user_name_for_email
                 email_sent = await send_merchant_welcome_email(
                     to_email=created_user_row['email'],
-                    merchant_name=user_name_for_email
+                    merchant_name=merchant_display_name
                 )
             else: # Should not happen due to Pydantic validation
                 email_sent = False
@@ -117,14 +126,40 @@ async def register_user(user_in: UserRegisterSchema):
             # Do not fail the registration if only email sending fails.
             # The user is already created in the DB.
 
-        return UserResponse(**dict(created_user_row))
+        # Convert DB row to dict for manipulation
+        user_data_dict = dict(created_user_row)
 
-    except asyncpg.exceptions.UniqueViolationError as e: # Should be caught by the email check generally
-        logger.warning(f"Unique violation during user registration for email {user_in.email}: {e}")
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail=f"An account with this email already exists."
-        )
+        # Ensure 'id' is a string
+        if isinstance(user_data_dict.get('id'), uuid.UUID):
+            user_data_dict['id'] = str(user_data_dict['id'])
+
+        # The RETURNING clause is now more comprehensive.
+        # UserResponse expects: id, username, email, full_name, role, business_name, business_description, 
+        # is_active, email_verified, wallet_address, wallet_verified, created_at, last_login_at
+        # Ensure all these are present or have defaults if not in created_user_row
+        user_data_dict.setdefault('username', created_user_row.get('username')) # Should be there from RETURNING
+        user_data_dict.setdefault('business_name', created_user_row.get('business_name')) # Should be there
+        user_data_dict.setdefault('business_description', created_user_row.get('business_description')) # Should be there
+        user_data_dict.setdefault('wallet_address', created_user_row.get('wallet_address')) # Now in RETURNING
+        user_data_dict.setdefault('wallet_verified', created_user_row.get('wallet_verified', False)) # Now in RETURNING
+        user_data_dict.setdefault('last_login_at', created_user_row.get('last_login_at')) # Now in RETURNING
+        # is_active and email_verified should also be in created_user_row from the RETURNING clause.
+
+        return UserResponse(**user_data_dict)
+
+    except asyncpg.exceptions.UniqueViolationError as e:
+        logger.warning(f"Unique violation during user registration for user {user_in.username} / email {user_in.email}: {e}")
+        # Determine if it's email or username conflict based on error details if possible, or give generic.
+        # For now, a more generic message, or rely on the prior specific checks.
+        if 'users_email_key' in str(e).lower():
+            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=f"An account with email '{user_in.email}' already exists.")
+        elif 'users_username_key' in str(e).lower(): # Assuming 'users_username_key' is the constraint name
+            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=f"An account with username '{user_in.username}' already exists.")
+        elif 'users_wallet_address_key' in str(e).lower():
+             raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="This wallet address is already associated with an account.")
+        else:
+            # Generic if specific constraint not identified
+            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="A unique constraint was violated during registration (e.g., email, username, or wallet already exists). Please check your details.")
     except asyncpg.exceptions.UndefinedTableError as e:
         logger.critical(f"Database table 'users' or related might be missing. Error: {e}")
         raise HTTPException(status_code=500, detail="Server configuration error: User database not found.")
@@ -168,7 +203,7 @@ async def link_email_password_to_account(
         # 1. Fetch current user's record to check current email status
         # Fetch all fields needed for UserResponse as well, as we return it.
         user_record = await conn.fetchrow(
-            "SELECT id, email, full_name, role, is_active, email_verified, wallet_address, wallet_verified, created_at, last_login_at FROM users WHERE id = $1",
+            "SELECT id, username, email, full_name, role, business_name, business_description, is_active, email_verified, wallet_address, wallet_verified, created_at, last_login_at FROM users WHERE id = $1",
             current_user_id
         )
         # get_current_active_user_id ensures user exists and is active.
@@ -219,7 +254,7 @@ async def link_email_password_to_account(
 
         # We need to fetch all fields for UserResponse after update
         updated_user_row_dict = await conn.fetchrow(
-            update_query_sql + " RETURNING id, email, full_name, role, is_active, email_verified, wallet_address, wallet_verified, created_at, last_login_at",
+            update_query_sql + " RETURNING id, username, email, full_name, role, business_name, business_description, is_active, email_verified, wallet_address, wallet_verified, created_at, last_login_at",
             *params
         )
 
@@ -232,7 +267,22 @@ async def link_email_password_to_account(
         # 6. Conceptual: Trigger Email Verification Flow
         logger.info(f"TODO: Trigger email verification flow for user {current_user_id} and email {link_data.email}")
 
-        return UserResponse(**dict(updated_user_row_dict))
+        # Convert DB row to dict for manipulation
+        user_data_dict = dict(updated_user_row_dict)
+
+        # Ensure 'id' is a string
+        if isinstance(user_data_dict.get('id'), uuid.UUID):
+            user_data_dict['id'] = str(user_data_dict['id'])
+        
+        # The RETURNING clause for this update is comprehensive and should cover all UserResponse fields:
+        # RETURNING id, username, email, full_name, role, business_name, business_description, 
+        #           is_active, email_verified, wallet_address, wallet_verified, created_at, last_login_at
+        # Ensure all these are present or have defaults if not in updated_user_row_dict
+        user_data_dict.setdefault('username', updated_user_row_dict.get('username'))
+        user_data_dict.setdefault('business_name', updated_user_row_dict.get('business_name'))
+        user_data_dict.setdefault('business_description', updated_user_row_dict.get('business_description'))
+
+        return UserResponse(**user_data_dict)
 
     except HTTPException:
         raise
@@ -287,7 +337,7 @@ async def link_wallet_to_account(
         # 3. Fetch current user's record to check their existing wallet status
         # Fetch all fields needed for UserResponse as well
         user_record = await conn.fetchrow(
-             "SELECT id, email, full_name, role, is_active, email_verified, wallet_address, wallet_verified, created_at, last_login_at FROM users WHERE id = $1",
+             "SELECT id, username, email, full_name, role, business_name, business_description, is_active, email_verified, wallet_address, wallet_verified, created_at, last_login_at FROM users WHERE id = $1",
             current_user_id
         )
         # get_current_active_user_id already confirms user exists and is active, but fetching again for all fields.
@@ -304,10 +354,15 @@ async def link_wallet_to_account(
                 await conn.execute("UPDATE users SET wallet_verified = TRUE, updated_at = NOW() WHERE id = $1", current_user_id)
                 logger.info(f"Wallet {normalized_link_wallet_address} re-verified for user {current_user_id}.")
                 # Re-fetch for updated response
-                user_record = await conn.fetchrow("SELECT id, email, full_name, role, is_active, email_verified, wallet_address, wallet_verified, created_at, last_login_at FROM users WHERE id = $1", current_user_id)
+                user_record = await conn.fetchrow("SELECT id, username, email, full_name, role, business_name, business_description, is_active, email_verified, wallet_address, wallet_verified, created_at, last_login_at FROM users WHERE id = $1", current_user_id)
             else:
                 logger.info(f"Wallet {normalized_link_wallet_address} already linked and verified for user {current_user_id}.")
-            return UserResponse(**dict(user_record))
+            # Ensure all UserResponse fields are present
+            user_data_dict = dict(user_record)
+            user_data_dict.setdefault('username', user_data_dict.get('username'))
+            user_data_dict.setdefault('business_name', user_data_dict.get('business_name'))
+            user_data_dict.setdefault('business_description', user_data_dict.get('business_description'))
+            return UserResponse(**user_data_dict)
 
         if current_normalized_user_wallet and current_normalized_user_wallet != normalized_link_wallet_address:
             logger.warning(f"User {current_user_id} attempted to link new wallet {normalized_link_wallet_address} but already has wallet {current_normalized_user_wallet} linked.")
@@ -322,7 +377,7 @@ async def link_wallet_to_account(
             UPDATE users
             SET wallet_address = $1, wallet_verified = TRUE, updated_at = NOW()
             WHERE id = $2
-            RETURNING id, email, full_name, role, is_active, email_verified, wallet_address, wallet_verified, created_at, last_login_at
+            RETURNING id, username, email, full_name, role, business_name, business_description, is_active, email_verified, wallet_address, wallet_verified, created_at, last_login_at
             """,
             normalized_link_wallet_address, # Storing normalized address
             current_user_id
@@ -333,7 +388,12 @@ async def link_wallet_to_account(
              raise HTTPException(status_code=500, detail="Failed to link wallet to your account.")
 
         logger.info(f"Wallet {normalized_link_wallet_address} successfully linked to user {current_user_id}.")
-        return UserResponse(**dict(updated_user_row))
+        # Ensure all UserResponse fields are present
+        user_data_dict = dict(updated_user_row)
+        user_data_dict.setdefault('username', user_data_dict.get('username'))
+        user_data_dict.setdefault('business_name', user_data_dict.get('business_name'))
+        user_data_dict.setdefault('business_description', user_data_dict.get('business_description'))
+        return UserResponse(**user_data_dict)
 
     except HTTPException:
         raise
@@ -409,7 +469,7 @@ async def login_or_register_with_wallet(login_data: WalletLoginSchema):
         normalized_wallet_address = login_data.wallet_address.lower() # Normalize for lookup and potential storage
 
         user_record = await conn.fetchrow(
-            "SELECT id, email, role, is_active, wallet_verified FROM users WHERE LOWER(wallet_address) = $1",
+            "SELECT id, username, email, full_name, role, business_name, business_description, is_active, email_verified, wallet_address, wallet_verified, created_at, last_login_at FROM users WHERE LOWER(wallet_address) = $1",
             normalized_wallet_address
         )
 
@@ -426,25 +486,27 @@ async def login_or_register_with_wallet(login_data: WalletLoginSchema):
                     status_code=status.HTTP_403_FORBIDDEN,
                     detail="Account is inactive. Please contact support.",
                 )
-            user_id = user_record['id']
+            db_user_id_uuid = user_record['id'] # This is uuid.UUID
+            user_id_for_token = str(db_user_id_uuid) # For JWT and logging
             user_role = user_record['role']
-            user_email = user_record['email'] # Fetch email if it exists
+            user_email = user_record['email']
 
-            update_clauses = ["last_login_at = NOW()"]
-            update_params = []
-            param_idx = 1
-
+            update_fields_to_set = ["last_login_at = NOW()", "updated_at = NOW()"]
             if not user_record['wallet_verified']:
-                update_clauses.append(f"wallet_verified = TRUE")
+                update_fields_to_set.append("wallet_verified = TRUE")
+            
+            set_clause_string = ", ".join(update_fields_to_set)
+            update_query = f"UPDATE users SET {set_clause_string} WHERE id = $1"
+            
+            logger.info(f"Attempting to update user. ID for query: {db_user_id_uuid}, Type of ID: {type(db_user_id_uuid)}")
+            await conn.execute(
+                update_query,
+                db_user_id_uuid # Pass the UUID object directly
+            )
+            logger.info(f"Updated user {user_id_for_token}: set {{set_clause_string}}") # Use double curly braces for literal curly brace in f-string
 
-            update_params.append(user_id)
-
-            if update_clauses: # Only run update if there's something to update (e.g. wallet_verified or last_login_at)
-                 await conn.execute(
-                    f"UPDATE users SET {', '.join(update_clauses)} WHERE id = ${len(update_clauses) + 1}", # Param index for id
-                    *update_params[:-1], user_id # Spread params for SET, then id for WHERE
-                )
-                 logger.info(f"Updated last_login_at and/or wallet_verified for user {user_id}")
+            # Ensure user_id variable (used later for token) is the string version
+            user_id = user_id_for_token
 
 
         else:
@@ -458,7 +520,7 @@ async def login_or_register_with_wallet(login_data: WalletLoginSchema):
             insert_query = """
                 INSERT INTO users (id, wallet_address, role, is_active, wallet_verified, last_login_at, created_at, updated_at)
                 VALUES ($1, $2, $3, TRUE, TRUE, NOW(), NOW(), NOW())
-                RETURNING id, email, role, is_active, wallet_verified
+                RETURNING id, username, email, full_name, role, business_name, business_description, is_active, email_verified, wallet_address, wallet_verified, created_at, last_login_at
             """
             # Note: email, hashed_password, password_salt, full_name will be NULL
             new_user_row = await conn.fetchrow(
@@ -488,8 +550,43 @@ async def login_or_register_with_wallet(login_data: WalletLoginSchema):
 
         access_token = create_access_token(data=token_data)
 
-        logger.info(f"User (Wallet: {normalized_wallet_address}, ID: {user_id}) logged in/registered successfully.")
-        return TokenResponse(access_token=access_token, token_type="bearer")
+        # Fetch final user details to ensure all fields are current for UserResponse
+        final_user_details_row = await conn.fetchrow(
+            "SELECT id, username, email, full_name, role, business_name, business_description, is_active, email_verified, wallet_address, wallet_verified, created_at, last_login_at FROM users WHERE id = $1",
+            user_id # user_id is a string here
+        )
+
+        if not final_user_details_row:
+            logger.error(f"Critical: Could not retrieve full details for user {user_id} after login/registration for TokenResponse.")
+            # This should ideally not happen if user was just found/created and updated.
+            # Fallback to minimal user info if absolutely necessary, or raise error.
+            # For now, raising an error as this indicates a problem.
+            raise HTTPException(status_code=500, detail="Failed to retrieve complete user details after login.")
+
+        user_data_for_response = dict(final_user_details_row)
+        # Ensure string ID for Pydantic model
+        if isinstance(user_data_for_response.get('id'), uuid.UUID):
+            user_data_for_response['id'] = str(user_data_for_response['id'])
+        
+        # Ensure all expected fields for UserResponse are present, providing defaults if necessary
+        # Most should come from the comprehensive SELECT query.
+        user_data_for_response.setdefault('username', final_user_details_row.get('username'))
+        user_data_for_response.setdefault('email', final_user_details_row.get('email'))
+        user_data_for_response.setdefault('full_name', final_user_details_row.get('full_name'))
+        user_data_for_response.setdefault('role', final_user_details_row.get('role')) # Should always exist
+        user_data_for_response.setdefault('business_name', final_user_details_row.get('business_name'))
+        user_data_for_response.setdefault('business_description', final_user_details_row.get('business_description'))
+        user_data_for_response.setdefault('is_active', final_user_details_row.get('is_active', True))
+        user_data_for_response.setdefault('email_verified', final_user_details_row.get('email_verified', False))
+        user_data_for_response.setdefault('wallet_address', final_user_details_row.get('wallet_address', normalized_wallet_address)) # Use normalized_wallet_address as fallback
+        user_data_for_response.setdefault('wallet_verified', final_user_details_row.get('wallet_verified', True)) # Verified in this flow
+        user_data_for_response.setdefault('created_at', final_user_details_row.get('created_at'))
+        user_data_for_response.setdefault('last_login_at', final_user_details_row.get('last_login_at'))
+
+        user_response_obj = UserResponse(**user_data_for_response)
+
+        logger.info(f"User (Wallet: {normalized_wallet_address}, ID: {user_id}) logged in/registered successfully. Token and UserResponse prepared.")
+        return TokenResponse(access_token=access_token, token_type="bearer", user=user_response_obj)
 
     except asyncpg.exceptions.UniqueViolationError as e:
         # This could happen if, somehow, a wallet address record was created by another process
@@ -531,15 +628,12 @@ Authenticates an existing user with their email and password.
 - Returns a 403 Forbidden error if the user account is marked as inactive.
     """
 )
-async def login_for_access_token(login_data: UserLoginSchema):
-    conn: Optional[asyncpg.Connection] = None
+async def login_for_access_token(login_data: UserLoginSchema, conn: asyncpg.Connection = Depends(get_db_connection)):
     try:
-        conn = await get_db_connection()
-
-        # Retrieve user by email
-        # Ensure all necessary fields for token and checks are fetched
+    # Retrieve user by email
+    # Ensure all necessary fields for token and checks are fetched
         user_record = await conn.fetchrow(
-            "SELECT id, email, hashed_password, role, is_active FROM users WHERE email = $1",
+            "SELECT id, username, email, hashed_password, full_name, role, business_name, business_description, is_active, email_verified, wallet_address, wallet_verified, created_at, last_login_at, is_superuser FROM users WHERE email = $1",
             login_data.email
         )
 
@@ -550,6 +644,7 @@ async def login_for_access_token(login_data: UserLoginSchema):
                 detail="Incorrect email or password.",
                 headers={"WWW-Authenticate": "Bearer"},
             )
+
 
         if not user_record['is_active']:
             logger.warning(f"Login attempt failed: User {login_data.email} is inactive.")
@@ -572,22 +667,46 @@ async def login_for_access_token(login_data: UserLoginSchema):
             await conn.execute("UPDATE users SET last_login_at = NOW() WHERE id = $1", user_record['id'])
             logger.info(f"Updated last_login_at for user {user_record['id']}")
         except Exception as e_update_login:
-            # Log error but don't fail login if this update fails
-            logger.error(f"Failed to update last_login_at for user {user_record['id']}: {e_update_login}")
+
+        if not updated_user_details_row:
+            logger.error(f"Failed to update last_login_at or retrieve user details for {user_record['email']} after login.")
+            # Fallback or raise error - for now, we'll proceed but log critically
+            # This ideally shouldn't happen if the user was just authenticated.
+            # Consider raising an HTTPException if this is critical path for accurate response data.
+            # For now, we'll use the initially fetched user_record for token, but log this issue.
+            # This means UserResponse might have slightly stale last_login_at if this fetch fails.
+            # However, TokenResponse now requires a full UserResponse, so we must have these details.
+            raise HTTPException(status_code=500, detail="Failed to finalize login process.")
 
         # Create access token
-        # Subject ('sub') of the token is usually the user's ID.
-        # Add other claims like role for authorization purposes.
         token_data = {
-            "sub": user_record['id'], # Using user_id as subject
-            "email": user_record['email'], # Include email as a claim
-            "role": user_record['role']   # Include role as a claim
+            "sub": str(updated_user_details_row['id']),
+            "email": updated_user_details_row['email'],
+            "role": updated_user_details_row['role']
         }
-        # ACCESS_TOKEN_EXPIRE_MINUTES is handled by create_access_token default
+        if updated_user_details_row.get('wallet_address'):
+            token_data['wallet_address'] = updated_user_details_row['wallet_address']
+
         access_token = create_access_token(data=token_data)
 
-        logger.info(f"User {user_record['email']} (ID: {user_record['id']}) logged in successfully.")
-        return TokenResponse(access_token=access_token, token_type="bearer")
+        user_data_for_response = dict(updated_user_details_row)
+        if isinstance(user_data_for_response.get('id'), uuid.UUID):
+            user_data_for_response['id'] = str(user_data_for_response['id'])
+        
+        # Ensure all expected fields for UserResponse are present
+        user_data_for_response.setdefault('username', updated_user_details_row.get('username'))
+        user_data_for_response.setdefault('business_name', updated_user_details_row.get('business_name'))
+        user_data_for_response.setdefault('business_description', updated_user_details_row.get('business_description'))
+        user_data_for_response.setdefault('is_active', updated_user_details_row.get('is_active', True))
+        user_data_for_response.setdefault('email_verified', updated_user_details_row.get('email_verified', False))
+        user_data_for_response.setdefault('wallet_verified', updated_user_details_row.get('wallet_verified', False))
+        user_data_for_response.setdefault('created_at', updated_user_details_row.get('created_at'))
+        # last_login_at is fresh from RETURNING
+
+        user_response_obj = UserResponse(**user_data_for_response)
+
+        logger.info(f"User {updated_user_details_row['email']} (ID: {updated_user_details_row['id']}) logged in successfully. Token and UserResponse prepared.")
+        return TokenResponse(access_token=access_token, token_type="bearer", user=user_response_obj)
 
     except asyncpg.exceptions.UndefinedTableError as e:
         logger.critical(f"Login failed: Database table 'users' or related might be missing. Error: {e}")

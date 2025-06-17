@@ -1,14 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { Pool } from 'pg';
+// import { Pool } from 'pg'; // Replaced with shared pool
 import jwt from 'jsonwebtoken'; // For JWT verification
 import { z } from 'zod'; // For POST request validation
 
-// Assume a shared db pool, e.g., from 'src/lib/db.ts'
-// For this example, creating a new pool.
-const pool = new Pool({
-  connectionString: process.env.DATABASE_URL ||
-    `postgresql://${process.env.PGUSER}:${process.env.PGPASSWORD}@${process.env.PGHOST}:${process.env.PGPORT}/${process.env.PGDATABASE}`,
-});
+import { pool } from '@/lib/db'; // Use the shared pool
 
 const JWT_SECRET = process.env.JWT_SECRET || 'your-fallback-jwt-secret'; // Ensure this is in .env
 

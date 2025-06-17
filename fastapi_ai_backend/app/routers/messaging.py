@@ -1,7 +1,7 @@
 import logging
 import uuid
 from typing import List, Optional
-from fastapi import APIRouter, HTTPException, Depends, status, Path as FastApiPath
+from fastapi import APIRouter, HTTPException, Depends, status, Path
 import asyncpg
 from datetime import datetime
 
@@ -187,7 +187,7 @@ async def list_my_conversations(
     description="Retrieves all messages within a specific conversation. Updates the user's last_read_at timestamp for this conversation."
 )
 async def list_messages_in_conversation(
-    conversation_id: str = FastApiPath(..., description="ID of the conversation to fetch messages from."),
+    conversation_id: str = Path(..., description="ID of the conversation to fetch messages from."),
     current_user_id: str = Depends(get_current_active_user_id),
     conn: asyncpg.Connection = Depends(get_db_connection)
 ):
@@ -218,8 +218,8 @@ async def list_messages_in_conversation(
     description="Sends a new message from the authenticated user to an existing conversation."
 )
 async def send_message_in_conversation(
-    conversation_id: str = FastApiPath(..., description="ID of the conversation to send a message to."),
     payload: MessageCreate,
+    conversation_id: str = Path(..., description="ID of the conversation to send a message to."),
     current_user_id: str = Depends(get_current_active_user_id),
     conn: asyncpg.Connection = Depends(get_db_connection)
 ):

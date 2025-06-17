@@ -3,12 +3,14 @@ from typing import Optional, List # Added List
 from fastapi import APIRouter, HTTPException, Depends, status, Response # Added Response
 import asyncpg
 from datetime import datetime, timezone # Added datetime, timezone
+import secrets # For nonce generation
 
 from app.models.user_profile_models import (
     UserProfileResponse, UserProfileUpdate,
     UserExportData, UserOrderData, UserStoreReviewData,
-    AccountDeletionResponse # Added for delete endpoint
+    AccountDeletionResponse, LinkWalletRequest, WalletChallengeResponse # Added new models
 )
+from app.security import hash_password, verify_wallet_signature # Corrected import path
 from app.models.store_profile_models import StoreProfile # For merchant profile part of export
 from app.db import get_db_connection, release_db_connection
 from app.dependencies import get_current_active_user_id # For protected endpoints
@@ -103,19 +105,39 @@ async def update_current_user_profile(
                 detail="No update data provided. Please provide at least one field to update (e.g., full_name)."
             )
 
-        # For now, only full_name is updatable via this model.
-        # If other fields are added to UserProfileUpdate, extend this logic.
-        allowed_fields_to_update = ["full_name"]
         fields_to_update_in_query = {}
+        # Process fields from UserProfileUpdate model
+        if profile_update_data.full_name is not None:
+            fields_to_update_in_query['full_name'] = profile_update_data.full_name
+        
+        if profile_update_data.email is not None:
+            # Check if email is actually changing to avoid unnecessary verification reset
+            current_email_row = await conn.fetchrow("SELECT email FROM users WHERE id = $1", current_user_id)
+            if current_email_row and current_email_row['email'] != profile_update_data.email:
+                fields_to_update_in_query['email'] = profile_update_data.email
+                fields_to_update_in_query['email_verified'] = False # Reset verification status
+            elif not current_email_row: # Should not happen if user exists
+                 fields_to_update_in_query['email'] = profile_update_data.email
+                 fields_to_update_in_query['email_verified'] = False
 
-        for field in allowed_fields_to_update:
-            if field in update_data:
-                fields_to_update_in_query[field] = update_data[field]
+        if profile_update_data.password is not None:
+            # Password should be hashed before storing
+            # Assuming a utility function like `hash_password` exists
+            try:
+                fields_to_update_in_query['hashed_password'] = hash_password(profile_update_data.password)
+                # If your system uses a separate salt column and hash_password doesn't include it:
+                # fields_to_update_in_query['password_salt'] = generate_salt() # Example
+            except Exception as e:
+                logger.error(f"Password hashing failed for user {current_user_id}: {e}")
+                raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Error processing password update.")
 
         if not fields_to_update_in_query:
+             # This check might need adjustment if all fields are optional and none are provided.
+             # The initial check `if not update_data:` handles if the raw model_dump is empty.
+             # This `if not fields_to_update_in_query:` checks if any *processed* fields are ready for DB.
              raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail="No valid fields provided for update. You can update: " + ", ".join(allowed_fields_to_update)
+                detail="No valid or changed fields provided for update. You can update full_name, email, or password."
             )
 
 
@@ -159,6 +181,127 @@ async def update_current_user_profile(
         import traceback
         logger.error(traceback.format_exc())
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Could not update user profile.")
+
+
+
+@router.get(
+    "/me/link-wallet-challenge",
+    response_model=WalletChallengeResponse,
+    summary="Get Challenge for Wallet Linking",
+    description="""
+Generates a unique nonce that the user's wallet must sign to prove ownership
+when linking a new wallet address.
+- **Protected Endpoint:** Requires authentication.
+- **Note on Nonce Security:** For production, this nonce should be stored server-side
+  (e.g., in a cache like Redis with a short TTL, associated with the user_id) and
+  verified during the link-wallet step to prevent misuse or replay attacks.
+  The current implementation returns it directly for simplicity, relying on the client to pass it back.
+    """
+)
+async def get_wallet_link_challenge(
+    current_user_id: str = Depends(get_current_active_user_id) # Ensures user is authenticated
+):
+    try:
+        nonce = secrets.token_hex(16) # Generate a 32-character hex nonce
+        # In a production system, you would store this nonce associated with current_user_id
+        # e.g., await cache.set(f"link_wallet_nonce:{current_user_id}:{nonce}", "valid", expire=300) # 5 min expiry, store nonce itself or a flag
+        logger.info(f"Generated link wallet challenge nonce for user {current_user_id}.")
+        return WalletChallengeResponse(nonce=nonce)
+    except Exception as e:
+        logger.error(f"Error generating wallet link challenge for user {current_user_id}: {e}")
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Could not generate wallet link challenge.")
+
+
+@router.post(
+    "/me/link-wallet",
+    response_model=UserProfileResponse,
+    summary="Link Wallet to Account",
+    description="""
+Links a new wallet address to the currently authenticated user's account after
+verifying ownership via a signed nonce.
+- **Protected Endpoint:** Requires authentication.
+- The user must first obtain a nonce from the `/me/link-wallet-challenge` endpoint,
+  sign it with the private key of the wallet they wish to link, and submit the
+  wallet address, the original nonce, and the signature.
+- **Nonce Verification:** The provided nonce should be validated. In a robust system,
+  this means checking against a securely stored, unexpired nonce previously issued to this user.
+    """
+)
+async def link_wallet_to_account(
+    link_request: LinkWalletRequest,
+    current_user_id: str = Depends(get_current_active_user_id),
+    conn: asyncpg.Connection = Depends(get_db_connection)
+):
+    try:
+        # --- Nonce Validation (Simplified) ---
+        # A robust implementation would fetch a stored nonce for current_user_id and compare.
+        # It would also ensure the nonce is single-use (e.g., delete after successful use or check against a used list).
+        # For this version, we rely on the client sending back the exact nonce it received.
+        # This step is more about ensuring the client isn't making up a nonce if we weren't storing it.
+        if not link_request.nonce or len(link_request.nonce) != 32: # Basic check if nonce looks like what we generate
+            logger.warning(f"Potentially invalid nonce format provided by user {current_user_id} for wallet linking.")
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid challenge format. Please request a new one.")
+
+        # --- Signature Verification ---
+        message_to_verify = link_request.nonce
+        try:
+            # Ensure verify_wallet_signature can handle potential checksum variations in wallet_address if necessary
+            is_signature_valid = verify_wallet_signature(
+                wallet_address=link_request.wallet_address,
+                original_message=message_to_verify,
+                signature=link_request.signature
+            )
+        except Exception as sig_e:
+            logger.error(f"Signature verification process failed for user {current_user_id}, wallet {link_request.wallet_address}: {sig_e}")
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Signature verification failed. Ensure the message was signed correctly or wallet address is correct.")
+
+        if not is_signature_valid:
+            logger.warning(f"Invalid signature for wallet linking attempt by user {current_user_id} for wallet {link_request.wallet_address}.")
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid signature. Wallet ownership could not be verified.")
+
+        # --- Check if wallet is already linked to another active user ---
+        # Consider if a wallet linked to a now-inactive user should be re-linkable.
+        # For now, checking against any user.
+        existing_user_with_wallet = await conn.fetchval(
+            "SELECT id FROM users WHERE LOWER(wallet_address) = LOWER($1) AND id != $2",
+            link_request.wallet_address, current_user_id
+        )
+        if existing_user_with_wallet:
+            logger.warning(f"Wallet {link_request.wallet_address} is already linked to another user ({existing_user_with_wallet}). User {current_user_id} attempted to link it.")
+            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="This wallet address is already associated with another account.")
+
+        # --- Update User's Wallet Information ---
+        update_query = """
+            UPDATE users
+            SET wallet_address = $1, wallet_verified = TRUE, updated_at = NOW()
+            WHERE id = $2
+        """
+        result = await conn.execute(update_query, link_request.wallet_address, current_user_id)
+
+        if result == "UPDATE 0":
+            logger.error(f"Failed to link wallet for user {current_user_id}, user not found during update operation.") # Should be caught by dependency
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User profile not found for wallet linking.")
+
+        # If using server-side nonce storage, invalidate/delete the nonce here:
+        # await cache.delete(f"link_wallet_nonce:{current_user_id}:{link_request.nonce}")
+
+        logger.info(f"Wallet {link_request.wallet_address} successfully linked to user {current_user_id}.")
+
+        updated_profile = await fetch_user_profile_by_id(current_user_id, conn)
+        if not updated_profile:
+            logger.error(f"Failed to fetch updated profile for user {current_user_id} after wallet linking.")
+            raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Wallet linked, but failed to retrieve updated profile.")
+        
+        return updated_profile
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error linking wallet for user {current_user_id}: {type(e).__name__} - {e}")
+        import traceback
+        logger.error(traceback.format_exc())
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Could not link wallet to account.")
+
 
 @router.get(
     "/me/export-data",

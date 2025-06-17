@@ -4,13 +4,13 @@ import { z } from 'genkit';
 // Define a Zod schema for the Product, compatible with AppProductType
 export const ProductAISchema = z.object({
   id: z.string(), // This is the cj_product_id
-  page_id: z.string(), // This will be the simple ID for Next.js page routes
+  page_id: z.string().optional(), // This will be the simple ID for Next.js page routes
   name: z.string(),
   description: z.string(),
   price: z.number(),
   imageUrl: z.string(),
-  category: z.string(),
-  dataAiHint: z.string(),
+  category: z.string().optional().default('Uncategorized'), // Make category optional with default
+  dataAiHint: z.string().optional().default(''), // Make dataAiHint optional with default
 });
 export type ProductForAI = z.infer<typeof ProductAISchema>;
 

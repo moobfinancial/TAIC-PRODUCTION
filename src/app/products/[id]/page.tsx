@@ -86,26 +86,19 @@ export default function ProductDetailPage() {
       setAttributeOptions(finalOptions);
 
       // Initialize selectedAttributes with the first option for each attribute
-      // Or, ideally, from a default variant if specified (e.g., product.default_variant_id)
       const initialAttributes: Record<string, string> = {};
       let firstVariantAttributes = product.variants[0].attributes;
-      // If product.default_variant_id is available and corresponds to a variant in the list, use its attributes.
-      // This logic can be enhanced if default_variant_id directly gives attributes or if we match by variant ID.
-      // For now, using attributes of the first variant as a simple default, or from product's initial state if no variants.
       if (Object.keys(finalOptions).length > 0) {
         Object.keys(finalOptions).forEach(key => {
-            // Attempt to use attributes from the first variant if they exist for this key
             if (firstVariantAttributes && firstVariantAttributes[key]) {
                 initialAttributes[key] = String(firstVariantAttributes[key]);
             } else if (finalOptions[key].length > 0) {
-                // Fallback to the first available option for this attribute key
                 initialAttributes[key] = String(finalOptions[key][0]);
             }
         });
       }
       setSelectedAttributes(initialAttributes);
 
-      // Initial image and price are already set by the API to reflect the default variant
       if (isValidHttpUrl(product.imageUrl)) {
         setSelectedImage(product.imageUrl);
       } else if (allImages.length > 0) { // allImages is now pre-filtered
@@ -195,6 +188,7 @@ export default function ProductDetailPage() {
         
         if (response.ok) {
           const data = await response.json();
+          console.log('DEBUG: Raw product data from API:', JSON.stringify(data.product, null, 2));
           if (data.product) {
             // Format the product data to match the expected Product type
             const formattedProduct: Product = {
@@ -513,6 +507,8 @@ export default function ProductDetailPage() {
         .filter(isValidHttpUrl)
     : [];
 
+
+
   return (
     <div className="container mx-auto py-8 px-4">
       <div className="mb-8">
@@ -593,12 +589,12 @@ export default function ProductDetailPage() {
           <div className="space-y-2">
             <div className="flex items-center">
               <Gem className="h-6 w-6 text-primary mr-2" />
-              <span className="text-3xl font-bold text-primary">${currentPrice !== null ? currentPrice.toFixed(2) : 'N/A'}</span>
-              {product?.cashbackPercentage && product.cashbackPercentage > 0 && (
+              <span className="text-3xl font-bold text-primary">{currentPrice !== null ? currentPrice.toFixed(2) : 'N/A'} TAIC</span>
+              {(product?.cashbackPercentage && product.cashbackPercentage > 0) ? (
                 <span className="ml-2 px-2 py-0.5 bg-green-100 text-green-800 text-xs rounded-full">
                   {product.cashbackPercentage}% Cashback
                 </span>
-              )}
+              ) : null}
             </div>
             
             {/* Cash price if available */}
@@ -614,25 +610,22 @@ export default function ProductDetailPage() {
 
           {/* Variant Selectors */}
           {Object.keys(attributeOptions).length > 0 && (
-            <div className="my-6 space-y-4">
+            <div className="space-y-4 pt-4">
               {Object.entries(attributeOptions).map(([attrName, values]) => (
-                <div key={attrName} className="flex items-center space-x-3">
-                  <label htmlFor={`select-${attrName}`} className="text-sm font-medium text-gray-700 capitalize">
-                    {attrName}:
-                  </label>
-                  <select
-                    id={`select-${attrName}`}
-                    name={attrName}
-                    value={selectedAttributes[attrName] || ''}
-                    onChange={(e) => handleAttributeChange(attrName, e.target.value)}
-                    className="block w-full max-w-xs pl-3 pr-10 py-2 text-base border-gray-300 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm rounded-md shadow-sm"
-                  >
+                <div key={attrName}>
+                  <h3 className="text-sm font-semibold text-gray-800 capitalize mb-2">{attrName}</h3>
+                  <div className="flex flex-wrap gap-2">
                     {values.map(value => (
-                      <option key={value} value={value}>
+                      <Button
+                        key={value}
+                        variant={selectedAttributes[attrName] === value ? 'default' : 'outline'}
+                        onClick={() => handleAttributeChange(attrName, value)}
+                        className="rounded-md"
+                      >
                         {value}
-                      </option>
+                      </Button>
                     ))}
-                  </select>
+                  </div>
                 </div>
               ))}
             </div>

@@ -162,6 +162,8 @@ export default function BrowseCjProductsPage() {
 
   // Fetch Platform Categories
   useEffect(() => {
+    console.log('[PlatformCategoriesEffect] Evaluating. adminAuthLoading:', adminAuthLoading, 'adminApiKey Present:', !!adminApiKey);
+
     const fetchPlatformCategories = async () => {
       if (adminAuthLoading) { // Check auth loading state
         console.log('[BrowseCjProductsPage] Admin auth is loading, skipping platform category fetch.');
@@ -194,9 +196,12 @@ export default function BrowseCjProductsPage() {
       }
     };
     if (!adminAuthLoading && adminApiKey) { // Check auth loading state
+      console.log('[PlatformCategoriesEffect] Conditions met. Calling fetchPlatformCategories.');
       fetchPlatformCategories();
+    } else {
+      console.log('[PlatformCategoriesEffect] Conditions NOT met for fetching platform categories. adminAuthLoading:', adminAuthLoading, 'adminApiKey Present:', !!adminApiKey);
     }
-  }, [adminApiKey, adminAuthLoading, toast]); // Add adminAuthLoading, re-add toast for completeness 
+  }, [adminApiKey, adminAuthLoading, toast]);  
 
   // Fetch CJ API Categories for the filter dropdown
   useEffect(() => {
@@ -341,23 +346,50 @@ export default function BrowseCjProductsPage() {
       // If parsing fails, keep the original name
     }
 
-    let determinedPlatformCategoryId = ''; // Default to empty or a 'select' placeholder
+    // Default to 'select-category' as fallback
+    let determinedPlatformCategoryId = 'select-category'; 
 
     if (product.categoryName && platformCategories.length > 0) {
       const cjCategoryNameLower = product.categoryName.toLowerCase().trim();
       console.log(`[openImportModal] Attempting to match CJ category (lower, trimmed): "${cjCategoryNameLower}"`);
-
-      const matchedPlatformCategory = platformCategories.find(pCat => {
+      
+      // Try multiple matching strategies in order of preference
+      
+      // 1. Try exact match first (case-insensitive)
+      let matchedPlatformCategory = platformCategories.find(pCat => {
         const platformCatNameLower = pCat.name.toLowerCase().trim();
-        // console.log(`[openImportModal] Comparing with platform cat: "${platformCatNameLower}" (ID: ${pCat.id})`); // Uncomment for very verbose logging
         return platformCatNameLower === cjCategoryNameLower;
       });
+      
+      // 2. If no exact match, try contains match (e.g., "electronics" in "consumer electronics")
+      if (!matchedPlatformCategory) {
+        matchedPlatformCategory = platformCategories.find(pCat => {
+          const platformCatNameLower = pCat.name.toLowerCase().trim();
+          return platformCatNameLower.includes(cjCategoryNameLower) || 
+                 cjCategoryNameLower.includes(platformCatNameLower);
+        });
+      }
+      
+      // 3. Try word-based matching (any word matches)
+      if (!matchedPlatformCategory) {
+        const cjWords = cjCategoryNameLower.split(/\s+/).filter(word => word.length > 3); // Only meaningful words
+        if (cjWords.length > 0) {
+          matchedPlatformCategory = platformCategories.find(pCat => {
+            const platformCatWords = pCat.name.toLowerCase().trim().split(/\s+/);
+            return cjWords.some(cjWord => 
+              platformCatWords.some(platformWord => 
+                platformWord.includes(cjWord) || cjWord.includes(platformWord)
+              )
+            );
+          });
+        }
+      }
 
       if (matchedPlatformCategory) {
         determinedPlatformCategoryId = String(matchedPlatformCategory.id); // Ensure it's a string for the Select component
         console.log(`[openImportModal] SUCCESS: Matched CJ category "${product.categoryName}" to platform category ID ${determinedPlatformCategoryId} ("${matchedPlatformCategory.name}")`);
       } else {
-        console.log(`[openImportModal] FAILED: No direct match found for CJ category "${product.categoryName}" (normalized: "${cjCategoryNameLower}") in platform categories.`);
+        console.log(`[openImportModal] FAILED: No match found for CJ category "${product.categoryName}" (normalized: "${cjCategoryNameLower}") in platform categories.`);
         platformCategories.forEach(pCat => { // Log all platform categories for manual comparison if match fails
             console.log(`  - Available platform category: "${pCat.name}" (ID: ${pCat.id}, LowerTrimmed: "${pCat.name.toLowerCase().trim()}")`);
         });
@@ -774,12 +806,27 @@ const handleImportProduct = async (event: React.FormEvent<HTMLFormElement>) => {
                         Select a category
                       </SelectItem>
                       {platformCategories.map(cat => (
-                        <SelectItem key={`single-${cat.id}`} value={String(cat.id)}>
+                        <SelectItem 
+                          key={`single-${cat.id}`} 
+                          value={String(cat.id)}
+                          // Highlight the auto-matched category for better UX
+                          className={importModal.platformCategoryId === String(cat.id) ? "font-medium bg-muted/30" : ""}
+                        >
                           {cat.name}
+                          {importModal.platformCategoryId === String(cat.id) && 
+                            importModal.productToImport?.categoryName && 
+                            cat.name.toLowerCase() !== importModal.productToImport.categoryName.toLowerCase() && 
+                            " (Auto-matched from CJ category)"}
                         </SelectItem>
                       ))}
                     </SelectContent>
                   </Select>
+                  {importModal.platformCategoryId !== "select-category" && 
+                   importModal.productToImport?.categoryName && (
+                    <p className="text-xs text-muted-foreground mt-1">
+                      CJ category: {importModal.productToImport.categoryName}
+                    </p>
+                  )}
                 </div>
                 <div>
                   <Label htmlFor="singleSellingPrice">Your Selling Price ($) <span className="text-destructive">*</span></Label>

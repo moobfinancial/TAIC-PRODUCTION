@@ -1,5 +1,5 @@
 from typing import List, Optional, Dict, Any
-from pydantic import BaseModel, Field, PositiveInt, PositiveFloat, constr
+from pydantic import BaseModel, Field, PositiveInt, PositiveFloat, constr, field_validator
 from decimal import Decimal
 from datetime import datetime
 
@@ -23,11 +23,11 @@ class ShippingAddressInput(BaseModel):
     state_province_code: Optional[str] = Field(default=None, max_length=50, description="State or province code, if applicable (e.g., 'CA' for California, 'ON' for Ontario).")
     postal_code: Optional[str] = Field(default=None, max_length=20, description="Postal or ZIP code, if applicable.")
 
-    @validator('country_code')
+    @field_validator('country_code')
     def country_code_to_uppercase(cls, v):
         return v.upper()
 
-    @validator('state_province_code')
+    @field_validator('state_province_code')
     def state_province_code_to_uppercase(cls, v):
         if v is not None:
             return v.upper()

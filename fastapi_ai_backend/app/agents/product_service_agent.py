@@ -1,8 +1,15 @@
-from typing import List, Optional, Dict, Any
+from typing import List, Optional, Dict, Any, TypeVar, Generic
 from pydantic import BaseModel, HttpUrl
-from fastapi_mcp import FastMCP, ToolContext
-from app.models.product import Product, ProductVariant, ListProductsToolInput
-from app.db import get_db_connection, release_db_connection
+from mcp.server.fastmcp.server import FastMCP, Context as MCPContext, ServerSession, Request
+
+# Define type variables for the Context generic
+ServerSessionT = TypeVar('ServerSessionT', bound=ServerSession)
+RequestT = TypeVar('RequestT', bound=Request)
+
+# Create a concrete context type with 2 type parameters
+ToolContext = MCPContext[ServerSessionT, RequestT] if 'ServerSessionT' in locals() else Any
+from ..models.product import Product, ProductVariant, ListProductsToolInput
+from ..db import get_db_connection, release_db_connection
 import asyncpg
 import json # For handling JSONB parameters
 
@@ -15,11 +22,9 @@ product_service_mcp = FastMCP(
 
 @product_service_mcp.tool(
     name="get_all_products",
-    description="Retrieves a list of all available products from the database, optionally filtered by various criteria including price range and attributes.",
-    input_model=ListProductsToolInput,
-    output_model=List[Product]
+    description="Retrieves a list of all available products from the database, optionally filtered by various criteria including price range and attributes."
 )
-async def get_all_products(ctx: ToolContext, tool_input: ListProductsToolInput) -> List[Product]:
+async def get_all_products(tool_input: ListProductsToolInput, ctx: Optional[ToolContext] = None) -> List[Product]:
     """
     MCP Tool to get a list of products from the database.
     Filters by query, category, price range, and variant attributes.

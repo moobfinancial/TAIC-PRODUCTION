@@ -16,7 +16,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ message: 'Wallet address and signature are required' }, { status: 400 });
     }
 
-    // 1. Retrieve user by walletAddress and their stored auth_nonce
+    // Find the user by their wallet address
     const userResult = await pool.query(
       'SELECT id, wallet_address, auth_nonce, username, email, role, taic_balance FROM users WHERE wallet_address = $1',
       [walletAddress.toLowerCase()]

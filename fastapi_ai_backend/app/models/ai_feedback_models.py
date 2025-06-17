@@ -1,5 +1,5 @@
 from typing import Optional, List, Dict, Any
-from pydantic import BaseModel, Field, validator, root_validator
+from pydantic import BaseModel, Field, field_validator, model_validator, ValidationInfo # Updated imports for Pydantic v2
 from datetime import datetime
 
 ALLOWED_FEEDBACK_TYPES = ["thumbs_up", "thumbs_down", "rating_scale", "text_comment"]
@@ -13,26 +13,25 @@ class AIAgentFeedbackBase(BaseModel):
     rating_value: Optional[int] = Field(default=None, description="Rating value, applicable if feedback_type is 'rating_scale' (e.g., 1-5).")
     comment_text: Optional[str] = Field(default=None, description="Text comment for feedback, or additional notes.")
 
-    @validator('feedback_type')
-    def feedback_type_must_be_valid(cls, value):
-        if value not in ALLOWED_FEEDBACK_TYPES:
+    @field_validator('feedback_type')
+    @classmethod
+    def feedback_type_must_be_valid(cls, v: str) -> str:
+        if v not in ALLOWED_FEEDBACK_TYPES:
             raise ValueError(f"Invalid feedback_type. Must be one of: {', '.join(ALLOWED_FEEDBACK_TYPES)}")
-        return value
+        return v
 
-    @root_validator(pre=False) # Pydantic v1 style, for Pydantic v2 use model_validator
-    def check_rating_value_for_rating_scale(cls, values):
-        feedback_type = values.get('feedback_type')
-        rating_value = values.get('rating_value')
-        if feedback_type == 'rating_scale':
-            if rating_value is None:
+    @model_validator(mode='after')
+    def check_rating_value_for_rating_scale(self) -> 'AIAgentFeedbackBase':
+        if self.feedback_type == 'rating_scale':
+            if self.rating_value is None:
                 raise ValueError("rating_value is required when feedback_type is 'rating_scale'.")
-            if not (1 <= rating_value <= 5):
+            if not (1 <= self.rating_value <= 5):
                 raise ValueError("rating_value must be between 1 and 5 for 'rating_scale' feedback.")
-        elif rating_value is not None: # If not rating_scale, rating_value should ideally be None or ignored
+        elif self.rating_value is not None: # If not rating_scale, rating_value should ideally be None or ignored
             # For now, we allow it to be passed but it might not be used. Could also raise error.
-            # values['rating_value'] = None # Or clear it
+            # self.rating_value = None # Or clear it
             pass
-        return values
+        return self
 
     class Config:
         from_attributes = True

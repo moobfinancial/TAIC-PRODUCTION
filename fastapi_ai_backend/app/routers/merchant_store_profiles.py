@@ -1,8 +1,8 @@
 import logging
 import re
 from typing import List, Optional, Dict, Any
-from fastapi import APIRouter, HTTPException, Depends, status
-import asyncpg
+from fastapi import APIRouter, HTTPException, Depends, status, UploadFile, File, Form, Path
+import asyncpg # Import for type hinting
 from slugify import slugify # Using python-slugify, will add to requirements if not there
 
 from app.models.store_profile_models import StoreProfile, StoreProfileCreate, StoreProfileUpdate

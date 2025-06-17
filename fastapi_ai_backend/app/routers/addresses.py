@@ -171,8 +171,8 @@ async def get_user_address(
     description="Updates an existing shipping address for the authenticated user. If `is_default` is set to true, other addresses will be marked as non-default."
 )
 async def update_user_address(
-    address_id: int = FastApiPath(..., description="ID of the address to update."),
     address_data: UserAddressUpdate,
+    address_id: int = FastApiPath(..., description="ID of the address to update."),
     current_user_id: str = Depends(get_current_active_user_id),
     conn: asyncpg.Connection = Depends(get_db_connection)
 ):

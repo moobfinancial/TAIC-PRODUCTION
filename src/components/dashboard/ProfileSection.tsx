@@ -2,13 +2,16 @@
 
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
-import { Gem, UserCircle2, UploadCloud, XCircle, Loader2, Coins } from 'lucide-react'; // Added Coins
+import { Gem, UserCircle2, UploadCloud, XCircle, Loader2, Coins, Wallet, Mail, KeyRound, ShieldCheck, Copy } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
 import { Button } from '@/components/ui/button';
 import React, { useState, useEffect, useRef } from 'react';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label'; // Label might not be used, can be removed if so
 import { useToast } from '@/hooks/use-toast';
+import { useSignMessage, useAccount } from 'wagmi';
+import { useWeb3Modal } from '@web3modal/wagmi/react';
+import { shortenAddress, getUserDisplayName } from '@/utils/formatters';
 
 export function ProfileSection() {
   const { user, token, refreshUser, isLoading: isAuthLoading } = useAuth();
@@ -19,6 +22,21 @@ export function ProfileSection() {
   const [isUploading, setIsUploading] = useState<boolean>(false);
   const [uploadError, setUploadError] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // Hooks for wallet interaction
+  const { open: openWeb3Modal } = useWeb3Modal();
+  const { address: connectedAddress, isConnected, chainId } = useAccount();
+  const { signMessageAsync, isPending: isSigningMessage } = useSignMessage();
+
+  // State for linking wallet
+  const [isLinkingWallet, setIsLinkingWallet] = useState<boolean>(false);
+  const [linkWalletError, setLinkWalletError] = useState<string | null>(null);
+
+  // State for adding email/password
+  const [newEmail, setNewEmail] = useState<string>('');
+  const [newPassword, setNewPassword] = useState<string>('');
+  const [isAddingEmailPassword, setIsAddingEmailPassword] = useState<boolean>(false);
+  const [addEmailPasswordError, setAddEmailPasswordError] = useState<string | null>(null);
 
   useEffect(() => {
     // Update imagePreview when user object changes (e.g., after login or refreshUser)
@@ -128,6 +146,108 @@ export function ProfileSection() {
     }
   };
 
+  const handleLinkWallet = async () => {
+    if (!user || !token) {
+      toast({ title: "Error", description: "User not authenticated.", variant: "destructive" });
+      return;
+    }
+
+    if (!isConnected || !connectedAddress) {
+      toast({ title: "Wallet Not Connected", description: "Please connect your wallet first to link it.", variant: "default" });
+      setLinkWalletError("Please ensure your wallet is connected through the site first.");
+      return;
+    }
+
+    setIsLinkingWallet(true);
+    setLinkWalletError(null);
+
+    try {
+      // 1. Get challenge nonce
+      const challengeResponse = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/users/me/link-wallet-challenge`, {
+        method: 'GET',
+        headers: { 'Authorization': `Bearer ${token}` },
+      });
+      if (!challengeResponse.ok) {
+        const errorData = await challengeResponse.json();
+        throw new Error(errorData.detail || 'Failed to get wallet challenge');
+      }
+      const { nonce } = await challengeResponse.json();
+
+      // 2. Sign nonce
+      const signature = await signMessageAsync({ message: nonce });
+
+      // 3. Link wallet
+      const linkResponse = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/users/me/link-wallet`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ wallet_address: connectedAddress, signature, nonce }),
+      });
+
+      if (!linkResponse.ok) {
+        const errorData = await linkResponse.json();
+        throw new Error(errorData.detail || 'Failed to link wallet');
+      }
+
+      toast({ title: "Wallet Linked!", description: "Your wallet has been successfully linked to your account." });
+      if (refreshUser) await refreshUser();
+
+    } catch (error: any) {
+      console.error("Link wallet failed:", error);
+      const errMsg = error.message || "An unknown error occurred while linking your wallet.";
+      setLinkWalletError(errMsg);
+      toast({ title: "Link Wallet Failed", description: errMsg, variant: "destructive" });
+    } finally {
+      setIsLinkingWallet(false);
+    }
+  };
+
+  const handleAddEmailPassword = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!user || !token) {
+      toast({ title: "Error", description: "User not authenticated.", variant: "destructive" });
+      return;
+    }
+    if (!newEmail || !newPassword) {
+      setAddEmailPasswordError("Email and password are required.");
+      return;
+    }
+
+    setIsAddingEmailPassword(true);
+    setAddEmailPasswordError(null);
+
+    try {
+      const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/users/me`, {
+        method: 'PUT',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ email: newEmail, password: newPassword }),
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.detail || 'Failed to update profile with email/password');
+      }
+
+      toast({ title: "Email & Password Added!", description: "Your account is now secured with email and password." });
+      setNewEmail('');
+      setNewPassword('');
+      if (refreshUser) await refreshUser();
+
+    } catch (error: any) {
+      console.error("Add email/password failed:", error);
+      const errMsg = error.message || "An unknown error occurred.";
+      setAddEmailPasswordError(errMsg);
+      toast({ title: "Update Failed", description: errMsg, variant: "destructive" });
+    } finally {
+      setIsAddingEmailPassword(false);
+    }
+  };
+
   // isAuthLoading handles the initial load of user data
   if (isAuthLoading) {
     return <Card className="shadow-lg"><CardHeader><CardTitle>Loading Profile...</CardTitle></CardHeader><CardContent><Loader2 className="h-8 w-8 animate-spin text-primary" /></CardContent></Card>;
@@ -136,11 +256,13 @@ export function ProfileSection() {
     return <Card className="shadow-lg"><CardHeader><CardTitle>Profile Not Available</CardTitle></CardHeader><CardContent><p>Please log in to view your profile.</p></CardContent></Card>;
   }
 
-  const displayName = user.username || user.walletAddress.substring(0, 6) + "..." + user.walletAddress.substring(user.walletAddress.length - 4);
-  const avatarFallback = (user.username || user.walletAddress || "U").substring(0, 2).toUpperCase();
+  // Use the utility function to get a consistent display name
+  const profileDisplayName = getUserDisplayName(user);
+  const avatarFallback = (user.displayName || user.username || user.walletAddress || "XX").substring(0, 2).toUpperCase();
   // Use imagePreview for AvatarImage src, which is dynamically updated.
   // Fallback to Vercel avatar if imagePreview is null.
-  const currentAvatarSrc = imagePreview || `https://avatar.vercel.sh/${user.walletAddress}.png?size=128`;
+  const vercelAvatarName = user.displayName || user.username || user.walletAddress || 'default';
+  const currentAvatarSrc = imagePreview || `https://avatar.vercel.sh/${vercelAvatarName}.png?size=128`;
 
 
   return (
@@ -156,7 +278,7 @@ export function ProfileSection() {
         <div className="flex flex-col sm:flex-row items-center space-y-4 sm:space-y-0 sm:space-x-6">
           <div className="relative group">
             <Avatar className="h-32 w-32 text-4xl border-2 border-primary/50 shadow-md">
-              <AvatarImage src={currentAvatarSrc} alt={displayName} className="object-cover" />
+              <AvatarImage src={currentAvatarSrc} alt={profileDisplayName} className="object-cover" />
               <AvatarFallback>{avatarFallback}</AvatarFallback>
             </Avatar>
             {selectedFile && imagePreview && imagePreview.startsWith('blob:') && (
@@ -172,7 +294,25 @@ export function ProfileSection() {
             )}
           </div>
           <div className="text-center sm:text-left flex-grow">
-            <h3 className="text-2xl font-semibold">{displayName}</h3>
+            {!user.displayName && !user.username && user.walletAddress ? (
+              <div className="flex items-center gap-2" title={user.walletAddress}>
+                <Wallet className="h-6 w-6 text-primary flex-shrink-0" />
+                <span className="text-lg font-semibold font-mono">{shortenAddress(user.walletAddress)}</span>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="h-8 w-8"
+                  onClick={() => {
+                    navigator.clipboard.writeText(user.walletAddress!);
+                    toast({ title: 'Copied!', description: 'Wallet address copied to clipboard.' });
+                  }}
+                >
+                  <Copy className="h-4 w-4" />
+                </Button>
+              </div>
+            ) : (
+              <h3 className="text-2xl font-semibold">{profileDisplayName}</h3>
+            )}
             {user.email && <p className="text-sm text-muted-foreground">{user.email}</p>}
             <p className="text-sm text-muted-foreground">Role: {user.role}</p>
             <div className="mt-3 space-y-2">
@@ -229,6 +369,83 @@ export function ProfileSection() {
             <span>{(user.cashbackBalance || 0).toLocaleString()} TAIC</span>
           </div>
         </div>
+
+        {/* Link Wallet Section */}
+        {user && user.email && !user.walletAddress && (
+          <div className="space-y-3 pt-4 border-t">
+            <div className="flex items-center gap-2">
+              <Wallet className="h-5 w-5 text-primary" />
+              <h4 className="text-lg font-medium">Link a Wallet</h4>
+            </div>
+            <p className="text-sm text-muted-foreground">
+              Connect a crypto wallet to your account for Web3 features and alternative login.
+            </p>
+            {!isConnected && (
+                <Button onClick={() => openWeb3Modal()} variant="outline">
+                    Connect Wallet to Site First
+                </Button>
+            )}
+            {isConnected && connectedAddress && (
+                 <Button onClick={handleLinkWallet} disabled={isLinkingWallet || isSigningMessage} className="w-full sm:w-auto">
+                 {isLinkingWallet || isSigningMessage ? (
+                   <><Loader2 className="mr-2 h-4 w-4 animate-spin" /> Linking...</>
+                 ) : (
+                   <><Wallet className="mr-2 h-4 w-4" /> Link {connectedAddress.substring(0, 6)}...{connectedAddress.substring(connectedAddress.length - 4)}</>
+                 )}
+               </Button>
+            )}
+            {linkWalletError && <p className="text-xs text-destructive mt-1">{linkWalletError}</p>}
+          </div>
+        )}
+
+        {/* Add Email/Password Section */}
+        {user && user.walletAddress && !user.email && (
+          <div className="space-y-3 pt-4 border-t">
+            <div className="flex items-center gap-2">
+                <ShieldCheck className="h-5 w-5 text-primary" />
+                <h4 className="text-lg font-medium">Secure Your Account</h4>
+            </div>
+            <p className="text-sm text-muted-foreground">
+              Add an email and password to your wallet-based account for alternative login and account recovery options.
+            </p>
+            <form onSubmit={handleAddEmailPassword} className="space-y-3">
+              <div>
+                <Label htmlFor="newEmail">Email Address</Label>
+                <Input 
+                  id="newEmail" 
+                  type="email" 
+                  value={newEmail} 
+                  onChange={(e) => setNewEmail(e.target.value)} 
+                  placeholder="you@example.com"
+                  required 
+                  disabled={isAddingEmailPassword}
+                />
+              </div>
+              <div>
+                <Label htmlFor="newPassword">New Password</Label>
+                <Input 
+                  id="newPassword" 
+                  type="password" 
+                  value={newPassword} 
+                  onChange={(e) => setNewPassword(e.target.value)} 
+                  placeholder="••••••••"
+                  required 
+                  minLength={8}
+                  disabled={isAddingEmailPassword}
+                />
+              </div>
+              <Button type="submit" disabled={isAddingEmailPassword} className="w-full sm:w-auto">
+                {isAddingEmailPassword ? (
+                  <><Loader2 className="mr-2 h-4 w-4 animate-spin" /> Adding...</>
+                ) : (
+                  <><KeyRound className="mr-2 h-4 w-4" /> Add Email & Password</>
+                )}
+              </Button>
+            </form>
+            {addEmailPasswordError && <p className="text-xs text-destructive mt-1">{addEmailPasswordError}</p>}
+          </div>
+        )}
+
       </CardContent>
     </Card>
   );

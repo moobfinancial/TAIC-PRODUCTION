@@ -4,7 +4,8 @@ import jwt from 'jsonwebtoken';
 
 interface AuthenticatedUser {
   userId: number; // Changed from string to number to match DB schema for id
-  walletAddress: string;
+  email?: string;
+  walletAddress?: string;
   role: string;
   iat: number;
   exp: number;
@@ -47,12 +48,22 @@ export async function GET(req: NextRequest) {
     }
 
     // Retrieve user from DB using userId from token
-    // Also good to match walletAddress from token to prevent issues if a user's wallet changed
-    // and an old token for their user ID is somehow used with a new wallet.
-    const userResult = await pool.query(
-      'SELECT id, wallet_address, username, email, role, taic_balance FROM users WHERE id = $1 AND wallet_address = $2',
-      [decoded.userId, decoded.walletAddress]
-    );
+    // Support both email-based and wallet-based authentication
+    let userResult;
+    
+    if (decoded.walletAddress) {
+      // For wallet-based authentication, use username field as temporary wallet_address storage
+      userResult = await pool.query(
+        'SELECT id, username AS wallet_address, username, email, role, taic_balance, display_name FROM users WHERE id = $1 AND username = $2',
+        [decoded.userId, decoded.walletAddress.toLowerCase()]
+      );
+    } else {
+      // For email-based authentication
+      userResult = await pool.query(
+        'SELECT id, username, email, role, taic_balance, display_name FROM users WHERE id = $1',
+        [decoded.userId]
+      );
+    }
 
     if (userResult.rows.length === 0) {
       // This could happen if the user was deleted after the token was issued, or if wallet_address changed.
@@ -64,9 +75,10 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({
       user: {
         id: user.id,
-        walletAddress: user.wallet_address,
+        walletAddress: user.wallet_address || null,
         username: user.username,
         email: user.email,
+        displayName: user.display_name, // Added displayName
         role: user.role,
         taicBalance: user.taic_balance, // Ensure this is being selected and returned
       },

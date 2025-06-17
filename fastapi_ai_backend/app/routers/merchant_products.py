@@ -85,8 +85,8 @@ async def get_merchant_variant_or_404_and_check_ownership(
     description="Allows a merchant to update their product. Certain significant changes to already approved products will reset the approval status to 'pending' and deactivate the product pending re-review."
 )
 async def update_merchant_product(
-    product_id: str = FastApiPath(..., description="ID of the product to update."),
     update_data: MerchantProductUpdateSchema,
+    product_id: str = FastApiPath(..., description="ID of the product to update."),
     current_merchant_id: str = Depends(get_current_merchant_id),
     conn: asyncpg.Connection = Depends(get_db_connection)
 ):
@@ -251,8 +251,8 @@ async def update_merchant_product(
     description="Allows a merchant to add a new variant to one of their existing products. Adding a variant to an approved product will trigger re-approval for the parent product."
 )
 async def add_variant_to_product(
-    product_id: str = FastApiPath(..., description="ID of the parent product."),
     variant_data: ProductVariantCreate,
+    product_id: str = FastApiPath(..., description="ID of the parent product."),
     current_merchant_id: str = Depends(get_current_merchant_id),
     conn: asyncpg.Connection = Depends(get_db_connection)
 ):
@@ -306,8 +306,8 @@ async def add_variant_to_product(
     description="Allows a merchant to update details of their product variant. Significant changes to a variant of an approved product will trigger re-approval for the parent product."
 )
 async def update_merchant_product_variant(
-    variant_id: int = FastApiPath(..., description="ID of the product variant to update."),
     variant_data: ProductVariantUpdate,
+    variant_id: int = FastApiPath(..., description="ID of the product variant to update."),
     current_merchant_id: str = Depends(get_current_merchant_id),
     conn: asyncpg.Connection = Depends(get_db_connection)
 ):

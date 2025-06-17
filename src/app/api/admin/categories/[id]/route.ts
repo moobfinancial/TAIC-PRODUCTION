@@ -44,7 +44,12 @@ async function getDescendantIds(client: PoolClient, categoryId: number): Promise
 }
 
 
-export async function PUT(request: NextRequest, { params }: { params: { id: string } }) {
+// Next.js 15 route handler for PUT
+export async function PUT(
+  request: NextRequest,
+  context: { params: { id: string } }
+): Promise<NextResponse> {
+  const { params } = context;
     const apiKey = request.headers.get('X-Admin-API-Key');
   if (!validateAdminApiKey(apiKey)) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
@@ -154,7 +159,11 @@ export async function PUT(request: NextRequest, { params }: { params: { id: stri
   }
 }
 
-export async function DELETE(request: NextRequest, { params }: { params: { id: string } }) {
+export async function DELETE(
+  request: NextRequest,
+  context: { params: { id: string } }
+): Promise<NextResponse> {
+  const { params } = context;
   const apiKey = request.headers.get('X-Admin-API-Key');
   if (!validateAdminApiKey(apiKey)) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
@@ -216,7 +225,7 @@ export async function DELETE(request: NextRequest, { params }: { params: { id: s
     }
 
     await client.query('COMMIT');
-    return NextResponse.json({ message: "Category deleted successfully." });
+    return NextResponse.json({ message: 'Category deleted successfully' }, { status: 200 });
 
   } catch (error: any) {
     if (client) await client.query('ROLLBACK').catch(rbErr => console.error("Rollback error on delete:", rbErr));

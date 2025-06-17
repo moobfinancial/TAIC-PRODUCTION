@@ -1,6 +1,6 @@
 import logging
 from typing import List, Optional
-from fastapi import APIRouter, HTTPException, Depends, status, Query
+from fastapi import APIRouter, HTTPException, Depends, status, Query, Path
 import asyncpg
 from datetime import datetime # Required for response model
 
@@ -55,8 +55,8 @@ Submits a new review for a specified merchant's store.
     """
 )
 async def create_store_review(
-    merchant_id: str = Path(..., description="The unique identifier of the merchant or store to review."),
     review_body: StoreReviewCreateBody,
+    merchant_id: str = Path(..., description="The unique identifier of the merchant or store to review."),
     reviewer_id: Optional[str] = Depends(get_optional_current_user_id)
 ):
     conn = None

@@ -1,10 +1,10 @@
 from typing import List, Optional, Dict, Any
-from fastapi import APIRouter, HTTPException, Depends, status
+from fastapi import APIRouter, HTTPException, Depends, status, Query
 from datetime import datetime
 import json # For handling Dict to JSONB conversion if asyncpg requires explicit string
 
-from app.models.category import Category, CategoryCreate, CategoryUpdate
-from app.db import get_db_connection, release_db_connection
+from ..models.category import Category, CategoryCreate, CategoryUpdate
+from ..db import get_db_connection, release_db_connection
 import asyncpg
 
 router = APIRouter(

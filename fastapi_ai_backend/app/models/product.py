@@ -31,7 +31,7 @@ class ProductVariant(ProductVariantBase):
     Represents a full product variant, including its database ID and parent product ID. Used for responses.
     """
     id: int = Field(..., description="Unique identifier for the product variant (auto-generated).")
-    product_id: str = Field(..., description="Identifier of the parent product this variant belongs to.")
+    product_id: int = Field(..., description="Identifier of the parent product this variant belongs to.")
 
     class Config:
         json_schema_extra = {
@@ -122,6 +122,69 @@ class Product(BaseModel):
                 "merchant_id": "MERCH789",
                 "source": "merchant_upload",
                 "approval_status": "approved"
+            }
+        }
+
+
+class ProductCreate(BaseModel):
+    """Schema for creating a new product."""
+    name: str = Field(..., description="Display name of the product.")
+    description: Optional[str] = Field(default=None, description="Detailed description of the product.")
+    price: float = Field(..., description="Base price of the product.")
+    image_url: Optional[HttpUrl] = Field(default=None, description="URL for the main product image.")
+    category: Optional[str] = Field(default=None, description="Name of the category this product belongs to.")
+    has_variants: bool = Field(default=False, description="Indicates if this product has variants.")
+    variant_attribute_names: List[str] = Field(default_factory=list, description="List of unique attribute keys for variants.")
+    stock_quantity: Optional[int] = Field(default=0, ge=0, description="Initial stock quantity.")
+    merchant_id: Optional[str] = Field(default=None, description="Identifier of the merchant who owns/lists this product.")
+    source: Optional[str] = Field(default=None, description="Source of the product data.")
+    original_cj_product_id: Optional[str] = Field(default=None, description="Original CJ product ID if sourced from CJ Dropshipping.")
+    page_id: Optional[str] = Field(default=None, description="Internal reference, possibly to a CMS page or similar.")
+    approval_status: str = Field(default="pending", description="Initial approval status of the product.")
+    data_ai_hint: Optional[str] = Field(default=None, description="Internal notes or hints for AI processing.")
+
+    class Config:
+        from_attributes = True
+        json_schema_extra = {
+            "example": {
+                "name": "Premium Quality T-Shirt",
+                "description": "A comfortable and stylish t-shirt made from 100% organic cotton.",
+                "price": 25.00,
+                "image_url": "https://example.com/images/tshirt_main.jpg",
+                "category": "Apparel",
+                "has_variants": True,
+                "variant_attribute_names": ["size", "color"],
+                "stock_quantity": 100,
+                "merchant_id": "MERCH789",
+                "source": "merchant_upload",
+                "approval_status": "pending"
+            }
+        }
+
+
+class ProductUpdate(BaseModel):
+    """Schema for updating an existing product. All fields are optional."""
+    name: Optional[str] = Field(default=None, description="New display name of the product.")
+    description: Optional[str] = Field(default=None, description="New detailed description of the product.")
+    price: Optional[float] = Field(default=None, description="New base price of the product.")
+    image_url: Optional[HttpUrl] = Field(default=None, description="New URL for the main product image.")
+    category: Optional[str] = Field(default=None, description="New name of the category this product belongs to.")
+    has_variants: Optional[bool] = Field(default=None, description="Indicates if this product has variants.")
+    variant_attribute_names: Optional[List[str]] = Field(default=None, description="New list of unique attribute keys for variants.")
+    stock_quantity: Optional[int] = Field(default=None, ge=0, description="New stock quantity.")
+    merchant_id: Optional[str] = Field(default=None, description="New identifier of the merchant.")
+    source: Optional[str] = Field(default=None, description="New source of the product data.")
+    original_cj_product_id: Optional[str] = Field(default=None, description="New original CJ product ID.")
+    page_id: Optional[str] = Field(default=None, description="New internal reference.")
+    approval_status: Optional[str] = Field(default=None, description="New approval status.")
+    data_ai_hint: Optional[str] = Field(default=None, description="New internal notes or hints.")
+
+    class Config:
+        from_attributes = True
+        json_schema_extra = {
+            "example": {
+                "name": "Updated Premium T-Shirt",
+                "price": 26.50
             }
         }
 
