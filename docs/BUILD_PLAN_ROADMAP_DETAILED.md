@@ -87,10 +87,20 @@ This phase focuses on strengthening the core platform, introducing critical prod
     *   Application Portal (Frontend/Backend): `[PENDING - Frontend]`, `[PENDING - Backend]`.
 
 *   **Foundational AI Agent Architecture (FastAPI/MCP):**
-    *   **Status:** `[COMPLETED - Backend]` Core Shopping Assistant & Product Service functional with A2A communication and real data.
+    *   **Status:** `[COMPLETED - Backend]` Core Shopping Assistant & Product Service functional with A2A communication and real data. `[IN PROGRESS - MCP Integration]` Refactoring to use fastapi-mcp library.
     *   FastAPI Backend Infrastructure for AI Agents: `[COMPLETED - Backend]` (`fastapi_ai_backend`).
     *   Initial AI Shopping Assistant: `[COMPLETED - Backend]` (`shopping_assistant_agent.py`).
     *   Foundational Product Data Access Tools (Product Service Agent): `[COMPLETED - Backend]` (`product_service_agent.py`).
+    *   **CJ Products Database Integration:** `[COMPLETED - Backend]` (2025-06-18) Integrated real CJ imported products from the database into the frontend product listings and detail pages.
+    *   **MCP Integration Plan (2025-06-17):**
+        *   **Description:** Refactoring the AI Shopping Assistant backend by replacing the Genkit-based MCP integration with a streamlined MCP system modeled after the RESORT-FINAL repository pattern. This involves implementing the fastapi-mcp library for tool-based LLM responses, integrating authentication, and mounting MCP endpoints within the FastAPI server.
+        *   **Status:** `[IN PROGRESS]` Implementation plan drafted, core dependencies identified.
+        *   **Implementation Phases:**
+            *   **Phase 1 - Setup & Dependencies:** Add fastapi-mcp>=0.2.0 and mcp-use>=0.4.0 to backend requirements, update environment configuration.
+            *   **Phase 2 - Backend MCP Implementation:** Create MCP tools module, authentication, configure FastApiMCP server, integrate with FastAPI, create AI Shopping Assistant endpoint.
+            *   **Phase 3 - Frontend Integration:** Create MCP client, update AI Shopping Assistant page, update product display logic.
+            *   **Phase 4 - Testing & Optimization:** Unit testing, integration testing, performance optimization.
+            *   **Phase 5 - Documentation & Deployment:** Update documentation, configure deployment.
 
 *   **Automated Testing Strategy & Infrastructure:**
     *   **Description:** Establish a robust automated testing strategy and infrastructure to ensure code quality, prevent regressions, and facilitate continuous integration for both frontend and backend components.

@@ -1,3 +1,23 @@
+## 2025-06-18
+
+### Backend - CJ Products Database Integration
+
+**Task Context:** Integrated real CJ imported products from the database into the frontend product listings and detail pages.
+
+**Summary of Work:**
+- Identified that CJ imported products are stored in a separate `cj_products` table, not in the generic `products` table.
+- Updated database utility (`db.js`) to query the `cj_products` table instead of the `products` table.
+- Added filters to only show approved and active products (`approval_status = 'approved' AND is_active = TRUE`).
+- Fixed image URL handling by parsing JSON strings of image arrays into actual URLs.
+- Updated API routes to ensure proper transformation of product data for frontend compatibility.
+- Added error handling and logging for database queries and image URL parsing.
+- Verified that the API now returns real CJ products with proper image URLs.
+
+**Next Steps:**
+- Improve search accuracy for product queries.
+- Add pagination for product listings with large result sets.
+- Enhance category filtering and sorting options.
+
 ## 2025-06-16
 
 ### Backend - Database Schema Alignment & API Error Resolution
