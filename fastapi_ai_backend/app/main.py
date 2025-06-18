@@ -14,6 +14,8 @@ from .models.mcp_context import MCPContext, MCPServerInfo, MCPToolSchema
 from pydantic import BaseModel
 # Import the new product service agent
 from .agents.product_service_agent import product_service_mcp
+# Import our new MCP server
+from .mcp.server import get_mcp_server
 # Keep existing product router for other API endpoints if needed, but MCP part will be from the new agent
 from .routers.products import router as products_router, ListProductsToolInput
 # Import the new product variants router
@@ -38,6 +40,10 @@ from .routers.user_profile import router as user_profile_router
 from .agents.gift_recommendation_agent import gift_recommendation_mcp_server
 # Import the AI feedback router
 from .routers.ai_feedback import router as ai_feedback_router
+# Import the AI Shopping Assistant routers
+from .routers.ai_shopping_assistant import router as ai_shopping_assistant_router
+from .routers.ai_shopping_assistant_sse import router as ai_shopping_assistant_sse_router
+from .routers.ai_shopping_agent_proxy import router as ai_shopping_agent_proxy_router
 # Import the VTO router
 from app.routers.vto import router as vto_router
 # Import the Pioneer Applications router
@@ -155,6 +161,9 @@ app.include_router(merchant_store_profiles_router, prefix="/api/merchant", tags=
 app.include_router(store_reviews_router, prefix="/api", tags=["Store Reviews"])
 app.include_router(user_profile_router, prefix="/api/users", tags=["User Profile"])
 app.include_router(ai_feedback_router, prefix="/api/ai", tags=["AI Agent Feedback"])
+app.include_router(ai_shopping_assistant_router, prefix="/api/ai", tags=["AI Shopping Assistant"])
+app.include_router(ai_shopping_assistant_sse_router, prefix="/api/ai", tags=["AI Shopping Assistant SSE"])
+app.include_router(ai_shopping_agent_proxy_router, prefix="/api/ai", tags=["AI Shopping Agent Proxy"])
 app.include_router(vto_router, prefix="/api/vto", tags=["Virtual Try-On (VTO)"])
 app.include_router(pioneer_applications_router, prefix="/api/pioneer-program", tags=["Pioneer Program"])
 app.include_router(merchant_shipping_router, prefix="/api/merchant/shipping", tags=["Merchant Shipping Management"])
@@ -422,16 +431,13 @@ async def call_process_user_query_manual(input_data: ShoppingAssistantQueryInput
         raise
     except Exception as e:
         logger.error(f"Error manually calling tool 'process_user_query': {type(e).__name__} - {e}")
-        traceback.print_exc()
-        raise HTTPException(status_code=500, detail=f"Error calling tool 'process_user_query': {str(e)}")
 
 # Mount the MCP server applications
 # The path "/mcp_product_service" should match PRODUCT_SERVICE_AGENT_MOUNT_PATH in shopping_assistant_agent.py
-app.mount("/mcp_product_service", product_service_mcp)
-app.mount("/mcp_shopping_assistant_service", get_ai_shopping_assistant_mcp())
-app.mount("/mcp_gift_recommendation", gift_recommendation_mcp_server)
-app.mount("/mcp_cj_dropshipping", cj_dropshipping_mcp_server) # Mount the new CJ Dropshipping agent
-
+app.mount("/api/mcp/cj-dropshipping", cj_dropshipping_mcp_server, name="CJ Dropshipping MCP Server")
+app.mount("/api/mcp/gift-recommendation", gift_recommendation_mcp_server, name="Gift Recommendation MCP Server")
+app.mount("/api/mcp/product-service", product_service_mcp, name="Product Service MCP Server")
+app.mount("/api/mcp/shopping-assistant", get_mcp_server(), name="AI Shopping Assistant MCP Server")
 
 @app.get("/", tags=["Root"], summary="Root path of the API")
 async def read_root():

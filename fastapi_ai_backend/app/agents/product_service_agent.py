@@ -9,6 +9,7 @@ RequestT = TypeVar('RequestT', bound=Request)
 # Create a concrete context type with 2 type parameters
 ToolContext = MCPContext[ServerSessionT, RequestT] if 'ServerSessionT' in locals() else Any
 from ..models.product import Product, ProductVariant, ListProductsToolInput
+from ..models.category import CategoryInfo # Added for the new tool
 from ..db import get_db_connection, release_db_connection
 import asyncpg
 import json # For handling JSONB parameters
@@ -183,6 +184,48 @@ async def get_all_products(tool_input: ListProductsToolInput, ctx: Optional[Tool
 
     except Exception as e:
         print(f"[ProductService] Error fetching products from database: {type(e).__name__} - {e}")
+        import traceback
+        traceback.print_exc()
+        return []
+    finally:
+        if conn:
+            await release_db_connection(conn)
+
+
+@product_service_mcp.tool(
+    name="list_all_categories",
+    description="Retrieves a list of all available product categories."
+)
+async def list_all_categories(ctx: Optional[ToolContext] = None) -> List[CategoryInfo]:
+    """
+    MCP Tool to get a list of all categories from the database.
+    """
+    print(f"[ProductService] Received call to list_all_categories")
+
+    conn: Optional[asyncpg.Connection] = None
+    fetched_categories: List[CategoryInfo] = []
+
+    try:
+        conn = await get_db_connection()
+
+        sql_query = """
+            SELECT id, name, slug, description, parent_category_id
+            FROM categories
+            ORDER BY name ASC;
+        """
+
+        print(f"[ProductService] Executing category query: {sql_query}")
+        db_category_rows = await conn.fetch(sql_query)
+
+        for row_data in db_category_rows:
+            category_dict = dict(row_data)
+            fetched_categories.append(CategoryInfo(**category_dict))
+
+        print(f"[ProductService] Returning {len(fetched_categories)} categories from database.")
+        return fetched_categories
+
+    except Exception as e:
+        print(f"[ProductService] Error fetching categories from database: {type(e).__name__} - {e}")
         import traceback
         traceback.print_exc()
         return []
