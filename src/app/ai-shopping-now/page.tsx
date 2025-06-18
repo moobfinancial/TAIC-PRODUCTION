@@ -75,96 +75,164 @@ export default function AiShoppingNowPage() {
   useEffect(() => {
     if (finalTranscript && autoSubmitSttRef.current) {
       setInputValue(finalTranscript); // Set the query input with the transcript
-      // Trigger handleSubmit after state update
       // Using a timeout to ensure 'inputValue' state is updated before submit
       setTimeout(() => {
-        handleSendMessage();
+        const form = document.querySelector('form'); // Or get a more specific form reference
+        if (form) {
+          form.requestSubmit();
+        }
         autoSubmitSttRef.current = false; // Reset auto-submit flag
       }, 0);
     }
   }, [finalTranscript]); // Dependency on finalTranscript
 
-  const handleSendMessage = async () => {
-    if (!inputValue.trim()) return;
+  const handleSendMessage = async (event?: FormEvent<HTMLFormElement>) => {
+    if (event) event.preventDefault();
+    console.log('[AiShoppingNowPage] handleSendMessage called.');
+    if (!inputValue.trim() || isLoading) return;
 
     const newUserMessage: ChatMessage = {
       id: Date.now().toString(),
       role: 'user',
       content: inputValue,
     };
-    setMessages((prevMessages) => [...prevMessages, newUserMessage]);
+
+    const aiMessageId = (Date.now() + 1).toString();
+    const initialAiMessage: ChatMessage = {
+      id: aiMessageId,
+      role: 'assistant',
+      content: '', // Start with empty content
+    };
+
+    // Add both user message and AI placeholder to the chat
+    setMessages((prevMessages) => [...prevMessages, newUserMessage, initialAiMessage]);
+    const currentMessage = inputValue; // Capture the input value before clearing
     setInputValue('');
     setIsLoading(true);
 
     try {
-      const response = await fetch('/api/ai/shopping-assistant', {
+      // Use fetch with ReadableStream instead of EventSource for better control
+      console.log('[AiShoppingNowPage] Sending POST request to /api/stream');
+      const response = await fetch('/api/stream', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        // Sending current message as query, and previous messages as history
-        body: JSON.stringify({ query: newUserMessage.content, history: messages }), 
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          query: currentMessage,
+          userId: 'user-123', // Example user ID
+        }),
       });
 
       if (!response.ok) {
-        const errorData = await response.json().catch(() => ({ detail: 'Failed to get response from AI assistant, and error response was not valid JSON.'}));
-        throw new Error(errorData.detail || 'Failed to get response from AI assistant');
+        throw new Error(`HTTP error! status: ${response.status}`);
       }
 
-      const data = await response.json();
-      console.log('AI Shopping Assistant response:', data);
-      
-      // Extract response type and text from the API response
-      // Handle both direct response and nested result structure
-      const result = data.result || data;
-      const responseType = result.responseType || 'clarification';
-      const responseText = result.responseText || result.ai_response || 'I processed your request.';
-      
-      // Process products if they exist in the response
-      const fetchedProducts: ProductForAI[] = (result.products || []).map((p: any) => ({
-        id: p.id?.toString() || '',
-        name: p.name || '',
-        description: p.description || '',
-        price: typeof p.price === 'string' ? parseFloat(p.price) : (p.price || 0),
-        imageUrl: p.image_url || p.imageUrl || '',
-        category: p.category || '',
-        dataAiHint: p.data_ai_hint || p.dataAiHint || '',
-      }));
+      const reader = response.body?.getReader();
+      if (!reader) {
+        throw new Error('Response body is null');
+      }
 
-      // Create the AI response message
-      const newAiMessage: ChatMessage = {
-        id: (Date.now() + 1).toString(),
-        role: 'assistant',
-        content: responseText,
-        products: fetchedProducts.length > 0 ? fetchedProducts : undefined,
-      };
-      setMessages((prevMessages) => [...prevMessages, newAiMessage]);
+      // Process the stream
+      const decoder = new TextDecoder();
+      let buffer = '';
 
-      // Update canvas products and chat area mode based on response type
-      if (responseType === 'products' && fetchedProducts.length > 0) {
-        setCanvasProducts(fetchedProducts);
-        setChatAreaMode('sidebar');
-      } else if (responseType === 'no_results') {
-        // Show empty canvas with "no results" message
-        setCanvasProducts([]);
-        setChatAreaMode('sidebar');
-      } else {
-        // For clarification or error responses, keep chat in full mode
-        // but don't clear canvas products if they exist from previous searches
-        if (chatAreaMode === 'full') {
-          setCanvasProducts([]);
+      while (true) {
+        const { done, value } = await reader.read();
+        
+        if (done) {
+          setIsLoading(false);
+          break;
+        }
+
+        // Decode the chunk and add it to our buffer
+        const chunk = decoder.decode(value, { stream: true });
+        console.log('[AiShoppingNowPage] Received chunk:', chunk);
+        buffer += chunk;
+
+        // Process any complete SSE messages in the buffer
+        const lines = buffer.split('\n\n');
+        buffer = lines.pop() || ''; // Keep the last incomplete chunk in the buffer
+
+        for (const line of lines) {
+          if (line.trim() === '') continue;
+          
+          // Extract the data part from the SSE message
+          const dataMatch = line.match(/data: (.+)/);
+          if (!dataMatch) continue;
+          
+          const data = dataMatch[1];
+          if (data === '[DONE]') {
+            setIsLoading(false);
+            continue;
+          }
+
+          try {
+            const parsedData = JSON.parse(data);
+            console.log('[AiShoppingNowPage] Parsed SSE message:', parsedData);
+
+            // Update the AI message content and products
+            setMessages((prevMessages) => {
+              const updatedMessages = [...prevMessages];
+              const aiMessageIndex = updatedMessages.findIndex(msg => msg.id === aiMessageId);
+              if (aiMessageIndex !== -1) {
+                // Append new text to existing content for streaming effect
+                const existingContent = updatedMessages[aiMessageIndex].content || '';
+                updatedMessages[aiMessageIndex] = {
+                  ...updatedMessages[aiMessageIndex],
+                  content: existingContent + (parsedData.responseText || ''),
+                  products: parsedData.products || updatedMessages[aiMessageIndex].products,
+                };
+              }
+              return updatedMessages;
+            });
+
+            // Update canvas products if available
+            if (parsedData.products && parsedData.products.length > 0) {
+              setCanvasProducts(parsedData.products);
+              setChatAreaMode('sidebar');
+            }
+          } catch (error) {
+            console.error('[AiShoppingNowPage] Error parsing SSE message:', error);
+          }
         }
       }
-
-    } catch (error: any) {
-      console.error('Error fetching AI response:', error);
-      const errorAiMessage: ChatMessage = {
-        id: (Date.now() + 1).toString(),
-        role: 'assistant',
-        content: 'Sorry, I encountered an error. Please try again.',
-      };
-      setMessages((prevMessages) => [...prevMessages, errorAiMessage]);
-    } finally {
-      setIsLoading(false);
+    } catch (error) {
+      console.error('[AiShoppingNowPage] Error with fetch request:', error);
+      handleStreamError(error);
     }
+  };
+
+  // Helper function to handle stream errors
+  const handleStreamError = (error: any) => {
+    // Show error message to user
+    setMessages((prevMessages) => {
+      const lastMessage = prevMessages[prevMessages.length - 1];
+      if (lastMessage.role === 'assistant' && !lastMessage.content) {
+        // Update the empty assistant message with an error
+        const updatedMessages = [...prevMessages];
+        updatedMessages[updatedMessages.length - 1] = {
+          ...lastMessage,
+          content: 'Sorry, I encountered an error while processing your request. Please try again later.',
+        };
+        return updatedMessages;
+      } else {
+        // Add a new error message
+        return [...prevMessages, {
+          id: Date.now().toString(),
+          role: 'assistant',
+          content: 'Sorry, I encountered an error while processing your request. Please try again later.',
+        }];
+      }
+    });
+    
+    toast({
+      title: "Error",
+      description: "Failed to get a response from the AI Shopping Assistant.",
+      variant: "destructive"
+    });
+    
+    setIsLoading(false);
   };
 
   // Function to handle product click in chat messages
@@ -313,7 +381,7 @@ export default function AiShoppingNowPage() {
                     : 'bg-muted/50 border border-muted'
                 )}
               >
-                {msg.role === 'assistant' ? renderMessageContent(msg) : msg.content}
+                {msg.role === 'assistant' ? renderMessageContent(msg) : String(msg.content)}
               </div>
               {msg.role === 'user' && (
                 <div className="flex-shrink-0 w-8 h-8 rounded-full bg-primary flex items-center justify-center">
