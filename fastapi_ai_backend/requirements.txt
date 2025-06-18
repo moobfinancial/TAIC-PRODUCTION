@@ -2,7 +2,8 @@ fastapi
 uvicorn[standard]
 pydantic[email]
 python-dotenv>=1.0.0
-mcp-use
+mcp-use>=0.4.0
+fastapi-mcp>=0.2.0
 mcp>=1.8.1
 openai>=1.0.0
 asyncpg>=0.29.0

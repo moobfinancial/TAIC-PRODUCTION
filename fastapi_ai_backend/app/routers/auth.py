@@ -667,6 +667,7 @@ async def login_for_access_token(login_data: UserLoginSchema, conn: asyncpg.Conn
             await conn.execute("UPDATE users SET last_login_at = NOW() WHERE id = $1", user_record['id'])
             logger.info(f"Updated last_login_at for user {user_record['id']}")
         except Exception as e_update_login:
+            logger.error(f"Failed to update last_login_at for user {user_record['id']} due to: {e_update_login}")
 
         if not updated_user_details_row:
             logger.error(f"Failed to update last_login_at or retrieve user details for {user_record['email']} after login.")

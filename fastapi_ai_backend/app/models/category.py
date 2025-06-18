@@ -66,6 +66,21 @@ class CategoryUpdate(BaseModel):
         return v
 
     # TODO: Add a root validator if category_type is NOT changing but custom_attributes are being set
+
+# New model for the list_all_categories MCP tool
+class CategoryInfo(BaseModel):
+    id: int
+    name: str
+    slug: str
+    description: Optional[str] = None
+    parent_category_id: Optional[int] = None
+    # created_at: datetime # Not strictly needed for AI to list/select categories
+    # updated_at: datetime # Not strictly needed for AI to list/select categories
+
+    class Config:
+        from_attributes = True # Pydantic v2, or orm_mode = True for v1
+
+
     # for an existing PRODUCT category. This would require fetching the current category_type from DB
     # or having it passed, which is complex for a generic update model.
     # The endpoint logic should handle this: if type is PRODUCT, ensure custom_attrs are cleared.
