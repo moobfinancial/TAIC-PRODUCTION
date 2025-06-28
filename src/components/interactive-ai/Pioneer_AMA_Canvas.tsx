@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { X, Mic, MicOff, MessageSquare, Send, Hand, Volume2, VolumeX } from 'lucide-react';
+import { X, Mic, MicOff, Send, Volume2, VolumeX, Minimize, Maximize } from 'lucide-react';
+import useInactivityDetector from '../../hooks/useInactivityDetector';
 import useWebSpeech from '../../hooks/useWebSpeech';
 import useVAD from '../../hooks/useVAD';
 
@@ -11,8 +12,9 @@ interface Action {
 }
 
 interface AIResponse {
-  speak_text: string;
-  canvas_state: string;
+  speak_text?: string; // Keep for backward compatibility
+  responseText?: string; // Add this for new format from OpenAI prompt
+  canvas_state?: string;
   actions?: Action[];
 }
 
@@ -22,7 +24,6 @@ interface Pioneer_AMA_CanvasProps {
 }
 
 const Pioneer_AMA_Canvas: React.FC<Pioneer_AMA_CanvasProps> = ({ isOpen, onClose }) => {
-  const GREETING_MESSAGE = "Welcome to TAIC! I'm Marisa, your AI assistant. How can I help you today?";
   // --- State Definitions ---
   const [isMuted, setIsMuted] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
@@ -36,16 +37,24 @@ const Pioneer_AMA_Canvas: React.FC<Pioneer_AMA_CanvasProps> = ({ isOpen, onClose
   const [isGreetingSpoken, setIsGreetingSpoken] = useState(false);
   const [loadingMessage, setLoadingMessage] = useState<string | null>('Initializing AI Assistant...');
   const [isListeningToUser, setIsListeningToUser] = useState(false); // New state to track STT activity
+  const [isCopilotMode, setIsCopilotMode] = useState(false);
+  const [hasOfferedProactiveHelp, setHasOfferedProactiveHelp] = useState(false);
 
   // --- Refs ---
   const processCommandRef = useRef<(command: string) => Promise<void>>();
   const isAvatarSpeaking = useRef(false); // New ref to track avatar speech state
   const didBargeInRef = useRef(false); // New ref to track if a barge-in occurred
   const isAvatarStartingSpeechRef = useRef(false);
+  const speechEndTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const speechEndHandlerRef = useRef<() => void>();
+  const speakAndListenRef = useRef<(text: string) => void>();
+  const bargeInGracePeriodRef = useRef<NodeJS.Timeout | null>(null); // Grace period to prevent immediate barge-in
+  const canBargeInRef = useRef(true); // Flag to control when barge-in is allowed
 
   // --- Hook Callbacks ---
   const handleSTTResult = useCallback((transcript: string, isFinal: boolean) => {
     if (isFinal && processCommandRef.current) {
+      playListeningAnimation(); // User finished speaking, now AI is 'thinking'
       setUserInput(transcript);
       processCommandRef.current(transcript);
       setIsListeningToUser(false); // Reset after processing
@@ -53,8 +62,33 @@ const Pioneer_AMA_Canvas: React.FC<Pioneer_AMA_CanvasProps> = ({ isOpen, onClose
   }, []);
 
   const handleSTTError = useCallback((error: any) => {
-    setErrorMessage(`Speech Error: ${error.error || 'Unknown error'}`);
+    console.log('[STT Error]:', error);
+    
+    let userFriendlyMessage = 'Speech recognition error';
+    
+    if (typeof error === 'string') {
+      if (error.includes('Network error')) {
+        userFriendlyMessage = 'Speech service temporarily unavailable. Please check your internet connection.';
+      } else if (error.includes('network')) {
+        userFriendlyMessage = 'Network issue with speech service. Please try again.';
+      } else {
+        userFriendlyMessage = error;
+      }
+    } else if (error?.error === 'network') {
+      userFriendlyMessage = 'Speech service temporarily unavailable. Please check your internet connection.';
+    } else if (error?.error === 'timeout') {
+      userFriendlyMessage = 'Speech recognition timed out. Please try again.';
+    } else if (error?.error) {
+      userFriendlyMessage = `Speech Error: ${error.error}`;
+    }
+    
+    setErrorMessage(userFriendlyMessage);
     setIsListeningToUser(false); // Reset on error
+    
+    // Auto-clear error message after 5 seconds
+    setTimeout(() => {
+      setErrorMessage('');
+    }, 5000);
   }, []);
 
   // --- Hooks ---
@@ -66,8 +100,12 @@ const Pioneer_AMA_Canvas: React.FC<Pioneer_AMA_CanvasProps> = ({ isOpen, onClose
     sttError,
     finalTranscript,
     isSTTSupported,
-    attachEventHandlers: attachSTTHandlers,
-  } = useWebSpeech();
+  } = useWebSpeech({
+    onSTTResult: handleSTTResult,
+    onSTTError: (error) => console.error('[STT Error]:', error),
+    onSTTStart: () => console.log('[STT] Started listening'),
+    onSTTEnd: () => console.log('[STT] Stopped listening'),
+  });
 
   const {
     isListening: isVADListening,
@@ -75,8 +113,133 @@ const Pioneer_AMA_Canvas: React.FC<Pioneer_AMA_CanvasProps> = ({ isOpen, onClose
     initVAD,
     start: startVAD,
     stop: stopVAD,
-    attachEventHandlers: attachVADEventHandlers,
-  } = useVAD();
+  } = useVAD({
+    onSpeechStart: () => {
+      console.log('[VAD] Speech detected - checking barge-in conditions');
+      
+      // Check if barge-in is allowed (grace period)
+      if (!canBargeInRef.current) {
+        console.log('[VAD] Barge-in blocked - still in grace period');
+        return;
+      }
+      
+      // Check if avatar is actually speaking before attempting barge-in
+      if (!isAvatarSpeaking.current) {
+        console.log('[VAD] Avatar not speaking - proceeding with STT only');
+        if (!isListening) {
+          console.log('[VAD] Starting STT (no barge-in needed)');
+          startListening();
+        }
+        return;
+      }
+      
+      console.log('[VAD] Implementing barge-in - avatar is speaking');
+      
+      // Barge-in: Stop avatar speech when user starts speaking
+      if (window.sayText && typeof window.sayText === 'function') {
+        try {
+          console.log('[VAD] Stopping avatar speech for barge-in');
+          const elevenLabsEngineID = 14;
+          const jessicaVoiceID = "cgSgspJ2msm6clMCkdW9";
+          const languageID = 1; // English
+          window.sayText('', jessicaVoiceID, languageID, elevenLabsEngineID); // Stop current speech by sending empty text
+          isAvatarSpeaking.current = false; // Update avatar speaking state
+          didBargeInRef.current = true; // Mark that barge-in occurred
+        } catch (error) {
+          console.log('[VAD] Could not stop avatar speech:', error);
+        }
+      }
+      
+      // Start STT if not already listening
+      if (!isListening) {
+        console.log('[VAD] Starting STT after barge-in');
+        startListening();
+      }
+    },
+    onSpeechEnd: () => {
+      console.log('[VAD] Speech ended - stopping STT');
+      if (isListening) {
+        stopListening();
+      }
+    },
+  });
+
+  // --- Animation Handlers ---
+  const playListeningAnimation = useCallback(() => {
+    if (window.setFacialExpression) {
+      console.log("%c[Animation] Playing 'Thinking' animation.", "color: purple;");
+      window.setFacialExpression('Thinking', 1.0, -1);
+    }
+  }, []);
+
+  const playIdleAnimation = useCallback(() => {
+    if (window.setFacialExpression) {
+      console.log("%c[Animation] Setting animation to 'None' (Idle).", "color: purple;");
+      window.setFacialExpression('None');
+    }
+  }, []);
+
+  // --- SitePal Event Handlers ---
+  const handleSitePalSpeechEnd = useCallback(() => {
+    // Clear the safety timeout since the event fired correctly.
+    if (speechEndTimeoutRef.current) {
+      clearTimeout(speechEndTimeoutRef.current);
+      speechEndTimeoutRef.current = null;
+    }
+
+    // If we already handled the speech end (e.g., via the timeout), do nothing.
+    if (!isAvatarSpeaking.current) {
+      console.log("[vh_speechEnded] Ignored, speech end state already handled.");
+      return;
+    }
+
+    console.log(`%c[vh_speechEnded] Fired. Barge-in status: ${didBargeInRef.current}`, "color: blue;");
+    isAvatarSpeaking.current = false;
+    
+    // Clean up grace period timeout when speech ends
+    if (bargeInGracePeriodRef.current) {
+      clearTimeout(bargeInGracePeriodRef.current);
+      bargeInGracePeriodRef.current = null;
+    }
+    canBargeInRef.current = true; // Re-enable barge-in for next speech
+
+    // If speech ended naturally (no barge-in), restart VAD in activation mode.
+    if (!didBargeInRef.current) {
+      stopVAD();
+      startVAD();
+      console.log("[VAD] VAD started in 'activation' mode.");
+    }
+    // Reset the barge-in flag for the next interaction cycle.
+    didBargeInRef.current = false;
+  }, [startVAD, stopVAD]);
+
+  const handleSitePalSpeechStart = useCallback(() => {
+    console.log("%c[vh_speechStarted] Fired. Avatar is speaking.", "color: blue;");
+    isAvatarSpeaking.current = true;
+
+    // Clear any existing timeout from a previous, possibly failed, speech event.
+    if (speechEndTimeoutRef.current) {
+      clearTimeout(speechEndTimeoutRef.current);
+    }
+
+    // Set a safety timeout to manually call handleSitePalSpeechEnd.
+    // This handles cases where the vh_speechEnded event doesn't fire.
+    const wordCount = aiResponseText.split(/\s+/).length;
+    const estimatedDuration = 4000 + (wordCount * 150); // 4s base + 150ms/word
+
+    console.log(`[SafetyNet] Setting speech end timeout for ${estimatedDuration}ms`);
+    speechEndTimeoutRef.current = setTimeout(() => {
+      console.log("%c[SafetyNet] Timeout triggered. Forcing speech end state.", "color: red; font-weight: bold;");
+      handleSitePalSpeechEnd();
+    }, estimatedDuration);
+
+    // Set a brief grace period to prevent the VAD from picking up the avatar's own starting audio.
+    isAvatarStartingSpeechRef.current = true;
+    setTimeout(() => {
+      isAvatarStartingSpeechRef.current = false;
+    }, 500); // 500ms grace period
+  }, [aiResponseText, handleSitePalSpeechEnd]);
+  
 
   // --- Core VAD Logic ---
   const handleSpeechProbability = useCallback((probability: number) => {
@@ -99,6 +262,7 @@ const Pioneer_AMA_Canvas: React.FC<Pioneer_AMA_CanvasProps> = ({ isOpen, onClose
       
       // More aggressive detection - consider any moderate probability as potential speech
       if (probability > BARGE_IN_THRESHOLD) {
+        playIdleAnimation(); // Stop any animation on barge-in
         console.log(`%cBARGE-IN DETECTED! (Prob: ${probability.toFixed(2)})`, 'color: red; font-weight: bold;');
         // Mark that we detected a barge-in
         didBargeInRef.current = true;
@@ -136,8 +300,8 @@ const Pioneer_AMA_Canvas: React.FC<Pioneer_AMA_CanvasProps> = ({ isOpen, onClose
   }, [isListeningToUser, isListening, startListening, stopVAD]);
 
   const speakAndListen = useCallback((text: string) => {
+    playIdleAnimation(); // Return to neutral before speaking.
     if (isMuted) {
-      // If muted, don't try to speak, just start VAD for user activation.
       startVAD();
       return;
     }
@@ -146,7 +310,6 @@ const Pioneer_AMA_Canvas: React.FC<Pioneer_AMA_CanvasProps> = ({ isOpen, onClose
     stopVAD();
     didBargeInRef.current = false;
     
-    // Start VAD BEFORE speech begins - this is critical for barge-in detection
     startVAD();
     console.log("[VAD] VAD started BEFORE speech for barge-in detection");
 
@@ -155,32 +318,58 @@ const Pioneer_AMA_Canvas: React.FC<Pioneer_AMA_CanvasProps> = ({ isOpen, onClose
         const elevenLabsEngineID = 14;
         const jessicaVoiceID = "cgSgspJ2msm6clMCkdW9";
         const languageID = 1; // English
+        
+        // Set avatar speaking state and implement grace period
+        isAvatarSpeaking.current = true;
+        canBargeInRef.current = false; // Disable barge-in temporarily
+        
+        // Clear any existing grace period timeout
+        if (bargeInGracePeriodRef.current) {
+          clearTimeout(bargeInGracePeriodRef.current);
+        }
+        
+        // Set grace period - allow barge-in after 2 seconds of avatar speaking
+        bargeInGracePeriodRef.current = setTimeout(() => {
+          canBargeInRef.current = true;
+          console.log('[BARGE-IN] Grace period ended - barge-in now allowed');
+        }, 2000);
+        
         window.sayText(text, jessicaVoiceID, languageID, elevenLabsEngineID);
-        console.log("[SitePal] Started speaking with VAD already active");
+        console.log("[SitePal] Started speaking with VAD already active (grace period: 2s)");
+
+        // --- VAD FIX ---
+        // Set a safety timeout to handle cases where vh_speechEnded doesn't fire.
+        // This ensures the VAD reactivates and the conversation doesn't stall.
+        const estimatedSpeechDuration = text.length * 80 + 1000; // 80ms/char + 1s buffer
+        if (speechEndTimeoutRef.current) clearTimeout(speechEndTimeoutRef.current);
+        speechEndTimeoutRef.current = setTimeout(() => {
+          console.log(`%c[Timeout] Safety timeout triggered after ${estimatedSpeechDuration}ms. Forcing speech end state.`, 'color: orange;');
+          if (speechEndHandlerRef.current) {
+            speechEndHandlerRef.current();
+          }
+        }, estimatedSpeechDuration);
+
       } else {
         throw new Error('window.sayText is not a function.');
       }
     } catch (error) {
       console.error('[SitePal] sayText failed. This may be a platform issue. Continuing gracefully.', error);
-      // If sayText fails, the speechEnd callback won't fire.
-      // We need to manually trigger the logic that would normally happen after speech ends.
-      handleSitePalSpeechEnd();
+      if (speechEndHandlerRef.current) {
+        speechEndHandlerRef.current();
+      }
     }
 
   }, [isMuted, startListening, stopListening, startVAD, stopVAD]);
 
-  // --- Effects ---
+  // Effect to keep a stable reference to the speech end handler to prevent dependency loops.
   useEffect(() => {
-    attachVADEventHandlers({ onFrameProcessed: handleSpeechProbability });
-  }, [handleSpeechProbability, attachVADEventHandlers]);
+    speechEndHandlerRef.current = handleSitePalSpeechEnd;
+  }, [handleSitePalSpeechEnd]);
 
-  // Effect to attach STT handlers once they are stable.
+  // Keep a stable reference to the speakAndListen function to prevent dependency loops.
   useEffect(() => {
-    attachSTTHandlers({
-      onSTTResult: handleSTTResult,
-      onSTTError: handleSTTError,
-    });
-  }, [handleSTTResult, handleSTTError, attachSTTHandlers]);
+    speakAndListenRef.current = speakAndListen;
+  }, [speakAndListen]);
 
   // Guard against double initialization in React Strict Mode
   const initialized = useRef(false);
@@ -224,9 +413,8 @@ const Pioneer_AMA_Canvas: React.FC<Pioneer_AMA_CanvasProps> = ({ isOpen, onClose
         if (typeof window.AI_vhost_embed === 'function') {
           // Define the official callback that SitePal will call when the scene is loaded.
           window.vh_sceneLoaded = () => {
-            console.log('vh_sceneLoaded callback received: Avatar is ready.');
-            setLoadingMessage('Avatar ready.');
-            setIsAvatarReady(true);
+            console.log("[vh_sceneLoaded] Fired. Scene is ready.");
+            setIsAvatarReady(true); // This will trigger the greeting useEffect
           };
           // Embed the avatar.
           window.AI_vhost_embed(300, 400, 9226953, 278, 1, 1);
@@ -282,66 +470,38 @@ const Pioneer_AMA_Canvas: React.FC<Pioneer_AMA_CanvasProps> = ({ isOpen, onClose
     };
   }, [isOpen]);
 
-  // Effect to initialize VAD and speak the greeting when the avatar is ready.
+  // Effect to fetch the initial greeting once the avatar is ready.
   useEffect(() => {
-    const initAndSpeak = async () => {
+    const fetchAndSpeakGreeting = async () => {
       if (isAvatarReady && !isGreetingSpoken) {
-        console.log('Avatar is ready. Initializing VAD and speaking greeting.');
-        
-        // 1. Initialize VAD and wait for it to complete.
+        console.log('Avatar is ready. Delivering static greeting.');
+        setLoadingMessage('Preparing assistant...'); // More accurate message
+        setIsProcessing(true);
+
+        // 1. Ensure VAD is initialized before we proceed.
         await initVAD();
+        console.log('[Greeting] VAD initialized.');
 
-        // 2. Immediately update the UI so the user sees the greeting.
-        setAiResponseText(GREETING_MESSAGE);
-        setAvatarMessages([`Assistant: ${GREETING_MESSAGE}`]);
-        setIsProcessing(false);
+        // 2. Use a static greeting to improve reliability and speed.
+        // The thread will be created on the first real user message.
+        const greetingText = "Hello! I am the official AI Guide for TAIC. How can I help you today?";
+        
+        // 3. Update state and mark greeting as done.
+        setIsGreetingSpoken(true);
+        setAvatarMessages([`Assistant: ${greetingText}`]);
+        
+        // 4. Speak the greeting and start listening for the user.
+        if (speakAndListenRef.current) {
+          speakAndListenRef.current(greetingText);
+        }
+
         setLoadingMessage(null);
-        setIsGreetingSpoken(true); // Mark as 'spoken' to prevent re-triggering.
-
-        // 3. Use the new robust function to handle speech and listening.
-        speakAndListen(GREETING_MESSAGE);
+        setIsProcessing(false);
       }
     };
 
-    initAndSpeak();
-  }, [isAvatarReady, isGreetingSpoken, GREETING_MESSAGE, initVAD, speakAndListen]);
-
-  // --- SitePal Event Handlers ---
-  const handleSitePalSpeechStart = useCallback(() => {
-    console.log("[vh_speechStarted] Fired. Avatar is speaking.");
-    isAvatarSpeaking.current = true;
-    // Set a brief grace period to prevent the VAD from picking up the avatar's own starting audio.
-    isAvatarStartingSpeechRef.current = true;
-    setTimeout(() => {
-      isAvatarStartingSpeechRef.current = false;
-    }, 500); // 500ms grace period
-  }, []);
-
-  const handleSitePalSpeechEnd = useCallback(() => {
-    console.log(`[vh_speechEnded] Fired. Barge-in status: ${didBargeInRef.current}`);
-    isAvatarSpeaking.current = false;
-
-    // If speech ended naturally (no barge-in), restart VAD in activation mode.
-    // If a barge-in just happened, STT is already running, so we do nothing here.
-    if (!didBargeInRef.current) {
-      stopVAD();
-      startVAD();
-      console.log("[VAD] VAD started in 'activation' mode.");
-    }
-    // Reset the barge-in flag for the next interaction cycle.
-    didBargeInRef.current = false;
-  }, [startVAD, stopVAD]);
-
-  // Effect to attach SitePal handlers
-  useEffect(() => {
-    window.vh_speechStarted = handleSitePalSpeechStart;
-    window.vh_speechEnded = handleSitePalSpeechEnd;
-
-    return () => {
-      window.vh_speechStarted = undefined;
-      window.vh_speechEnded = undefined;
-    };
-  }, [handleSitePalSpeechStart, handleSitePalSpeechEnd]);
+    fetchAndSpeakGreeting();
+  }, [isAvatarReady, isGreetingSpoken, threadId, initVAD]);
 
   // Effect to ensure VAD is stopped ONLY when the component unmounts
   useEffect(() => {
@@ -388,8 +548,22 @@ const Pioneer_AMA_Canvas: React.FC<Pioneer_AMA_CanvasProps> = ({ isOpen, onClose
         const responseContent = data.response;
         try {
           const parsedJson = JSON.parse(responseContent);
-          if (typeof parsedJson === 'object' && parsedJson !== null && parsedJson.responseText) {
-            textToSpeak = parsedJson.responseText;
+          if (typeof parsedJson === 'object' && parsedJson !== null) {
+            // Check for both formats - new format (responseText) first, then fallback to old format (speak_text)
+            textToSpeak = parsedJson.responseText || parsedJson.speak_text || String(parsedJson);
+            
+            // Handle actions if present
+            if (Array.isArray(parsedJson.actions)) {
+              setActions(parsedJson.actions);
+            }
+            
+            // Handle canvas_state if present
+            if (parsedJson.canvas_state) {
+              console.log(`[Canvas] Updating canvas state: ${parsedJson.canvas_state}`);
+              // Here you would implement the logic to update the UI based on canvas_state
+              // For example, you could have a state variable and a switch statement
+              // to handle different canvas states
+            }
           } else {
             textToSpeak = String(parsedJson);
           }
@@ -398,6 +572,8 @@ const Pioneer_AMA_Canvas: React.FC<Pioneer_AMA_CanvasProps> = ({ isOpen, onClose
         }
       } else if (data.responseText) {
         textToSpeak = data.responseText;
+      } else if (data.speak_text) {
+        textToSpeak = data.speak_text;
       }
 
       setAiResponseText(textToSpeak);
@@ -437,9 +613,31 @@ const Pioneer_AMA_Canvas: React.FC<Pioneer_AMA_CanvasProps> = ({ isOpen, onClose
   const handleMuteToggle = () => {
     const newMutedState = !isMuted;
     // If muting, immediately stop any ongoing speech.
-    if (newMutedState && typeof window.stopSpeech === 'function') {
-      console.log('Muting: Stopping current speech.');
-      window.stopSpeech();
+    if (newMutedState) {
+      console.log('[MUTE] Stopping current avatar speech');
+      
+      // Try multiple methods to stop SitePal speech
+      if (window.sayText && typeof window.sayText === 'function') {
+        try {
+          const elevenLabsEngineID = 14;
+          const jessicaVoiceID = "cgSgspJ2msm6clMCkdW9";
+          const languageID = 1; // English
+          window.sayText('', jessicaVoiceID, languageID, elevenLabsEngineID); // Stop current speech by sending empty text
+          console.log('[MUTE] Stopped avatar speech via sayText');
+        } catch (error) {
+          console.log('[MUTE] Could not stop via sayText:', error);
+        }
+      }
+      
+      // Also try legacy stopSpeech if available
+      if (typeof window.stopSpeech === 'function') {
+        try {
+          window.stopSpeech();
+          console.log('[MUTE] Stopped speech via stopSpeech');
+        } catch (error) {
+          console.log('[MUTE] Could not stop via stopSpeech:', error);
+        }
+      }
     }
     setIsMuted(newMutedState);
   };
@@ -453,96 +651,141 @@ const Pioneer_AMA_Canvas: React.FC<Pioneer_AMA_CanvasProps> = ({ isOpen, onClose
     }
   };
 
+  const toggleCopilotMode = useCallback(() => {
+    const newMode = !isCopilotMode;
+    setIsCopilotMode(newMode);
+
+    const newWidth = newMode ? 150 : 300;
+    const newHeight = newMode ? 200 : 400;
+
+    if (window.AI_vhost_embed) {
+      const avatarContainer = document.getElementById('vhss_aiPlayer');
+      if (avatarContainer) {
+        avatarContainer.innerHTML = '';
+      }
+      window.AI_vhost_embed(newWidth, newHeight, 9226953, 278, 1, 1);
+    }
+  }, [isCopilotMode]);
+
+  // --- Proactive Help Logic ---
+  const offerProactiveHelp = useCallback(() => {
+    // Offer help only if the canvas is open, not busy, and hasn't offered before.
+    if (isOpen && !isProcessing && !isAvatarSpeaking.current && !hasOfferedProactiveHelp) {
+      console.log('%c[Inactivity] Triggering proactive help.', 'color: orange;');
+      setHasOfferedProactiveHelp(true);
+
+      // If not in copilot mode, switch to it.
+      if (!isCopilotMode) {
+        toggleCopilotMode();
+      }
+
+      const proactiveMessage = "It looks like you might be exploring. Is there anything I can help you with?";
+      setAiResponseText(proactiveMessage);
+      setAvatarMessages(prev => [...prev, `Assistant: ${proactiveMessage}`]);
+      speakAndListen(proactiveMessage);
+    }
+  }, [isOpen, isProcessing, hasOfferedProactiveHelp, isCopilotMode, speakAndListen, toggleCopilotMode]);
+
+  // Setup the inactivity detector.
+  useInactivityDetector(offerProactiveHelp, 30000); // 30-second timeout
+
   // --- Render ---
 
   return (
-    <div className="fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center z-[100] p-4 sm:p-6 md:p-8">
-      <div className="bg-background-light dark:bg-background-dark w-full max-w-4xl h-[90vh] max-h-[700px] rounded-lg shadow-2xl flex flex-col overflow-hidden">
+    <div className={`fixed z-[100] transition-all duration-300 ${isCopilotMode ? 'bottom-4 right-4' : 'inset-0 bg-black bg-opacity-75 flex items-center justify-center p-4 sm:p-6 md:p-8'}`}>
+      <div className={`bg-background-light dark:bg-background-dark rounded-lg shadow-2xl flex flex-col overflow-hidden transition-all duration-300 ${isCopilotMode ? 'w-80 h-auto' : 'w-full max-w-4xl h-[90vh] max-h-[700px]'}`}>
         {/* Header */}
         <div className="flex justify-between items-center p-4 border-b border-border-light dark:border-border-dark">
           <h2 className="text-xl font-semibold text-text-primary dark:text-text-primary-dark">TAIC AI Assistant</h2>
-          <button onClick={onClose} aria-label="Close AI Assistant" className="text-text-secondary dark:text-text-secondary-dark hover:text-text-primary dark:hover:text-text-primary-dark">
-            <X size={24} />
-          </button>
+          <div className="flex items-center gap-2">
+            <button onClick={toggleCopilotMode} aria-label={isCopilotMode ? 'Maximize' : 'Minimize'} className="text-text-secondary dark:text-text-secondary-dark hover:text-text-primary dark:hover:text-text-primary-dark">
+              {isCopilotMode ? <Maximize size={20} /> : <Minimize size={20} />}
+            </button>
+            <button onClick={onClose} aria-label="Close AI Assistant" className="text-text-secondary dark:text-text-secondary-dark hover:text-text-primary dark:hover:text-text-primary-dark">
+              <X size={24} />
+            </button>
+          </div>
         </div>
 
         {/* Main Content */}
-        <div className="flex-grow flex flex-col md:flex-row p-4 gap-4 overflow-y-auto">
-          {/* Left Panel: SitePal Avatar */}
-          <div className="w-full md:w-1/3 flex flex-col items-center justify-center bg-gray-100 dark:bg-gray-800 p-4 rounded-md">
-            <div id="vhss_aiPlayer" style={{ width: '300px', height: '400px' }}></div>
-            {loadingMessage && (
-              <div className="mt-4 text-center">
-                <p className="text-text-secondary dark:text-text-secondary-dark">{loadingMessage}</p>
-              </div>
-            )}
-          </div>
-
-          {/* Right Panel: Chat and Actions */}
-          <div className="w-full md:w-2/3 flex flex-col bg-gray-50 dark:bg-gray-900 p-4 rounded-md">
-            {/* Chat History */}
-            <div className="flex-grow border border-border-light dark:border-border-dark rounded-md p-3 mb-4 overflow-y-auto min-h-[200px] bg-white dark:bg-gray-800">
-              {avatarMessages.map((msg, index) => (
-                <p key={index} className={`text-sm mb-2 ${msg.startsWith('You:') ? 'text-text-secondary dark:text-text-secondary-dark' : 'text-text-primary dark:text-text-primary-dark'}`}>
-                  {msg}
-                </p>
-              ))}
-              {isProcessing && <p className="text-sm text-text-secondary dark:text-text-secondary-dark italic">Thinking...</p>}
-              {errorMessage && <p className="text-sm text-red-500">Error: {errorMessage}</p>}
+        <div className={`flex-grow overflow-y-auto ${isCopilotMode ? 'p-2' : 'p-4'}`}>
+          <div className={`flex gap-4 ${isCopilotMode ? 'flex-col' : 'flex-col md:flex-row'}`}>
+            {/* Left Panel: SitePal Avatar */}
+            <div className={`flex flex-col items-center justify-center bg-gray-100 dark:bg-gray-800 p-4 rounded-md ${isCopilotMode ? 'w-full' : 'w-full md:w-1/3'}`}>
+              <div id="vhss_aiPlayer" style={{ width: isCopilotMode ? '150px' : '300px', height: isCopilotMode ? '200px' : '400px', transition: 'width 0.3s, height 0.3s' }}></div>
+              {loadingMessage && (
+                <div className="mt-4 text-center">
+                  <p className="text-text-secondary dark:text-text-secondary-dark">{loadingMessage}</p>
+                </div>
+              )}
             </div>
 
-            {/* User Input */}
-            <div className="flex items-center gap-2 mb-4">
-              <input
-                type="text"
-                value={userInput}
-                onChange={(e) => setUserInput(e.target.value)}
-                onKeyPress={(e) => e.key === 'Enter' && userInput.trim() && processCommand(userInput.trim())}
-                placeholder="Type your message..."
-                className="flex-grow p-2 border border-border-light dark:border-border-dark rounded-md bg-white dark:bg-gray-700 text-text-primary dark:text-text-primary-dark focus:ring-2 focus:ring-primary"
-                disabled={isProcessing || !isAvatarReady}
-              />
-              <button
-                onClick={() => userInput.trim() && processCommand(userInput.trim())}
-                disabled={isProcessing || !isAvatarReady || !userInput.trim()}
-                className="p-2 bg-primary text-white rounded-md disabled:opacity-50 hover:bg-primary-dark transition-colors"
-              >
-                <Send size={20} />
-              </button>
-              <button
-                className={`p-2 rounded-full transition-colors ${isListening ? 'bg-red-500' : 'bg-primary'} text-white disabled:opacity-50`}
-                onClick={handleMicClick} 
-                aria-label={isListening ? 'Stop Listening' : 'Start Listening'}
-                disabled={isProcessing || !isAvatarReady}
-              >
-                {isListening ? <MicOff size={20} /> : <Mic size={20} />}
-              </button>
-
-              <button
-                className={`p-2 rounded-full transition-colors ${isMuted ? 'bg-yellow-500' : 'bg-gray-500'} text-white disabled:opacity-50`}
-                onClick={handleMuteToggle}
-                aria-label={isMuted ? 'Unmute Avatar' : 'Mute Avatar'}
-                disabled={isProcessing || !isAvatarReady}
-                title={isMuted ? 'Avatar Muted' : 'Mute Avatar'}
-              >
-                {isMuted ? <VolumeX size={20} /> : <Volume2 size={20} />}
-              </button>
-            </div>
-
-            {/* Action Buttons */}
-            <div className="flex-grow-0">
-              <h3 className="text-lg font-semibold mb-2 text-text-primary dark:text-text-primary-dark">What would you like to do?</h3>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                {actions.map((action, index) => (
-                  <button
-                    key={index}
-                    onClick={() => handleActionClick(action)}
-                    disabled={isProcessing}
-                    className="w-full text-left p-3 bg-white dark:bg-gray-800 rounded-md hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors text-primary dark:text-primary-dark border border-border-light dark:border-border-dark disabled:opacity-50"
-                  >
-                    {action.label}
-                  </button>
+            {/* Right Panel: Chat and Actions */}
+            <div className={`flex-col bg-gray-50 dark:bg-gray-900 p-4 rounded-md ${isCopilotMode ? 'hidden' : 'flex w-full md:w-2/3'}`}>
+              {/* Chat History */}
+              <div className="flex-grow border border-border-light dark:border-border-dark rounded-md p-3 mb-4 overflow-y-auto min-h-[200px] bg-white dark:bg-gray-800">
+                {avatarMessages.map((msg, index) => (
+                  <p key={index} className={`text-sm mb-2 ${msg.startsWith('You:') ? 'text-text-secondary dark:text-text-secondary-dark' : 'text-text-primary dark:text-text-primary-dark'}`}>
+                    {msg}
+                  </p>
                 ))}
+                {isProcessing && <p className="text-sm text-text-secondary dark:text-text-secondary-dark italic">Thinking...</p>}
+                {errorMessage && <p className="text-sm text-red-500">Error: {errorMessage}</p>}
+              </div>
+
+              {/* User Input */}
+              <div className="flex items-center gap-2 mb-4">
+                <input
+                  type="text"
+                  value={userInput}
+                  onChange={(e) => setUserInput(e.target.value)}
+                  onKeyPress={(e) => e.key === 'Enter' && userInput.trim() && processCommand(userInput.trim())}
+                  placeholder="Type your message..."
+                  className="flex-grow p-2 border border-border-light dark:border-border-dark rounded-md bg-white dark:bg-gray-700 text-text-primary dark:text-text-primary-dark focus:ring-2 focus:ring-primary"
+                  disabled={isProcessing || !isAvatarReady}
+                />
+                <button
+                  onClick={() => userInput.trim() && processCommand(userInput.trim())}
+                  disabled={isProcessing || !isAvatarReady || !userInput.trim()}
+                  className="p-2 bg-primary text-white rounded-md disabled:opacity-50 hover:bg-primary-dark transition-colors"
+                >
+                  <Send size={20} />
+                </button>
+                <button
+                  className={`p-2 rounded-full transition-colors ${isListening ? 'bg-red-500' : 'bg-primary'} text-white disabled:opacity-50`}
+                  onClick={handleMicClick}
+                  aria-label={isListening ? 'Stop Listening' : 'Start Listening'}
+                  disabled={isProcessing || !isAvatarReady}
+                >
+                  {isListening ? <MicOff size={20} /> : <Mic size={20} />}
+                </button>
+
+                <button
+                  className={`p-2 rounded-full transition-colors ${isMuted ? 'bg-yellow-500' : 'bg-gray-500'} text-white disabled:opacity-50`}
+                  onClick={handleMuteToggle}
+                  aria-label={isMuted ? 'Unmute Avatar' : 'Mute Avatar'}
+                  disabled={isProcessing || !isAvatarReady}
+                  title={isMuted ? 'Avatar Muted' : 'Mute Avatar'}
+                >
+                  {isMuted ? <VolumeX size={20} /> : <Volume2 size={20} />}
+                </button>
+              </div>
+
+              {/* Action Buttons */}
+              <div className="flex-grow-0">
+                <h3 className="text-lg font-semibold mb-2 text-text-primary dark:text-text-primary-dark">What would you like to do?</h3>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                  {actions.map((action, index) => (
+                    <button
+                      key={index}
+                      onClick={() => handleActionClick(action)}
+                      disabled={isProcessing}
+                      className="w-full text-left p-3 bg-white dark:bg-gray-800 rounded-md hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors text-primary dark:text-primary-dark border border-border-light dark:border-border-dark disabled:opacity-50"
+                    >
+                      {action.label}
+                    </button>
+                  ))}
+                </div>
               </div>
             </div>
           </div>
