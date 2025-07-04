@@ -68,6 +68,7 @@ const useWebSpeech = (options: UseWebSpeechOptions = {}): WebSpeechControls => {
   const userStoppedRef = useRef(false);
   const optionsRef = useRef(options);
   const utteranceRef = useRef<SpeechSynthesisUtterance | null>(null);
+  const retryCountRef = useRef(0);
 
   // Update options ref whenever options prop changes
   useEffect(() => {
@@ -140,26 +141,66 @@ const useWebSpeech = (options: UseWebSpeechOptions = {}): WebSpeechControls => {
       recognition.addEventListener('error', (event: Event) => {
         const errorEvent = event as SpeechRecognitionErrorEvent;
         console.error('%c[STT] ❌ Speech recognition ERROR!', 'color: #ef4444; font-weight: bold; font-size: 14px;', errorEvent.error);
+        
+        let shouldRetry = false;
         let errorMessage = errorEvent.error;
-        if (errorEvent.error === 'no-speech') {
-          errorMessage = 'No speech was detected.';
-        } else if (errorEvent.error === 'audio-capture') {
-          errorMessage = 'Microphone not available. Check connection and permissions.';
-        } else if (errorEvent.error === 'not-allowed') {
-          errorMessage = 'Microphone permission denied. Please enable it in browser settings.';
-        } else if (errorEvent.error === 'network') {
-          console.warn('%c[STT] 🌐 Network error - speech service unavailable', 'color: #f59e0b; font-weight: bold;');
-          console.log('%c[STT] 💡 This is usually temporary. Check internet connection or try again later.', 'color: #f59e0b;');
-          errorMessage = 'Network error: Speech recognition service unavailable. Please check your internet connection and try again.';
-        } else if (errorEvent.error === 'service-not-allowed') {
-          errorMessage = 'Speech recognition service not allowed or unavailable.';
+        
+        switch (errorEvent.error) {
+          case 'network':
+            console.warn('%c[STT] 🌐 Network error - speech service unavailable', 'color: #f59e0b; font-weight: bold;');
+            console.log('%c[STT] 💡 This is usually temporary. Check internet connection or try again later.', 'color: #f59e0b;');
+            errorMessage = 'Network error: Speech recognition service unavailable. Please check your internet connection and try again.';
+            shouldRetry = true;
+            break;
+          case 'not-allowed':
+            console.error('%c[STT] 🚫 Microphone access denied', 'color: #ef4444; font-weight: bold;');
+            errorMessage = 'Microphone permission denied. Please enable it in browser settings.';
+            break;
+          case 'no-speech':
+            console.warn('%c[STT] 🔇 No speech detected', 'color: #f59e0b;');
+            errorMessage = 'No speech was detected.';
+            shouldRetry = true;
+            break;
+          case 'audio-capture':
+            console.error('%c[STT] 🎤 Audio capture failed', 'color: #ef4444; font-weight: bold;');
+            errorMessage = 'Microphone not available. Check connection and permissions.';
+            shouldRetry = true;
+            break;
+          case 'service-not-allowed':
+            console.error('%c[STT] ⛔ Speech service not allowed', 'color: #ef4444; font-weight: bold;');
+            errorMessage = 'Speech recognition service not allowed or unavailable.';
+            break;
+          default:
+            console.error('%c[STT] ❓ Unknown error:', errorEvent.error, 'color: #ef4444;');
+            shouldRetry = true;
         }
+        
         setSttError(errorMessage);
         setIsListening(false);
         isListeningRef.current = false;
-        if (optionsRef.current.onSTTError) {
-          console.log('%c[STT] 🚀 Calling onSTTError callback...', 'color: #ef4444;');
-          optionsRef.current.onSTTError(errorMessage);
+        
+        // Auto-retry for network and temporary errors
+        if (shouldRetry && retryCountRef.current < 3) {
+          retryCountRef.current++;
+          console.log(`%c[STT] 🔄 Auto-retry attempt ${retryCountRef.current}/3 in 2 seconds...`, 'color: #f59e0b; font-weight: bold;');
+          
+          setTimeout(() => {
+            if (recognitionRef.current && !isListeningRef.current) {
+              console.log('%c[STT] 🔄 Retrying speech recognition...', 'color: #f59e0b;');
+              try {
+                recognitionRef.current.start();
+              } catch (retryError) {
+                console.error('%c[STT] ❌ Retry failed:', 'color: #ef4444;', retryError);
+              }
+            }
+          }, 2000);
+        } else {
+          // Reset retry count and call error handler
+          retryCountRef.current = 0;
+          if (optionsRef.current.onSTTError) {
+            console.log('%c[STT] 🚀 Calling onSTTError callback...', 'color: #ef4444;');
+            optionsRef.current.onSTTError(errorMessage);
+          }
         }
       });
 

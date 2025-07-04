@@ -32,3 +32,73 @@ export const trackEvent = (eventName: string, eventProperties?: Record<string, a
     return;
   }
 };
+
+// Conversation-specific analytics functions
+export const trackConversationStart = (threadId: string, guestSessionId?: string) => {
+  trackEvent('conversation_started', {
+    thread_id: threadId,
+    guest_session_id: guestSessionId,
+    timestamp: new Date().toISOString(),
+    conversation_type: 'pioneer_ama'
+  });
+};
+
+export const trackConversationMessage = (
+  threadId: string,
+  role: 'user' | 'assistant',
+  messageLength: number,
+  hasActions?: boolean,
+  guestSessionId?: string
+) => {
+  trackEvent('conversation_message', {
+    thread_id: threadId,
+    guest_session_id: guestSessionId,
+    role,
+    message_length: messageLength,
+    has_actions: hasActions || false,
+    timestamp: new Date().toISOString()
+  });
+};
+
+export const trackConversationEnd = (
+  threadId: string,
+  duration: number,
+  messageCount: number,
+  guestSessionId?: string
+) => {
+  trackEvent('conversation_ended', {
+    thread_id: threadId,
+    guest_session_id: guestSessionId,
+    duration_seconds: duration,
+    message_count: messageCount,
+    timestamp: new Date().toISOString()
+  });
+};
+
+export const trackActionClick = (
+  threadId: string,
+  actionLabel: string,
+  actionValue: string,
+  guestSessionId?: string
+) => {
+  trackEvent('conversation_action_clicked', {
+    thread_id: threadId,
+    guest_session_id: guestSessionId,
+    action_label: actionLabel,
+    action_value: actionValue,
+    timestamp: new Date().toISOString()
+  });
+};
+
+export const trackUserConversion = (
+  guestSessionId: string,
+  userId: string,
+  conversionType: 'signup' | 'pioneer_application' | 'merchant_registration'
+) => {
+  trackEvent('user_conversion', {
+    guest_session_id: guestSessionId,
+    user_id: userId,
+    conversion_type: conversionType,
+    timestamp: new Date().toISOString()
+  });
+};

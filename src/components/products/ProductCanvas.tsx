@@ -1,7 +1,7 @@
 
 'use client';
 
-import type { ProductForAI } from '@/ai/flows/shopping-assistant';
+import type { ProductForAI } from '@/ai/schemas/shopping-assistant-schemas-new';
 import { ProductCard } from './ProductCard';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import type { Product } from '@/lib/types';

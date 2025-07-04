@@ -1,6 +1,10 @@
-from typing import Optional, List, Dict, Any # Added List, Dict, Any
-from pydantic import BaseModel, EmailStr, Field
+from typing import Optional, List, Dict, Any, TYPE_CHECKING, ForwardRef # Added List, Dict, Any, TYPE_CHECKING, ForwardRef
+from pydantic import BaseModel, EmailStr, Field, create_model
 from datetime import datetime
+
+# Use TYPE_CHECKING to avoid circular imports at runtime
+if TYPE_CHECKING:
+    from .store_profile_models import StoreProfile
 
 # Forward reference for StoreProfile, will be imported properly in router
 # For Pydantic v2, string annotations for forward references are often preferred.
@@ -77,12 +81,15 @@ class UserStoreReviewData(BaseModel):
     class Config:
         from_attributes = True
 
+# Create a forward reference for StoreProfile
+StoreProfileRef = ForwardRef('StoreProfile')
+
 class UserExportData(BaseModel):
     """Comprehensive data structure for exporting user-related information."""
     profile: UserProfileResponse = Field(..., description="The user's core profile information.")
     orders: List[UserOrderData] = Field(default_factory=list, description="A list of orders placed by the user.")
     store_reviews_written: List[UserStoreReviewData] = Field(default_factory=list, description="A list of store reviews written by the user.")
-    merchant_profile: Optional['app.models.store_profile_models.StoreProfile'] = Field(default=None, description="Merchant's store profile, if the user is a merchant.")
+    merchant_profile: Optional[StoreProfileRef] = Field(default=None, description="Merchant's store profile, if the user is a merchant.")
     merchant_products_listed_count: Optional[int] = Field(default=None, description="Number of products listed by the merchant, if applicable.")
     export_generated_at: datetime = Field(..., description="Timestamp of when this data export was generated.")
 
@@ -98,6 +105,11 @@ class UserExportData(BaseModel):
                 "export_generated_at": "2023-10-27T10:00:00Z"
             }
         }
+
+# Update forward references after all models are defined
+# This must be at the end of the file
+from .store_profile_models import StoreProfile
+UserExportData.update_forward_refs()
 
 # --- Models for Wallet Linking ---
 

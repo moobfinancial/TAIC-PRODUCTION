@@ -3,12 +3,19 @@ import { X, Mic, MicOff, Send, Volume2, VolumeX, Minimize, Maximize } from 'luci
 import useInactivityDetector from '../../hooks/useInactivityDetector';
 import useWebSpeech from '../../hooks/useWebSpeech';
 import useVAD from '../../hooks/useVAD';
+import {
+  trackConversationStart,
+  trackConversationMessage,
+  trackConversationEnd,
+  trackActionClick
+} from '../../lib/analytics';
 
 // Define types for our API responses
 interface Action {
   label: string;
   command?: string;
   link?: string;
+  value?: string; // Add value property for analytics tracking
 }
 
 interface AIResponse {
@@ -34,6 +41,9 @@ const Pioneer_AMA_Canvas: React.FC<Pioneer_AMA_CanvasProps> = ({ isOpen, onClose
   const [userInput, setUserInput] = useState<string>('');
   const [isAvatarReady, setIsAvatarReady] = useState(false);
   const [threadId, setThreadId] = useState<string | null>(null);
+  const [guestSessionId, setGuestSessionId] = useState<string | null>(null);
+  const [conversationStartTime, setConversationStartTime] = useState<number | null>(null);
+  const [messageCount, setMessageCount] = useState<number>(0);
   const [isGreetingSpoken, setIsGreetingSpoken] = useState(false);
   const [loadingMessage, setLoadingMessage] = useState<string | null>('Initializing AI Assistant...');
   const [isListeningToUser, setIsListeningToUser] = useState(false); // New state to track STT activity
@@ -107,62 +117,15 @@ const Pioneer_AMA_Canvas: React.FC<Pioneer_AMA_CanvasProps> = ({ isOpen, onClose
     onSTTEnd: () => console.log('[STT] Stopped listening'),
   });
 
+  // Get VAD hook without parameters
   const {
     isListening: isVADListening,
     vadError,
     initVAD,
     start: startVAD,
     stop: stopVAD,
-  } = useVAD({
-    onSpeechStart: () => {
-      console.log('[VAD] Speech detected - checking barge-in conditions');
-      
-      // Check if barge-in is allowed (grace period)
-      if (!canBargeInRef.current) {
-        console.log('[VAD] Barge-in blocked - still in grace period');
-        return;
-      }
-      
-      // Check if avatar is actually speaking before attempting barge-in
-      if (!isAvatarSpeaking.current) {
-        console.log('[VAD] Avatar not speaking - proceeding with STT only');
-        if (!isListening) {
-          console.log('[VAD] Starting STT (no barge-in needed)');
-          startListening();
-        }
-        return;
-      }
-      
-      console.log('[VAD] Implementing barge-in - avatar is speaking');
-      
-      // Barge-in: Stop avatar speech when user starts speaking
-      if (window.sayText && typeof window.sayText === 'function') {
-        try {
-          console.log('[VAD] Stopping avatar speech for barge-in');
-          const elevenLabsEngineID = 14;
-          const jessicaVoiceID = "cgSgspJ2msm6clMCkdW9";
-          const languageID = 1; // English
-          window.sayText('', jessicaVoiceID, languageID, elevenLabsEngineID); // Stop current speech by sending empty text
-          isAvatarSpeaking.current = false; // Update avatar speaking state
-          didBargeInRef.current = true; // Mark that barge-in occurred
-        } catch (error) {
-          console.log('[VAD] Could not stop avatar speech:', error);
-        }
-      }
-      
-      // Start STT if not already listening
-      if (!isListening) {
-        console.log('[VAD] Starting STT after barge-in');
-        startListening();
-      }
-    },
-    onSpeechEnd: () => {
-      console.log('[VAD] Speech ended - stopping STT');
-      if (isListening) {
-        stopListening();
-      }
-    },
-  });
+    attachEventHandlers,
+  } = useVAD();
 
   // --- Animation Handlers ---
   const playListeningAnimation = useCallback(() => {
@@ -246,6 +209,14 @@ const Pioneer_AMA_Canvas: React.FC<Pioneer_AMA_CanvasProps> = ({ isOpen, onClose
     // Debug flag - set to true to see all VAD probabilities in console
     const DEBUG_VAD = true;
     
+    // CRITICAL FIX: Completely disable VAD processing while avatar is speaking
+    // This prevents the avatar's own speech from triggering VAD and causing interruptions
+    if (isAvatarSpeaking.current && !canBargeInRef.current) {
+      // During the grace period, completely ignore all VAD input
+      if (DEBUG_VAD) console.log(`[VAD] Completely ignored during avatar speech grace period (${probability.toFixed(2)})`);
+      return;
+    }
+    
     // Ignore VAD if STT is active or if the avatar has just started speaking.
     if (isListeningToUser || isListening || isAvatarStartingSpeechRef.current) {
       if (DEBUG_VAD) console.log(`[VAD] Ignored: STT active=${isListeningToUser || isListening}, avatar starting=${isAvatarStartingSpeechRef.current}`);
@@ -253,7 +224,7 @@ const Pioneer_AMA_Canvas: React.FC<Pioneer_AMA_CanvasProps> = ({ isOpen, onClose
     }
 
     const ACTIVATION_THRESHOLD = 0.4; // Lowered from 0.5
-    const BARGE_IN_THRESHOLD = 0.5; // Further lowered from 0.6 for even easier interruption
+    const BARGE_IN_THRESHOLD = 0.7; // Increased from 0.5 to reduce false positives
 
     // Rule Set #1: Avatar is SPEAKING (Barge-in Mode)
     if (isAvatarSpeaking.current) {
@@ -299,6 +270,16 @@ const Pioneer_AMA_Canvas: React.FC<Pioneer_AMA_CanvasProps> = ({ isOpen, onClose
     }
   }, [isListeningToUser, isListening, startListening, stopVAD]);
 
+  // Connect handleSpeechProbability to VAD system
+  useEffect(() => {
+    if (attachEventHandlers) {
+      console.log('[VAD] Attaching speech probability handler');
+      attachEventHandlers({
+        onFrameProcessed: handleSpeechProbability
+      });
+    }
+  }, [attachEventHandlers, handleSpeechProbability]);
+
   const speakAndListen = useCallback((text: string) => {
     playIdleAnimation(); // Return to neutral before speaking.
     if (isMuted) {
@@ -310,8 +291,12 @@ const Pioneer_AMA_Canvas: React.FC<Pioneer_AMA_CanvasProps> = ({ isOpen, onClose
     stopVAD();
     didBargeInRef.current = false;
     
-    startVAD();
-    console.log("[VAD] VAD started BEFORE speech for barge-in detection");
+    // CRITICAL FIX: Don't start VAD immediately when avatar starts speaking
+    // This prevents the avatar's own speech from being detected as user speech
+    console.log("[VAD] VAD temporarily disabled during speech start");
+    
+    // We'll start VAD after a short delay to allow the avatar to start speaking
+    // This helps prevent false VAD triggers from the avatar's own speech
 
     try {
       if (typeof window.sayText === 'function') {
@@ -332,6 +317,11 @@ const Pioneer_AMA_Canvas: React.FC<Pioneer_AMA_CanvasProps> = ({ isOpen, onClose
         bargeInGracePeriodRef.current = setTimeout(() => {
           canBargeInRef.current = true;
           console.log('[BARGE-IN] Grace period ended - barge-in now allowed');
+          
+          // CRITICAL FIX: Start VAD only after the grace period
+          // This ensures the avatar has been speaking for a while before we enable VAD
+          startVAD();
+          console.log('[VAD] VAD started after grace period for controlled barge-in detection');
         }, 2000);
         
         window.sayText(text, jessicaVoiceID, languageID, elevenLabsEngineID);
@@ -376,6 +366,15 @@ const Pioneer_AMA_Canvas: React.FC<Pioneer_AMA_CanvasProps> = ({ isOpen, onClose
 
   // --- Effects ---
 
+  // Initialize guest session ID for anonymous users
+  useEffect(() => {
+    if (!guestSessionId) {
+      const sessionId = `guest_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+      setGuestSessionId(sessionId);
+      console.log('[Session] Generated guest session ID:', sessionId);
+    }
+  }, [guestSessionId]);
+
   // Effect to dynamically load the SitePal script and initialize the avatar
   useEffect(() => {
     // This effect should only run its setup once when the component is opened.
@@ -416,8 +415,27 @@ const Pioneer_AMA_Canvas: React.FC<Pioneer_AMA_CanvasProps> = ({ isOpen, onClose
             console.log("[vh_sceneLoaded] Fired. Scene is ready.");
             setIsAvatarReady(true); // This will trigger the greeting useEffect
           };
-          // Embed the avatar.
-          window.AI_vhost_embed(300, 400, 9226953, 278, 1, 1);
+
+          // Set up speech event handlers that SitePal expects
+          window.vh_speechStarted = handleSitePalSpeechStart;
+          window.vh_speechEnded = handleSitePalSpeechEnd;
+
+          // Ensure DOM container is ready before embedding
+          const checkContainerAndEmbed = () => {
+            const container = document.getElementById('vhss_aiPlayer');
+            if (container) {
+              console.log('DOM container found, embedding avatar...');
+              if (window.AI_vhost_embed) {
+                window.AI_vhost_embed(300, 400, 9226953, 278, 1, 1);
+              }
+            } else {
+              console.log('DOM container not ready, retrying in 100ms...');
+              setTimeout(checkContainerAndEmbed, 100);
+            }
+          };
+
+          // Small delay to ensure DOM is fully rendered
+          setTimeout(checkContainerAndEmbed, 50);
         } else {
           console.error('SitePal embed function not found even after script load.');
           const errorMsg = 'Failed to initialize AI avatar. Please refresh the page.';
@@ -507,8 +525,19 @@ const Pioneer_AMA_Canvas: React.FC<Pioneer_AMA_CanvasProps> = ({ isOpen, onClose
   useEffect(() => {
     return () => {
       stopVAD();
+
+      // Track conversation end analytics
+      if (threadId && conversationStartTime) {
+        const duration = Math.floor((Date.now() - conversationStartTime) / 1000);
+        trackConversationEnd(
+          threadId,
+          duration,
+          messageCount,
+          guestSessionId || undefined
+        );
+      }
     };
-  }, [stopVAD]); // stopVAD is stable
+  }, [stopVAD, threadId, conversationStartTime, messageCount, guestSessionId]); // stopVAD is stable
 
   if (!isOpen) {
     return null;
@@ -525,10 +554,16 @@ const Pioneer_AMA_Canvas: React.FC<Pioneer_AMA_CanvasProps> = ({ isOpen, onClose
     setAiResponseText('Thinking...');
 
     try {
+      // Send the current message with conversation context
       const response = await fetch('/api/ai/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ message: command, thread_id: threadId }),
+        body: JSON.stringify({
+          messages: [command], // Send only the current message, API handles history
+          thread_id: threadId,
+          user_id: null, // TODO: Add user authentication
+          guest_session_id: guestSessionId
+        }),
       });
 
       if (!response.ok) {
@@ -537,47 +572,116 @@ const Pioneer_AMA_Canvas: React.FC<Pioneer_AMA_CanvasProps> = ({ isOpen, onClose
         throw new Error(`Failed to get response: ${errorData.details || response.statusText}`);
       }
 
-      const data = await response.json();
-      console.log('Received from API:', data);
+      // Handle streaming response
+      const reader = response.body?.getReader();
+      if (!reader) {
+        throw new Error('No response body available');
+      }
 
-      setThreadId(data.thread_id);
+      const decoder = new TextDecoder();
+      let fullResponse = '';
+      let threadIdFromResponse = '';
+      let isFirstChunk = true;
+
+      // Read the stream
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        const chunk = decoder.decode(value, { stream: true });
+
+        if (isFirstChunk) {
+          // First chunk contains thread_id as JSON
+          const lines = chunk.split('\n');
+          try {
+            const threadInfo = JSON.parse(lines[0]);
+            threadIdFromResponse = threadInfo.thread_id;
+            // Rest of the chunk is the AI response
+            fullResponse += lines.slice(1).join('\n');
+          } catch (e) {
+            // If first chunk isn't JSON, treat as regular response
+            fullResponse += chunk;
+          }
+          isFirstChunk = false;
+        } else {
+          fullResponse += chunk;
+        }
+      }
+
+      // Update thread ID if we got one
+      if (threadIdFromResponse && threadIdFromResponse !== threadId) {
+        setThreadId(threadIdFromResponse);
+
+        // Track conversation start for new threads
+        if (!threadId) {
+          trackConversationStart(threadIdFromResponse, guestSessionId || undefined);
+          setConversationStartTime(Date.now());
+        }
+      }
 
       let textToSpeak = 'I received a response, but it was empty.';
+      let actionsToSet: any[] = [];
 
-      if (data.response) {
-        const responseContent = data.response;
-        try {
-          const parsedJson = JSON.parse(responseContent);
-          if (typeof parsedJson === 'object' && parsedJson !== null) {
-            // Check for both formats - new format (responseText) first, then fallback to old format (speak_text)
-            textToSpeak = parsedJson.responseText || parsedJson.speak_text || String(parsedJson);
-            
-            // Handle actions if present
-            if (Array.isArray(parsedJson.actions)) {
-              setActions(parsedJson.actions);
+      // Parse the full response for JSON actions vs plain text
+      if (fullResponse.trim()) {
+        // Check if response is JSON format (for actions)
+        if (fullResponse.trim().startsWith('{') || fullResponse.trim().startsWith('[')) {
+          try {
+            const parsedJson = JSON.parse(fullResponse.trim());
+            if (typeof parsedJson === 'object' && parsedJson !== null) {
+              // Extract speech text and actions separately
+              textToSpeak = parsedJson.responseText || parsedJson.speak_text || 'I have some options for you.';
+
+              // Handle actions if present
+              if (Array.isArray(parsedJson.actions)) {
+                actionsToSet = parsedJson.actions;
+              }
+
+              // Handle canvas_state if present
+              if (parsedJson.canvas_state) {
+                console.log(`[Canvas] Updating canvas state: ${parsedJson.canvas_state}`);
+              }
+            } else {
+              textToSpeak = String(parsedJson);
             }
-            
-            // Handle canvas_state if present
-            if (parsedJson.canvas_state) {
-              console.log(`[Canvas] Updating canvas state: ${parsedJson.canvas_state}`);
-              // Here you would implement the logic to update the UI based on canvas_state
-              // For example, you could have a state variable and a switch statement
-              // to handle different canvas states
-            }
-          } else {
-            textToSpeak = String(parsedJson);
+          } catch (e) {
+            // If JSON parsing fails, use the raw response as speech
+            console.log('Response is not valid JSON, using as plain text');
+            textToSpeak = fullResponse.trim();
           }
-        } catch (e) {
-          textToSpeak = responseContent;
+        } else {
+          // Plain text response - use directly for speech
+          textToSpeak = fullResponse.trim();
         }
-      } else if (data.responseText) {
-        textToSpeak = data.responseText;
-      } else if (data.speak_text) {
-        textToSpeak = data.speak_text;
       }
+
+      // Set actions separately from speech text
+      setActions(actionsToSet);
 
       setAiResponseText(textToSpeak);
       setAvatarMessages(prev => [...prev, `Assistant: ${textToSpeak}`]);
+
+      // Track analytics for messages
+      if (threadId || threadIdFromResponse) {
+        const currentThreadId = threadIdFromResponse || threadId;
+        // Track user message
+        trackConversationMessage(
+          currentThreadId!,
+          'user',
+          command.length,
+          false,
+          guestSessionId || undefined
+        );
+        // Track assistant message
+        trackConversationMessage(
+          currentThreadId!,
+          'assistant',
+          textToSpeak.length,
+          actionsToSet.length > 0,
+          guestSessionId || undefined
+        );
+        setMessageCount(prev => prev + 2); // User + Assistant messages
+      }
 
       // Use the new robust function to handle speech and listening.
       speakAndListen(textToSpeak);
@@ -643,6 +747,16 @@ const Pioneer_AMA_Canvas: React.FC<Pioneer_AMA_CanvasProps> = ({ isOpen, onClose
   };
 
   const handleActionClick = (action: Action) => {
+    // Track action click analytics
+    if (threadId) {
+      trackActionClick(
+        threadId,
+        action.label,
+        action.command || action.link || action.value || '',
+        guestSessionId || undefined
+      );
+    }
+
     if (action.command) {
       processCommand(action.command);
     } else if (action.link) {

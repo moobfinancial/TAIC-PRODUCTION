@@ -1,4 +1,4 @@
-// Script to create a new shopper user with email/password authentication
+9(// Script to create a new shopper user with email/password authentication
 const { Pool } = require('pg');
 const bcrypt = require('bcryptjs');
 const { v4: uuidv4 } = require('uuid');

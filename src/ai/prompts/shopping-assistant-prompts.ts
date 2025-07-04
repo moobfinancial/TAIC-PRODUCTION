@@ -1,6 +1,6 @@
 // src/ai/prompts/shopping-assistant-prompts.ts
 import { z } from 'zod';
-import { type GetProductRecommendationsInput, type ProductForAI } from '@/ai/schemas/shopping-assistant-schemas';
+import { type GetProductRecommendationsInput, type ProductForAI } from '@/ai/schemas/shopping-assistant-schemas-new';
 
 // This function builds the message array for the shopping assistant prompt.
 // It now accepts pre-fetched product data and instructs the LLM on how to use it.

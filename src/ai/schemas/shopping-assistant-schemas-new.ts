@@ -1,5 +1,5 @@
-// src/ai/schemas/shopping-assistant-schemas.ts
-import { z } from 'genkit';
+// src/ai/schemas/shopping-assistant-schemas-new.ts
+import { z } from 'zod';
 
 // Define a Zod schema for the Product, compatible with AppProductType
 export const ProductAISchema = z.object({
@@ -11,6 +11,15 @@ export const ProductAISchema = z.object({
   imageUrl: z.string(),
   category: z.string().optional().default('Uncategorized'), // Make category optional with default
   dataAiHint: z.string().optional().default(''), // Make dataAiHint optional with default
+  productUrl: z.string().optional(),
+  attributes: z.array(z.any()).optional(),
+  inventory: z.object({
+    stockQuantity: z.number().optional(),
+    availability: z.string().optional()
+  }).optional(),
+  brand: z.string().optional(),
+  currency: z.string().optional().default('USD'),
+  sku: z.string().optional(),
 });
 export type ProductForAI = z.infer<typeof ProductAISchema>;
 

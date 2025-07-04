@@ -3,6 +3,7 @@ import sys
 import traceback
 import inspect
 import typing # Keep the alias for other typing uses
+from .routers.ai_chat import router as ai_chat_router
 from typing import Dict, Any, Optional, List # Ensure List is imported
 from contextlib import asynccontextmanager
 from fastapi import FastAPI, HTTPException
@@ -452,3 +453,6 @@ async def health_check():
     Health check endpoint.
     """
     return {"status": "ok"}
+
+# Include the AI chat router
+app.include_router(ai_chat_router, prefix="/api/ai")

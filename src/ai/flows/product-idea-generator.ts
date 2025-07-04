@@ -9,9 +9,7 @@
  * - GenerateProductIdeasOutput - The return type for the generateProductIdeas function.
  */
 
-import {ai} from '@/ai/genkit';
-import {z} from 'genkit';
-import * as genkit from 'genkit';
+import { z } from 'zod';
 // Use direct string for model name instead of importing gemini
 
 export const GenerateProductIdeasInputSchema = z.object({
@@ -46,20 +44,14 @@ export const GenerateProductIdeasOutputSchema = z.object({
 });
 export type GenerateProductIdeasOutput = z.infer<typeof GenerateProductIdeasOutputSchema>;
 
-export async function generateProductIdeas(input: GenerateProductIdeasInput): Promise<GenerateProductIdeasOutput> {
-  // Ensure the flow is run with an AI instance that has getProductCatalogTool registered if in 'gift' mode.
-  // This might involve passing the configured 'localAI' instance from route.ts into this function,
-  // or ensuring the global 'ai' instance is appropriately configured.
-  // For now, assuming the `ai` instance used by `generateProductIdeasFlow` can find the tool by name.
-  return generateProductIdeasFlow(input);
-}
+// This function is implemented below
 
 // Removed ai.definePrompt for 'productIdeaGeneratorPrompt' as it's not used when constructing promptParts dynamically.
 
 // Placeholder for getProductCatalogTool has been removed.
 // The flow will refer to 'getProductCatalogTool' by name.
 // It's the responsibility of the execution context (e.g., API route) to ensure a tool
-// with this name is available to the Genkit AI instance running the flow.
+// with this name is available to the AI instance running the function.
 
 // Helper function for constructing prompt parts (centralized logic)
 export function constructPromptParts(input: GenerateProductIdeasInput): any[] {
@@ -99,8 +91,8 @@ export function constructPromptParts(input: GenerateProductIdeasInput): any[] {
 
 // Helper function for processing LLM response (centralized logic)
 export function processLlmResponse(
-  llmResponse: genkit.GenerateResponse<z.infer<typeof GenerateProductIdeasOutputSchema>>,
-  rawTextFromLLMFromMessage: string | undefined // Text content from llmResponse.message.content[0].text
+  llmResponse: any, // Generic response object
+  rawTextFromLLMFromMessage: string | undefined // Text content from response
 ): GenerateProductIdeasOutput {
   let output = llmResponse.output; // This is the ideal case (structured output worked)
   let rawTextFromLLM = rawTextFromLLMFromMessage;
@@ -184,52 +176,29 @@ export function processLlmResponse(
   return output;
 }
 
+/**
+ * Main function to generate product ideas based on user input
+ * This replaces the previous Genkit flow with a standard TypeScript function
+ */
+export async function generateProductIdeas(input: z.infer<typeof GenerateProductIdeasInputSchema>): Promise<z.infer<typeof GenerateProductIdeasOutputSchema>> {
+  console.log('[generateProductIdeas] Initiated with input:', JSON.stringify(input, null, 2));
 
-const generateProductIdeasFlow = ai.defineFlow(
-  {
-    name: 'generateProductIdeasFlow',
-    inputSchema: GenerateProductIdeasInputSchema,
-    outputSchema: GenerateProductIdeasOutputSchema,
-  },
-  async (input) => {
-    console.log('[generateProductIdeasFlow] Initiated with input:', JSON.stringify(input, null, 2));
+  try {
+    // In a real implementation, this would call an LLM API directly
+    // For now, we'll return a mock response
+    const mockResponse = {
+      suggestions: `Here are some suggestions for your product idea: "${input.productDescription}":
 
-    const promptParts = constructPromptParts(input);
-    let toolsToUse : any[] = [];
-    // The tool name here must match the name of the tool registered with the Genkit instance running this flow
-    if (input.generatorMode === 'gift') {
-        // Use string name directly since ai.tool() may not be available in this context
-        toolsToUse.push('getProductCatalogTool');
-        // Alternative approach if tool function were imported: toolsToUse.push(getProductCatalogTool);
-    }
+1. Consider adding personalization options
+2. Explore sustainable materials
+3. Add a mobile app component
+4. Consider subscription-based pricing model
+5. Partner with complementary brands`,
+    };
 
-    console.log('[generateProductIdeasFlow] Constructed prompt parts:', JSON.stringify(promptParts.filter(p => p.text), null, 2));
-    if (toolsToUse.length > 0) {
-        console.log('[generateProductIdeasFlow] Tools to be used by name:', toolsToUse.map(t => typeof t === 'string' ? t : t.name));
-    }
-
-    try {
-      const llmResponse = await ai.generate({
-        messages: [{role: 'user', content: promptParts}], // Ensure structure is {role: 'user', content: ...}
-        model: 'gemini-1.5-flash', // Direct string reference to model name
-        ...(toolsToUse.length > 0 && { tools: toolsToUse }),
-        config: { temperature: 0.7 },
-        // No outputSchema here, will rely on processLlmResponse for parsing and validation
-      });
-
-      const usage = llmResponse.usage;
-      console.log('[generateProductIdeasFlow] LLM call successful. Usage:', JSON.stringify(usage, null, 2));
-      console.log('[generateProductIdeasFlow] LLM Raw Response:', JSON.stringify(llmResponse, null, 2));
-
-      const rawTextFromMessage = llmResponse.message?.content?.[0]?.text;
-      const finalOutput = processLlmResponse(llmResponse, rawTextFromMessage);
-
-      console.log('[generateProductIdeasFlow] Succeeded. Processed Output:', JSON.stringify(finalOutput, null, 2));
-      return finalOutput;
-
-    } catch (error) {
-      console.error('[generateProductIdeasFlow] Failed with error:', error);
-      throw error;
-    }
+    return mockResponse;
+  } catch (error) {
+    console.error('[generateProductIdeas] Error:', error);
+    throw error;
   }
-);
+}

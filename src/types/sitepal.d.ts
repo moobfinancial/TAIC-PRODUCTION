@@ -26,7 +26,7 @@ declare global {
     embed?: (options: any) => void;
 
     // SitePal event handlers
-    vh_sceneLoaded?: (sceneName: string) => void;
+    vh_sceneLoaded?: (slideIndex: number, portal: any) => void;
     vh_characterLoaded?: (characterId: string) => void;
     vh_speechStarted?: () => void;
     vh_speechEnded?: () => void;

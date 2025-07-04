@@ -1,4 +1,15 @@
-# Virtual Try-On (VTO) Genkit Refactor Plan
+# ⚠️ DEPRECATED: Virtual Try-On (VTO) Genkit Refactor Plan
+
+> **Note**: This document is deprecated as of June 2025. The project has transitioned to a FastAPI/MCPUs/A2A architecture, and Genkit is no longer the recommended approach for new development.
+
+---
+
+## Why This Is Deprecated
+- The project has moved to a FastAPI-based architecture
+- New development should follow the MCPUs/A2A pattern
+- This document is kept for historical reference only
+
+---
 
 ## 1. Introduction & Goals
 
