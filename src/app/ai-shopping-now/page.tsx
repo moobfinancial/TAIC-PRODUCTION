@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useRef, type FormEvent } from 'react';
+import { useState, useEffect, useRef, type FormEvent, type MouseEvent } from 'react';
 import { Button } from '@/components/ui/button';
 import { ProductCanvas } from '@/components/products/ProductCanvas';
 import { ArrowLeft, Send, Mic, MicOff, Volume2, VolumeX, Sparkles, Bot, User } from 'lucide-react';
@@ -24,6 +24,7 @@ interface ProductForAI {
   imageUrl: string;
   category?: string;
   dataAiHint?: string;
+  currency?: string;
 }
 
 export default function AiShoppingNowPage() {
@@ -86,7 +87,7 @@ export default function AiShoppingNowPage() {
     }
   }, [finalTranscript]); // Dependency on finalTranscript
 
-  const handleSendMessage = async (event?: FormEvent<HTMLFormElement>) => {
+  const handleSendMessage = async (event?: FormEvent<HTMLFormElement> | MouseEvent<HTMLButtonElement>) => {
     if (event) event.preventDefault();
     console.log('[AiShoppingNowPage] handleSendMessage called.');
     if (!inputValue.trim() || isLoading) return;
@@ -473,7 +474,7 @@ export default function AiShoppingNowPage() {
           </div>
           <div className="h-[calc(100%-4rem)] p-4">
             {canvasProducts.length > 0 ? (
-              <ProductCanvas products={canvasProducts.map(p => ({ ...p, category: p.category || 'Uncategorized', dataAiHint: p.dataAiHint || '' }))} />
+              <ProductCanvas products={canvasProducts.map(p => ({ ...p, category: p.category || 'Uncategorized', dataAiHint: p.dataAiHint || '', currency: p.currency || 'USD' }))} />
             ) : (
               <div className="flex items-center justify-center h-full text-muted-foreground">
                 <p>No products found matching your criteria.</p>

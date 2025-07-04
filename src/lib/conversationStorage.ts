@@ -235,9 +235,9 @@ export class ConversationStorage {
   /**
    * Convert messages to OpenAI format
    */
-  static messagesToOpenAIFormat(messages: ConversationMessage[]): Array<{role: string, content: string}> {
+  static messagesToOpenAIFormat(messages: ConversationMessage[]): Array<{role: 'user' | 'assistant' | 'system', content: string}> {
     return messages.map(msg => ({
-      role: msg.role,
+      role: msg.role as 'user' | 'assistant' | 'system',
       content: msg.content
     }));
   }

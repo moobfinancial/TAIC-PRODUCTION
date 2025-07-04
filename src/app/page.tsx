@@ -8,6 +8,7 @@ import { ArrowRight, ShoppingBag, Lightbulb, Bot, Star, Store, Search, Info, Coi
 import Image from 'next/image';
 import { InteractiveAIMADialog } from '@/components/ai/InteractiveAIMADialog'; // Import the dialog
 import { trackEvent } from '@/lib/analytics'; // Import trackEvent
+import HomePageSitePalIntegration from '@/components/interactive-ai/HomePageSitePalIntegration'; // Import SitePal integration
 
 export default function HomePage() {
   const [isAmaDialogOpen, setIsAmaDialogOpen] = useState(false); // State for dialog
@@ -73,14 +74,7 @@ export default function HomePage() {
                 </Button>
               </div>
             </div>
-            <Image
-              src="https://placehold.co/600x400.png"
-              data-ai-hint="futuristic commerce"
-              width={600}
-              height={400}
-              alt="TAIC Showcase Hero"
-              className="mx-auto aspect-video overflow-hidden rounded-xl object-cover sm:w-full lg:order-last"
-            />
+            <HomePageSitePalIntegration className="mx-auto sm:w-full lg:order-last" />
           </div>
         </div>
       </section>

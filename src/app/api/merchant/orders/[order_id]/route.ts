@@ -50,14 +50,15 @@ const UpdateOrderSchema = z.object({
 });
 
 
-export async function PUT(request: NextRequest, { params }: { params: { order_id: string } }) {
+export async function PUT(request: NextRequest, context: { params: Promise<{ order_id: string }> }) {
   const authResult = await verifyMerchantAuth(request);
   if (!authResult.valid || !authResult.merchantId) {
     return NextResponse.json({ error: authResult.error || 'Unauthorized' }, { status: authResult.status || 401 });
   }
   const merchantId = authResult.merchantId;
   // params is already destructured from the function parameters
-  const platformOrderId = parseInt(params.order_id, 10);
+  const { order_id } = await context.params;
+  const platformOrderId = parseInt(order_id, 10);
 
   if (isNaN(platformOrderId)) {
     return NextResponse.json({ error: 'Invalid Order ID format' }, { status: 400 });

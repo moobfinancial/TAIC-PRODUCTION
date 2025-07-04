@@ -6,10 +6,10 @@ export const runtime = 'nodejs';
 
 export async function GET(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  context: { params: Promise<{ id: string }> }
 ) {
   // In Next.js App Router, params should be awaited before use
-  const { id } = await Promise.resolve(params);
+  const { id } = await context.params;
 
   if (!id) {
     return NextResponse.json(

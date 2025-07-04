@@ -19,14 +19,15 @@ function validateAdminApiKey(apiKey: string | null): boolean {
   return apiKey === serverApiKey;
 }
 
-export async function POST(request: NextRequest, { params }: { params: { order_id: string } }) {
+export async function POST(request: NextRequest, context: { params: Promise<{ order_id: string }> }) {
   const apiKey = request.headers.get('X-Admin-API-Key');
   if (!validateAdminApiKey(apiKey)) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
 
   // params is already destructured from the function parameters
-  const platformOrderId = parseInt(params.order_id, 10);
+  const { order_id } = await context.params;
+  const platformOrderId = parseInt(order_id, 10);
   if (isNaN(platformOrderId)) {
     return NextResponse.json({ error: 'Invalid Order ID format' }, { status: 400 });
   }

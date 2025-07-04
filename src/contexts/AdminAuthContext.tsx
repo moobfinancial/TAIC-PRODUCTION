@@ -113,6 +113,10 @@ export function AdminAuthProvider({ children }: { children: ReactNode }) {
   const get = async (adminApiKey: string | null, endpoint: string, options: RequestInit = {}) => {
     const client = getAdminApiClient(adminApiKey);
     // For GET requests, we need to include query parameters in the URL
+    // Add null/undefined check for endpoint
+    if (!endpoint || typeof endpoint !== 'string') {
+      throw new Error('Invalid endpoint provided to get method');
+    }
     let url = endpoint.startsWith('/') ? endpoint : `/${endpoint}`;
     
     // If there's a body in options, we need to convert it to query parameters for GET requests

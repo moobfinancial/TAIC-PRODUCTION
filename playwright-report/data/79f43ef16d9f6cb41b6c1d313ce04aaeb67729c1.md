@@ -1,0 +1,253 @@
+# Page snapshot
+
+```yaml
+- alert
+- banner:
+  - link "TAIC":
+    - /url: /
+    - img
+    - heading "TAIC" [level=1]
+  - navigation:
+    - link "Products":
+      - /url: /products
+      - img
+      - text: Products
+    - link "AI Assistant":
+      - /url: /ai-assistant
+      - img
+      - text: AI Assistant
+    - link "Product Ideas":
+      - /url: /ai-product-ideas
+      - img
+      - text: Product Ideas
+    - link "Tokenomics":
+      - /url: /tokenomics
+      - img
+      - text: Tokenomics
+    - link "Staking":
+      - /url: /staking
+      - img
+      - text: Staking
+    - link "Affiliate":
+      - /url: /affiliate
+      - img
+      - text: Affiliate
+  - link "Wishlist":
+    - /url: /wishlist
+    - button "Wishlist":
+      - img
+  - link "Shopping Cart":
+    - /url: /cart
+    - button "Shopping Cart":
+      - img
+  - link "Login / Sign Up":
+    - /url: /login
+- main:
+  - 'heading "TAIC: AI-Powered Crypto Commerce" [level=1]'
+  - paragraph: TAIC is an AI-powered, multi-vendor crypto-commerce marketplace revolutionizing how you shop and do business online. Designed for savvy shoppers, innovative merchants, influential community builders, and forward-thinking investors. Discover a seamless platform where you can shop unique products using TAIC Coin, earn crypto cashback rewards on your purchases, and build your own e-commerce venture.
+  - link "Explore Products":
+    - /url: /products
+    - text: Explore Products
+    - img
+  - link "Get Started":
+    - /url: /register
+  - img
+  - text: AI LIVE
+  - heading "Meet Your AI Guide" [level=2]
+  - paragraph: Experience TAIC's revolutionary AI-powered crypto commerce platform through an interactive presentation. Discover the Pioneer Program, explore products, and learn how to earn crypto rewards.
+  - img
+  - heading "Pioneer Program" [level=3]
+  - paragraph: Exclusive benefits and token allocations for early adopters
+  - img
+  - heading "AI Shopping" [level=3]
+  - paragraph: Discover products with AI assistance and earn crypto cashback
+  - img
+  - heading "Get Started" [level=3]
+  - paragraph: Connect your wallet or create an account in minutes
+  - button "Start AI Presentation":
+    - img
+    - text: Start AI Presentation
+    - img
+  - paragraph: Interactive • Personalized • No signup required
+  - img
+  - img
+  - img
+  - heading "TAIC AI Assistant" [level=2]
+  - paragraph: Failed to initialize AI avatar. Please refresh the page.
+  - button "Speak":
+    - img
+    - text: Speak
+  - button "Mute":
+    - img
+    - text: Mute
+  - button:
+    - img
+  - paragraph: Failed to initialize AI avatar. Please refresh the page.
+  - button "Tell me about TAIC":
+    - img
+    - text: Tell me about TAIC
+  - button "Pioneer Program Benefits":
+    - img
+    - text: Pioneer Program Benefits
+  - button "Show me products":
+    - img
+    - text: Show me products
+  - button "How to get started":
+    - img
+    - text: How to get started
+  - img
+  - 'heading "TAIC Coin: Powering Your Experience" [level=3]'
+  - paragraph: Use TAIC Coin for seamless transactions, access exclusive features, and participate in platform governance.
+  - img
+  - heading "Shop & Earn Cashback" [level=3]
+  - paragraph: Get rewarded with TAIC Coin cashback on your purchases. The more you shop, the more you earn!
+  - img
+  - heading "Connect Your Way" [level=3]
+  - paragraph: Sign up or log in easily with your crypto wallet or traditional email and password.
+  - heading "Discover Our Features" [level=2]
+  - img
+  - text: Explore Products Browse our innovative catalog priced in Demo TAIC.
+  - link "Shop Now":
+    - /url: /products
+    - text: Shop Now
+    - img
+  - img
+  - text: AI Shopping Assistant Let our AI help you find the perfect product.
+  - link "Ask AI":
+    - /url: /ai-assistant
+    - text: Ask AI
+    - img
+  - img
+  - text: Generate Product Ideas Unleash creativity with our AI Product Idea Generator.
+  - link "Invent Now":
+    - /url: /ai-product-ideas
+    - text: Invent Now
+    - img
+  - heading "Ask Our AI About TAIC Coin" [level=2]
+  - paragraph: Have questions about TAIC Coin, our platform, or the Pioneer Program? Get instant answers from our interactive AI assistant! Experience our cutting-edge voice and avatar technology.
+  - button "Launch Interactive AI AMA":
+    - text: Launch Interactive AI AMA
+    - img
+  - heading "Join Our Community & Partner With Us" [level=2]
+  - heading "Connect on Socials" [level=3]
+  - paragraph: Stay updated with the latest news, announcements, and discussions by joining our official community channels.
+  - link "Join our Telegram":
+    - /url: "#telegram-link"
+    - img
+    - text: Join our Telegram
+  - link "Join our Discord":
+    - /url: "#discord-link"
+    - img
+    - text: Join our Discord
+  - heading "Partner & Contribute" [level=3]
+  - paragraph: Are you an influencer, content creator, or potential partner? We're looking for passionate individuals and organizations to collaborate with.
+  - text: Future Influencer/Partner Showcase Area
+  - paragraph: Learn how you can contribute to the TAIC ecosystem, apply for the Pioneer Program, or explore partnership opportunities.
+  - link "Learn More About Contributing":
+    - /url: "#pioneer-program-landing-page"
+    - text: Learn More About Contributing
+    - img
+  - 'heading "Join the TAIC Revolution: Pre-Sale & Pioneer Program" [level=2]'
+  - paragraph: Be part of the TAIC ecosystem from the ground up! Our TAIC Coin pre-sale is coming soon, offering early access to the utility token that powers our platform. Alongside, we're launching the TAIC Pioneer Program for dedicated individuals and businesses looking to shape the future of AI-driven crypto commerce.
+  - text: "Tier 1: Founding Merchants For innovative businesses ready to establish their presence on TAIC. Early onboarding, premium support, and exclusive benefits."
+  - list:
+    - listitem: Priority product placement
+    - listitem: Reduced transaction fees for 1 year
+    - listitem: Significant TAIC Coin allocation
+  - text: "Tier 2: Strategic Influencers For content creators and community leaders passionate about AI and crypto. Amplify TAIC's message and grow with us."
+  - list:
+    - listitem: Co-marketing opportunities
+    - listitem: Token rewards for content creation
+    - listitem: Early access to new features
+  - text: "Tier 3: Early Champions For enthusiastic early adopters who believe in TAIC's vision. Help us build a vibrant community."
+  - list:
+    - listitem: Exclusive community badges
+    - listitem: Bonus TAIC Coin rewards
+    - listitem: Direct feedback channels
+  - text: "Tier 4: Whitelist Members For individuals interested in future TAIC Coin offerings and platform updates. Secure your spot for upcoming announcements."
+  - list:
+    - listitem: Priority notification for public sale
+    - listitem: Access to community updates
+    - listitem: Potential for future airdrops
+  - link "Learn More & Apply to Pioneer Program":
+    - /url: "#pioneer-program-landing-page"
+    - text: Learn More & Apply to Pioneer Program
+    - img
+  - heading "What's Next?" [level=2]
+  - img
+  - heading "Become a TAIC Pioneer" [level=3]
+  - paragraph: Help shape our ecosystem. Apply for exclusive benefits and token allocations.
+  - link "Apply Now":
+    - /url: "#pioneer-program-landing-page"
+    - text: Apply Now
+    - img
+  - img
+  - heading "Sell on TAIC" [level=3]
+  - paragraph: Set up your store on our AI-powered marketplace and reach a global audience.
+  - link "Start Selling":
+    - /url: /merchant/register
+    - text: Start Selling
+    - img
+  - img
+  - heading "Explore & Shop" [level=3]
+  - paragraph: Discover unique products, experience AI-driven shopping, and earn crypto rewards.
+  - link "Go Shopping":
+    - /url: /products
+    - text: Go Shopping
+    - img
+  - img
+  - heading "Discover TAIC Coin" [level=3]
+  - paragraph: Learn about the utility, tokenomics, and staking benefits of our native cryptocurrency.
+  - link "Learn More":
+    - /url: /tokenomics
+    - text: Learn More
+    - img
+  - heading "Ready to Dive In?" [level=2]
+  - paragraph: Create a demo account to start exploring with your initial Demo TAIC balance, or browse our offerings as a guest.
+  - link "Join TAIC":
+    - /url: /register
+    - text: Join TAIC
+    - img
+- contentinfo:
+  - heading "Stay Updated With Our Newsletter" [level=3]
+  - text: Email for newsletter
+  - textbox "Email for newsletter"
+  - button "Subscribe"
+  - link "YouTube":
+    - /url: "#"
+    - img
+  - link "Instagram":
+    - /url: "#"
+    - img
+  - link "X (formerly Twitter)":
+    - /url: "#"
+    - img
+  - link "Facebook":
+    - /url: "#"
+    - img
+  - link "Terms of Service":
+    - /url: /legal/terms-of-service
+  - link "Privacy Policy":
+    - /url: /legal/privacy-policy
+  - link "Merchant Agreement":
+    - /url: /legal/merchant-agreement
+  - link "Refund Policy":
+    - /url: /legal/refund-policy
+  - link "Cookie Policy":
+    - /url: /legal/cookie-policy
+  - link "Risk Disclosure":
+    - /url: /legal/risk-disclosure
+  - link "About Us":
+    - /url: /about
+  - link "Trust & Safety":
+    - /url: /trust-and-safety
+  - link "Help Center":
+    - /url: /help-center
+  - link "Contact Us":
+    - /url: /contact
+  - link "Brand Assets":
+    - /url: /brand
+  - paragraph: © 2025 TAIC. All rights reserved.
+- region "Notifications (F8)":
+  - list
+```

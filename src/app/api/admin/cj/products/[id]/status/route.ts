@@ -22,7 +22,7 @@ const UpdateStatusInputSchema = z.object({
 });
 
 
-export async function PUT(request: NextRequest, { params }: { params: { id: string } }) {
+export async function PUT(request: NextRequest, context: { params: Promise<{ id: string }> }) {
   const apiKey = request.headers.get('X-Admin-API-Key');
   const authResult = await validateAdminApiKey(apiKey);
   if (!authResult.valid) {
@@ -30,8 +30,8 @@ export async function PUT(request: NextRequest, { params }: { params: { id: stri
   }
 
   // In Next.js App Router, params should be awaited before use
-  const resolvedParams = await Promise.resolve(params);
-  const platformProductId = parseInt(resolvedParams.id, 10);
+  const { id } = await context.params;
+  const platformProductId = parseInt(id, 10);
   if (isNaN(platformProductId)) {
     return NextResponse.json({ error: 'Invalid product ID format.' }, { status: 400 });
   }
