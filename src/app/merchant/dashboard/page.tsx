@@ -3,7 +3,7 @@
 
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
-import { LayoutDashboard, Package, ShoppingBag, DollarSign, Settings, BarChart3, LogOut, PlusCircle, Lightbulb } from 'lucide-react';
+import { LayoutDashboard, Package, ShoppingBag, DollarSign, Settings, BarChart3, LogOut, PlusCircle, Lightbulb, TrendingUp } from 'lucide-react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useMerchantAuth } from '@/contexts/MerchantAuthContext';
@@ -43,6 +43,7 @@ export default function MerchantDashboardPage() {
   const dashboardSections = [
     { title: "Manage Products", description: "View, add, edit, or remove your product listings.", icon: <Package className="h-8 w-8 text-primary" />, href: "/merchant/products", cta: "Go to Products" },
     { title: "View Orders", description: "Track incoming orders and manage their status.", icon: <ShoppingBag className="h-8 w-8 text-primary" />, href: "/merchant/orders", cta: "View Orders" },
+    { title: "Analytics Dashboard", description: "Track performance, sales trends, and customer insights.", icon: <TrendingUp className="h-8 w-8 text-primary" />, href: "/merchant/analytics", cta: "View Analytics" },
     { title: "Financials & Payouts", description: "Review sales, commissions, and request payouts.", icon: <DollarSign className="h-8 w-8 text-primary" />, href: "/merchant/financials", cta: "View Financials" },
     { title: "Cashback & Promotions", description: "Configure cashback rewards and other promotions.", icon: <BarChart3 className="h-8 w-8 text-primary" />, href: "/merchant/promotions", cta: "Manage Promotions" },
     { title: "Product Ideas", description: "Get AI-powered suggestions for new products and innovations.", icon: <Lightbulb className="h-8 w-8 text-primary" />, href: "/merchant/dashboard/tools/product-ideas", cta: "Generate Ideas" },
