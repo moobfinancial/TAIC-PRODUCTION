@@ -1,0 +1,122 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>TAIC API Chat Test</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 20px; }
+        .container { max-width: 600px; margin: 0 auto; }
+        .test-section { margin: 20px 0; padding: 15px; border: 1px solid #ddd; border-radius: 5px; }
+        .success { background-color: #d4edda; border-color: #c3e6cb; }
+        .error { background-color: #f8d7da; border-color: #f5c6cb; }
+        button { padding: 10px 20px; margin: 5px; cursor: pointer; }
+        textarea { width: 100%; height: 100px; margin: 10px 0; }
+        .log { background-color: #f8f9fa; padding: 10px; border-radius: 3px; font-family: monospace; white-space: pre-wrap; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>TAIC API Chat Endpoint Test</h1>
+        
+        <div class="test-section">
+            <h3>Test API Chat Endpoint</h3>
+            <p>This test verifies that the HTTP 400 error fix is working correctly.</p>
+            
+            <label for="message">Message:</label>
+            <input type="text" id="message" value="Tell me about the Pioneer Program" style="width: 100%; padding: 5px;">
+            
+            <br><br>
+            
+            <button onclick="testAPI()">Test API Call</button>
+            <button onclick="clearLog()">Clear Log</button>
+            
+            <h4>Response Log:</h4>
+            <div id="log" class="log"></div>
+        </div>
+    </div>
+
+    <script>
+        function log(message) {
+            const logElement = document.getElementById('log');
+            const timestamp = new Date().toLocaleTimeString();
+            logElement.textContent += `[${timestamp}] ${message}\n`;
+            logElement.scrollTop = logElement.scrollHeight;
+        }
+
+        function clearLog() {
+            document.getElementById('log').textContent = '';
+        }
+
+        async function testAPI() {
+            const message = document.getElementById('message').value;
+            
+            if (!message.trim()) {
+                log('❌ Please enter a message');
+                return;
+            }
+
+            log('🚀 Starting API test...');
+            log(`📝 Message: "${message}"`);
+
+            const payload = {
+                messages: [message],
+                thread_id: `test_thread_${Date.now()}`,
+                user_id: null,
+                guest_session_id: `test_guest_${Date.now()}`
+            };
+
+            log(`📦 Payload: ${JSON.stringify(payload, null, 2)}`);
+
+            try {
+                const response = await fetch('/api/ai/chat', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify(payload)
+                });
+
+                log(`📊 HTTP Status: ${response.status} ${response.statusText}`);
+
+                if (response.ok) {
+                    log('✅ SUCCESS: API returned 200 status');
+                    
+                    // Read the streaming response
+                    const reader = response.body?.getReader();
+                    if (reader) {
+                        const decoder = new TextDecoder();
+                        let fullResponse = '';
+                        
+                        while (true) {
+                            const { done, value } = await reader.read();
+                            if (done) break;
+                            
+                            const chunk = decoder.decode(value, { stream: true });
+                            fullResponse += chunk;
+                        }
+                        
+                        log(`💬 AI Response: ${fullResponse.substring(0, 200)}${fullResponse.length > 200 ? '...' : ''}`);
+                    }
+                } else {
+                    log(`❌ ERROR: API returned ${response.status}`);
+                    const errorText = await response.text();
+                    log(`📄 Error details: ${errorText}`);
+                }
+
+            } catch (error) {
+                log(`❌ NETWORK ERROR: ${error.message}`);
+            }
+
+            log('🏁 Test completed\n');
+        }
+
+        // Auto-run test on page load
+        window.addEventListener('load', () => {
+            log('🎯 TAIC API Chat Test Page Loaded');
+            log('📋 Ready to test the HTTP 400 error fix');
+            log('🔧 Click "Test API Call" to verify the fix\n');
+        });
+    </script>
+</body>
+</html>

@@ -88,28 +88,7 @@ const HomePageSitePalCanvas: React.FC<HomePageSitePalCanvasProps> = ({ isOpen, o
   const isAvatarStartingSpeechRef = useRef(false);
   const bargeInGracePeriodRef = useRef<NodeJS.Timeout | null>(null);
 
-  // --- Hook Callbacks ---
-  const handleSTTResult = useCallback((transcript: string, isFinal: boolean) => {
-    if (isFinal && processCommandRef.current) {
-      setUserInput(transcript);
-      processCommandRef.current(transcript);
-      setIsListeningToUser(false);
-    }
-  }, []);
-
-  const handleSTTError = useCallback((error: any) => {
-    console.log('[STT Error]:', error);
-    setErrorMessage('Speech recognition error. Please try again.');
-    setIsListeningToUser(false);
-    setTimeout(() => setErrorMessage(''), 5000);
-  }, []);
-
-  // --- Hooks ---
-  const { isListening, startListening, stopListening } = useWebSpeech({
-    onSTTResult: handleSTTResult,
-    onSTTError: handleSTTError,
-  });
-
+  // --- VAD Hook (declare first to avoid dependency issues) ---
   const {
     isListening: isVADListening,
     vadError,
@@ -118,6 +97,46 @@ const HomePageSitePalCanvas: React.FC<HomePageSitePalCanvasProps> = ({ isOpen, o
     stop: stopVAD,
     attachEventHandlers,
   } = useVAD();
+
+  // --- Enhanced Hook Callbacks with VAD Coordination ---
+  const handleSTTResult = useCallback((transcript: string, isFinal: boolean) => {
+    console.log(`[STT] 📝 Result: "${transcript}" (Final: ${isFinal})`);
+
+    if (isFinal && processCommandRef.current && transcript.trim()) {
+      console.log(`[STT] ✅ Processing final transcript: "${transcript}"`);
+      setUserInput(transcript);
+      processCommandRef.current(transcript);
+      setIsListeningToUser(false);
+
+      // Stop VAD during command processing
+      stopVAD();
+    }
+  }, [stopVAD]);
+
+  const handleSTTError = useCallback((error: any) => {
+    console.error('[STT] ❌ Error:', error);
+    setErrorMessage('Speech recognition error. Please try again.');
+    setIsListeningToUser(false);
+
+    // Enhanced error recovery with VAD restart
+    setTimeout(() => {
+      setErrorMessage('');
+      if (!isAvatarSpeaking.current && !isListeningToUser) {
+        console.log('[STT] 🔄 Error recovery - restarting VAD');
+        startVAD();
+      }
+    }, 3000); // Increased timeout for better user experience
+  }, [startVAD, isListeningToUser]);
+
+  // Note: handleSTTEnd will be defined after useWebSpeech hook to avoid dependency issues
+
+  // --- Web Speech Hook ---
+  const { isListening, startListening, stopListening } = useWebSpeech({
+    onSTTResult: handleSTTResult,
+    onSTTError: handleSTTError,
+  });
+
+  // Note: STT End handling will be implemented when useWebSpeech hook supports onSTTEnd callback
 
   // --- Animation Handlers ---
   const playListeningAnimation = useCallback(() => {
@@ -204,124 +223,133 @@ const HomePageSitePalCanvas: React.FC<HomePageSitePalCanvasProps> = ({ isOpen, o
     }, 2000 * retryCount); // Exponential backoff
   }, [retryCount, checkNetworkConnectivity]);
 
-  // --- SitePal Speech Event Handlers ---
+  // --- Enhanced SitePal Speech Event Handlers with VAD Coordination ---
   const handleSitePalSpeechEnd = useCallback(() => {
-    console.log("%c[vh_speechEnded] Fired. Avatar finished speaking.", "color: blue;");
-    isAvatarSpeaking.current = false;
+    console.log("%c[vh_speechEnded] 🔊 Avatar finished speaking - coordinating with VAD", "color: blue; font-weight: bold;");
 
-    // Clear any existing timeout
+    // CRITICAL FIX: Immediately update avatar speaking state
+    isAvatarSpeaking.current = false;
+    isAvatarStartingSpeechRef.current = false;
+
+    // Clear all timeouts to prevent race conditions
     if (speechEndTimeoutRef.current) {
       clearTimeout(speechEndTimeoutRef.current);
       speechEndTimeoutRef.current = null;
     }
 
-    // Clear grace period timeout
     if (bargeInGracePeriodRef.current) {
       clearTimeout(bargeInGracePeriodRef.current);
       bargeInGracePeriodRef.current = null;
     }
-    canBargeInRef.current = true; // Re-enable barge-in for next speech
 
-    // If speech ended naturally (no barge-in), restart VAD in activation mode.
-    if (!didBargeInRef.current) {
-      stopVAD();
-      startVAD();
-      console.log("[VAD] VAD started in 'activation' mode.");
-    }
-    // Reset the barge-in flag for the next interaction cycle.
+    // Reset barge-in controls for next interaction
+    canBargeInRef.current = true;
     didBargeInRef.current = false;
-  }, [startVAD, stopVAD]);
+
+    // CRITICAL FIX: Restart VAD with proper delay to prevent audio artifacts
+    // Wait for audio system to fully stop before restarting VAD
+    setTimeout(() => {
+      if (!isAvatarSpeaking.current && !isListeningToUser && !isListening) {
+        console.log("[VAD] 🎤 Restarting VAD in activation mode after speech end");
+        stopVAD(); // Ensure clean state
+        setTimeout(() => {
+          startVAD(); // Restart with delay to prevent audio interference
+        }, 200);
+      } else {
+        console.log("[VAD] ⏸️ Skipping VAD restart - user interaction in progress");
+      }
+    }, 500); // 500ms delay to allow audio system to settle
+  }, [startVAD, stopVAD, isListeningToUser, isListening]);
 
   const handleSitePalSpeechStart = useCallback(() => {
-    console.log("%c[vh_speechStarted] Fired. Avatar is speaking.", "color: blue;");
-    isAvatarSpeaking.current = true;
+    console.log("%c[vh_speechStarted] 🔊 Avatar started speaking - disabling VAD", "color: blue; font-weight: bold;");
 
-    // Clear any existing timeout
+    // CRITICAL FIX: Immediately disable VAD to prevent self-detection
+    isAvatarSpeaking.current = true;
+    canBargeInRef.current = false; // Disable barge-in initially
+    didBargeInRef.current = false;
+
+    // Stop VAD immediately to prevent detecting avatar's own speech
+    stopVAD();
+    console.log("[VAD] 🔇 VAD stopped to prevent avatar self-detection");
+
+    // Clear any existing timeouts
     if (speechEndTimeoutRef.current) {
       clearTimeout(speechEndTimeoutRef.current);
       speechEndTimeoutRef.current = null;
     }
 
-    // Set a safety timeout based on estimated speech duration
-    const estimatedDuration = aiResponseText.length * 80 + 2000; // 80ms per character + 2s buffer
-    speechEndTimeoutRef.current = setTimeout(() => {
-      console.log("%c[SafetyNet] Timeout triggered. Forcing speech end state.", "color: red; font-weight: bold;");
-      handleSitePalSpeechEnd();
-    }, estimatedDuration);
+    if (bargeInGracePeriodRef.current) {
+      clearTimeout(bargeInGracePeriodRef.current);
+      bargeInGracePeriodRef.current = null;
+    }
 
-    // Set a brief grace period to prevent the VAD from picking up the avatar's own starting audio.
+    // Enhanced grace period to prevent startup audio artifacts
     isAvatarStartingSpeechRef.current = true;
     setTimeout(() => {
       isAvatarStartingSpeechRef.current = false;
-    }, 500); // 500ms grace period
-  }, [aiResponseText, handleSitePalSpeechEnd]);
+      console.log("[VAD] 🕐 Avatar startup grace period ended");
+    }, 1000); // Increased to 1 second for better protection
 
-  // --- Core VAD Logic ---
+    // Set safety timeout with more conservative duration
+    const estimatedDuration = Math.max(aiResponseText.length * 100, 5000) + 3000; // 100ms per char, min 5s, +3s buffer
+    speechEndTimeoutRef.current = setTimeout(() => {
+      console.log("%c[SafetyNet] ⏰ Timeout triggered - forcing speech end state", "color: red; font-weight: bold;");
+      handleSitePalSpeechEnd();
+    }, estimatedDuration);
+
+    console.log(`[VAD] 🕐 Safety timeout set for ${estimatedDuration}ms`);
+  }, [aiResponseText, handleSitePalSpeechEnd, stopVAD]);
+
+  // --- Core VAD Logic with Enhanced Audio Interference Prevention ---
   const handleSpeechProbability = useCallback((probability: number) => {
     // Debug flag - set to true to see all VAD probabilities in console
-    const DEBUG_VAD = true;
+    const DEBUG_VAD = false; // Reduced logging to prevent console spam
 
-    // CRITICAL FIX: Completely disable VAD processing while avatar is speaking
-    // This prevents the avatar's own speech from triggering VAD and causing interruptions
-    if (isAvatarSpeaking.current && !canBargeInRef.current) {
-      // During the grace period, completely ignore all VAD input
-      if (DEBUG_VAD) console.log(`[VAD] Completely ignored during avatar speech grace period (${probability.toFixed(2)})`);
-      return;
-    }
-
-    // Ignore VAD if STT is active or if the avatar has just started speaking.
-    if (isListeningToUser || isListening || isAvatarStartingSpeechRef.current) {
-      if (DEBUG_VAD) console.log(`[VAD] Ignored: STT active=${isListeningToUser || isListening}, avatar starting=${isAvatarStartingSpeechRef.current}`);
-      return;
-    }
-
-    const ACTIVATION_THRESHOLD = 0.4; // Lowered from 0.5
-    const BARGE_IN_THRESHOLD = 0.7; // Increased from 0.5 to reduce false positives
-
-    // Rule Set #1: Avatar is SPEAKING (Barge-in Mode)
+    // CRITICAL FIX #1: Complete VAD Shutdown During Avatar Speech
+    // This is the primary fix to prevent avatar's own speech from triggering VAD
     if (isAvatarSpeaking.current) {
-      // Log all probabilities during speech to help debug
-      console.log(`%cVAD during speech: ${probability.toFixed(2)}`, probability > 0.3 ? 'color: orange; font-weight: bold' : 'color: gray');
-
-      // More aggressive detection - consider any moderate probability as potential speech
-      if (probability > BARGE_IN_THRESHOLD) {
-        playIdleAnimation(); // Stop any animation on barge-in
-        console.log(`%cBARGE-IN DETECTED! (Prob: ${probability.toFixed(2)})`, 'color: red; font-weight: bold;');
-        didBargeInRef.current = true;
-        canBargeInRef.current = false;
-
-        // Stop avatar speech immediately
-        if (window.sayText && typeof window.sayText === 'function') {
-          try {
-            const elevenLabsEngineID = 14;
-            const jessicaVoiceID = "cgSgspJ2msm6clMCkdW9";
-            const languageID = 1;
-            window.sayText('', jessicaVoiceID, languageID, elevenLabsEngineID);
-            console.log('[HomePageCanvas] Stopped avatar speech via sayText');
-          } catch (e) {
-            console.error('Error stopping speech:', e);
-          }
-        }
-
-        // Stop VAD and start STT to capture user speech
-        stopVAD();
-        setIsListeningToUser(true);
-        startListening();
+      // During avatar speech, completely ignore ALL VAD input to prevent self-detection
+      if (DEBUG_VAD && probability > 0.3) {
+        console.log(`[VAD] 🔇 BLOCKED during avatar speech (${probability.toFixed(2)}) - preventing self-detection`);
       }
+      return; // Exit immediately - no processing during avatar speech
+    }
+
+    // CRITICAL FIX #2: Enhanced Grace Period Protection
+    // Prevent VAD from detecting avatar's speech startup artifacts
+    if (isAvatarStartingSpeechRef.current) {
+      if (DEBUG_VAD) console.log(`[VAD] 🔇 BLOCKED during avatar startup grace period (${probability.toFixed(2)})`);
       return;
     }
 
-    // Rule Set #2: Avatar is SILENT (Activation Mode)
-    if (!isAvatarSpeaking.current) {
-      if (probability > ACTIVATION_THRESHOLD) {
-        console.log(`%cUSER ACTIVATION DETECTED! (Prob: ${probability.toFixed(2)})`, 'color: green; font-weight: bold;');
-        stopVAD();
-        setIsListeningToUser(true);
-        startListening(); // Start STT
-      }
+    // CRITICAL FIX #3: STT Active State Protection
+    // Ignore VAD when STT is already processing user speech
+    if (isListeningToUser || isListening) {
+      if (DEBUG_VAD) console.log(`[VAD] 🔇 BLOCKED during STT processing (${probability.toFixed(2)})`);
       return;
     }
-  }, [isListeningToUser, isListening, startListening, stopVAD, playIdleAnimation]);
+
+    // CRITICAL FIX #4: Barge-in Grace Period Protection
+    // Only allow barge-in after the grace period has ended
+    if (!canBargeInRef.current) {
+      if (DEBUG_VAD) console.log(`[VAD] 🔇 BLOCKED during barge-in grace period (${probability.toFixed(2)})`);
+      return;
+    }
+
+    // Enhanced threshold for better accuracy
+    const ACTIVATION_THRESHOLD = 0.5; // Increased for more reliable detection
+
+    // Rule Set: Avatar is SILENT (User Activation Mode)
+    if (!isAvatarSpeaking.current && probability > ACTIVATION_THRESHOLD) {
+      console.log(`%c[VAD] 🎤 USER ACTIVATION DETECTED! (Prob: ${probability.toFixed(2)})`, 'color: green; font-weight: bold;');
+
+      // Stop VAD and start STT for user speech processing
+      stopVAD();
+      setIsListeningToUser(true);
+      startListening();
+    }
+  }, [isListeningToUser, isListening, startListening, stopVAD]);
 
   // Connect handleSpeechProbability to VAD system
   useEffect(() => {
@@ -333,79 +361,86 @@ const HomePageSitePalCanvas: React.FC<HomePageSitePalCanvasProps> = ({ isOpen, o
     }
   }, [attachEventHandlers, handleSpeechProbability]);
 
-  // --- speakAndListen Function ---
+  // --- Enhanced speakAndListen Function with VAD Coordination ---
   const speakAndListen = useCallback((text: string) => {
-    playIdleAnimation(); // Return to neutral before speaking.
+    console.log('[HomePageCanvas] 🔊 speakAndListen called - coordinating with VAD system');
+
+    // Return to neutral animation before speaking
+    playIdleAnimation();
+
+    // Handle muted state
     if (isMuted) {
+      console.log('[HomePageCanvas] 🔇 Muted mode - starting VAD only');
       startVAD();
       return;
     }
 
-    stopListening();
-    stopVAD();
+    // CRITICAL FIX: Prepare audio system for avatar speech
+    stopListening(); // Stop any active STT
+    stopVAD(); // Stop VAD to prevent self-detection
+    setIsListeningToUser(false);
+
+    // Reset barge-in state
     didBargeInRef.current = false;
+    canBargeInRef.current = false; // Disable barge-in initially
 
-    // CRITICAL FIX: Don't start VAD immediately when avatar starts speaking
-    // This prevents the avatar's own speech from being detected as user speech
-    console.log("[VAD] VAD temporarily disabled during speech start");
-
-    // We'll start VAD after a short delay to allow the avatar to start speaking
-    // This helps prevent false VAD triggers from the avatar's own speech
+    console.log('[HomePageCanvas] 🔇 Audio systems stopped - preparing for avatar speech');
 
     try {
-      console.log('[HomePageCanvas] speakAndListen called with text:', text.substring(0, 50) + '...');
-      console.log('[HomePageCanvas] window.sayText type:', typeof window.sayText);
-      console.log('[HomePageCanvas] Available window functions:', Object.keys(window).filter(key => key.includes('say') || key.includes('speak') || key.includes('vh_')));
-
       if (typeof window.sayText === 'function') {
         const elevenLabsEngineID = 14;
         const jessicaVoiceID = "cgSgspJ2msm6clMCkdW9";
         const languageID = 1;
 
-        console.log('[HomePageCanvas] Calling window.sayText with parameters:', {
-          text: text.substring(0, 50) + '...',
-          voiceID: jessicaVoiceID,
-          languageID,
-          engineID: elevenLabsEngineID
+        console.log('[HomePageCanvas] 🎤 Starting avatar speech:', {
+          textLength: text.length,
+          preview: text.substring(0, 50) + '...',
+          voiceID: jessicaVoiceID
         });
 
-        // Set grace period - allow barge-in after 2 seconds of avatar speaking
-        bargeInGracePeriodRef.current = setTimeout(() => {
-          canBargeInRef.current = true;
-          console.log('[BARGE-IN] Grace period ended - barge-in now allowed');
+        // Clear any existing timeouts
+        if (bargeInGracePeriodRef.current) {
+          clearTimeout(bargeInGracePeriodRef.current);
+          bargeInGracePeriodRef.current = null;
+        }
 
-          // CRITICAL FIX: Start VAD only after the grace period
-          // This ensures the avatar has been speaking for a while before we enable VAD
-          startVAD();
-          console.log('[VAD] VAD started after grace period for controlled barge-in detection');
-        }, 2000);
+        if (speechEndTimeoutRef.current) {
+          clearTimeout(speechEndTimeoutRef.current);
+          speechEndTimeoutRef.current = null;
+        }
 
+        // Start the avatar speech
+        // Note: vh_speechStarted callback will handle VAD coordination
         window.sayText(text, jessicaVoiceID, languageID, elevenLabsEngineID);
-        console.log("[SitePal] Started speaking with VAD already active (grace period: 2s)");
+        console.log('[HomePageCanvas] ✅ Avatar speech initiated - VAD coordination handled by callbacks');
 
-        // --- VAD FIX ---
-        // Set a safety timeout to handle cases where vh_speechEnded doesn't fire.
-        // This ensures the VAD reactivates and the conversation doesn't stall.
-        const estimatedSpeechDuration = text.length * 80 + 1000; // 80ms/char + 1s buffer
-        if (speechEndTimeoutRef.current) clearTimeout(speechEndTimeoutRef.current);
-        speechEndTimeoutRef.current = setTimeout(() => {
-          console.log(`%c[Timeout] Safety timeout triggered after ${estimatedSpeechDuration}ms. Forcing speech end state.`, 'color: orange;');
-          if (speechEndHandlerRef.current) {
-            speechEndHandlerRef.current();
-          }
-        }, estimatedSpeechDuration);
       } else {
-        console.error('[HomePageCanvas] sayText function not available');
-        console.error('[HomePageCanvas] Available window properties:', Object.keys(window).filter(key => typeof (window as any)[key] === 'function' && (key.includes('say') || key.includes('speak') || key.includes('AI_') || key.includes('vh_'))));
+        console.error('[HomePageCanvas] ❌ sayText function not available');
+        console.error('[HomePageCanvas] Available functions:',
+          Object.keys(window).filter(key =>
+            typeof (window as any)[key] === 'function' &&
+            (key.includes('say') || key.includes('speak') || key.includes('AI_') || key.includes('vh_'))
+          )
+        );
+
+        // Fallback: restart VAD if speech fails
+        setTimeout(() => {
+          startVAD();
+        }, 1000);
       }
     } catch (error) {
-      console.error('[HomePageCanvas] Error in speakAndListen:', error);
-      if (speechEndHandlerRef.current) {
-        speechEndHandlerRef.current();
-      }
+      console.error('[HomePageCanvas] ❌ Error in speakAndListen:', error);
+
+      // Error recovery: restart VAD after delay
+      setTimeout(() => {
+        if (!isAvatarSpeaking.current) {
+          console.log('[HomePageCanvas] 🔄 Error recovery - restarting VAD');
+          startVAD();
+        }
+      }, 1000);
     }
 
-  }, [isMuted, startListening, stopListening, startVAD, stopVAD, playIdleAnimation]);
+  }, [isMuted, stopListening, startVAD, stopVAD, playIdleAnimation]);
 
   // Effect to keep a stable reference to the speech end handler to prevent dependency loops.
   useEffect(() => {
@@ -420,7 +455,7 @@ const HomePageSitePalCanvas: React.FC<HomePageSitePalCanvasProps> = ({ isOpen, o
   // --- Generate Guest Session ID ---
   useEffect(() => {
     if (isOpen && !guestSessionId) {
-      const sessionId = `guest_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+      const sessionId = `guest_${Date.now()}_${Math.random().toString(36).substring(2, 11)}`;
       setGuestSessionId(sessionId);
       console.log('[HomePageCanvas] Generated guest session ID:', sessionId);
     }
@@ -439,7 +474,7 @@ const HomePageSitePalCanvas: React.FC<HomePageSitePalCanvasProps> = ({ isOpen, o
       // Create or get thread ID for conversation continuity
       let currentThreadId = threadId;
       if (!currentThreadId) {
-        currentThreadId = `homepage_thread_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+        currentThreadId = `homepage_thread_${Date.now()}_${Math.random().toString(36).substring(2, 11)}`;
         setThreadId(currentThreadId);
         console.log('[HomePageCanvas] Created new thread ID:', currentThreadId);
       }

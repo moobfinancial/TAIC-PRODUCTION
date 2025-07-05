@@ -1,0 +1,195 @@
+# Page snapshot
+
+```yaml
+- alert
+- banner:
+  - link "TAIC":
+    - /url: /
+    - img
+    - heading "TAIC" [level=1]
+  - navigation:
+    - link "Products":
+      - /url: /products
+      - img
+      - text: Products
+    - link "AI Assistant":
+      - /url: /ai-assistant
+      - img
+      - text: AI Assistant
+    - link "Product Ideas":
+      - /url: /ai-product-ideas
+      - img
+      - text: Product Ideas
+    - link "Tokenomics":
+      - /url: /tokenomics
+      - img
+      - text: Tokenomics
+    - link "Staking":
+      - /url: /staking
+      - img
+      - text: Staking
+    - link "Affiliate":
+      - /url: /affiliate
+      - img
+      - text: Affiliate
+  - link "Wishlist":
+    - /url: /wishlist
+    - button "Wishlist":
+      - img
+  - link "Shopping Cart":
+    - /url: /cart
+    - button "Shopping Cart":
+      - img
+  - link "Login / Sign Up":
+    - /url: /login
+- main:
+  - 'heading "TAIC: AI-Powered Crypto Commerce" [level=1]'
+  - paragraph: TAIC is an AI-powered, multi-vendor crypto-commerce marketplace revolutionizing how you shop and do business online. Designed for savvy shoppers, innovative merchants, influential community builders, and forward-thinking investors. Discover a seamless platform where you can shop unique products using TAIC Coin, earn crypto cashback rewards on your purchases, and build your own e-commerce venture.
+  - link "Explore Products":
+    - /url: /products
+    - text: Explore Products
+    - img
+  - link "Get Started":
+    - /url: /register
+  - img
+  - text: AI LIVE
+  - heading "Meet Your AI Guide" [level=2]
+  - paragraph: Experience TAIC's revolutionary AI-powered crypto commerce platform through an interactive presentation. Discover the Pioneer Program, explore products, and learn how to earn crypto rewards.
+  - img
+  - heading "Pioneer Program" [level=3]
+  - paragraph: Exclusive benefits and token allocations for early adopters
+  - img
+  - heading "AI Shopping" [level=3]
+  - paragraph: Discover products with AI assistance and earn crypto cashback
+  - img
+  - heading "Get Started" [level=3]
+  - paragraph: Connect your wallet or create an account in minutes
+  - button "Start AI Presentation":
+    - img
+    - text: Start AI Presentation
+    - img
+  - paragraph: Interactive • Personalized • No signup required
+  - img
+  - img
+  - heading "Discover Our Features" [level=2]
+  - paragraph: Experience the future of commerce with our comprehensive platform designed for modern digital transactions.
+  - img
+  - text: AI-Powered Shopping Experience personalized product recommendations and intelligent search powered by advanced AI technology.
+  - link "Explore Products":
+    - /url: /products
+    - text: Explore Products
+    - img
+  - img
+  - text: Merchant Tools Comprehensive suite of tools for merchants to manage inventory, process orders, and grow their business.
+  - link "Start Selling":
+    - /url: /merchant/register
+    - text: Start Selling
+    - img
+  - img
+  - text: Crypto Rewards Earn TAIC Coin rewards on every purchase and transaction. Real crypto value for real shopping.
+  - link "Learn More":
+    - /url: /tokenomics
+    - text: Learn More
+    - img
+  - heading "Earn Real Crypto Rewards" [level=2]
+  - paragraph: Every purchase earns you TAIC Coin - real cryptocurrency with real value. Build your crypto portfolio while shopping for the products you love.
+  - link "Learn About TAIC Coin":
+    - /url: /tokenomics
+    - text: Learn About TAIC Coin
+    - img
+  - link "Start Shopping":
+    - /url: /products
+    - text: Start Shopping
+    - img
+  - img
+  - text: "Reward Example Purchase Amount: $100.00 Cashback Rate: 5% TAIC Coin Earned: 5.00 TAIC"
+  - heading "Join the Pioneer Program" [level=2]
+  - paragraph: Be among the first to shape the future of AI-powered commerce. Exclusive benefits await early adopters.
+  - img
+  - text: Founding Merchants Established businesses ready to lead the AI commerce revolution with significant token allocations and reduced fees.
+  - list:
+    - listitem: • 10,000-50,000 TAIC token allocation
+    - listitem: • 0.5% transaction fees
+    - listitem: • Priority customer support
+    - listitem: • Co-marketing opportunities
+  - link "Apply Now":
+    - /url: /pioneer/apply
+    - text: Apply Now
+    - img
+  - img
+  - text: Strategic Influencers Content creators and influencers who will help spread awareness and drive adoption of the TAIC platform.
+  - list:
+    - listitem: • 5,000-25,000 TAIC token allocation
+    - listitem: • Revenue sharing opportunities
+    - listitem: • Exclusive content creation tools
+    - listitem: • Early access to features
+  - link "Learn More":
+    - /url: /pioneer/apply
+    - text: Learn More
+    - img
+  - heading "Ask Our AI Anything" [level=2]
+  - paragraph: Have questions about TAIC? Our AI assistant is here to help with instant, personalized answers.
+  - button "Start AI Conversation":
+    - img
+    - text: Start AI Conversation
+  - heading "Join Our Community" [level=2]
+  - paragraph: Connect with fellow innovators, merchants, and crypto enthusiasts building the future of commerce.
+  - link "Join Discord":
+    - /url: https://discord.gg/taic
+    - text: Join Discord
+    - img
+  - link "Subscribe to Newsletter":
+    - /url: /newsletter
+  - heading "Ready to Get Started?" [level=2]
+  - paragraph: Join thousands of users already experiencing the future of AI-powered commerce.
+  - link "Create Account":
+    - /url: /register
+    - text: Create Account
+    - img
+  - link "Learn More":
+    - /url: /about
+    - text: Learn More
+    - img
+- contentinfo:
+  - heading "Stay Updated With Our Newsletter" [level=3]
+  - text: Email for newsletter
+  - textbox "Email for newsletter"
+  - button "Subscribe"
+  - link "YouTube":
+    - /url: "#"
+    - img
+  - link "Instagram":
+    - /url: "#"
+    - img
+  - link "X (formerly Twitter)":
+    - /url: "#"
+    - img
+  - link "Facebook":
+    - /url: "#"
+    - img
+  - link "Terms of Service":
+    - /url: /legal/terms-of-service
+  - link "Privacy Policy":
+    - /url: /legal/privacy-policy
+  - link "Merchant Agreement":
+    - /url: /legal/merchant-agreement
+  - link "Refund Policy":
+    - /url: /legal/refund-policy
+  - link "Cookie Policy":
+    - /url: /legal/cookie-policy
+  - link "Risk Disclosure":
+    - /url: /legal/risk-disclosure
+  - link "About Us":
+    - /url: /about
+  - link "Trust & Safety":
+    - /url: /trust-and-safety
+  - link "Help Center":
+    - /url: /help-center
+  - link "Contact Us":
+    - /url: /contact
+  - link "Brand Assets":
+    - /url: /brand
+  - paragraph: © 2025 TAIC. All rights reserved.
+- region "Notifications (F8)":
+  - list
+```
