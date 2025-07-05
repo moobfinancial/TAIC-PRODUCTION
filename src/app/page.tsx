@@ -1,40 +1,52 @@
-"use client"; // Required for useState
+"use client";
 
+import React, { useState } from 'react';
 import Link from 'next/link';
-import { useState } from 'react'; // Import useState
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { ArrowRight, ShoppingBag, Lightbulb, Bot, Star, Store, Search, Info, Coins, Gift, LogIn, Send, MessageSquare } from 'lucide-react'; // Added new icons
-import Image from 'next/image';
-import { InteractiveAIMADialog } from '@/components/ai/InteractiveAIMADialog'; // Import the dialog
-import { trackEvent } from '@/lib/analytics'; // Import trackEvent
-import HomePageSitePalIntegration from '@/components/interactive-ai/HomePageSitePalIntegration'; // Import SitePal integration
+import {
+  ArrowRight,
+  Bot,
+  Coins,
+  Gift,
+  LogIn,
+  ShoppingBag,
+  Store,
+  Star,
+  Info,
+  Send,
+  MessageSquare
+} from 'lucide-react';
+import { trackEvent } from '@/lib/analytics';
+import HomePageSitePalIntegration from '@/components/interactive-ai/HomePageSitePalIntegration';
+import { InteractiveAIMADialog } from '@/components/ai/InteractiveAIMADialog';
 
 export default function HomePage() {
-  const [isAmaDialogOpen, setIsAmaDialogOpen] = useState(false); // State for dialog
+  const [isAmaDialogOpen, setIsAmaDialogOpen] = useState(false);
 
+  // Features array for the features section
   const features = [
     {
-      title: 'Explore Products',
-      description: 'Browse our innovative catalog priced in Demo TAIC.',
-      href: '/products',
-      icon: <ShoppingBag className="h-8 w-8 text-primary" />,
-      cta: 'Shop Now',
+      title: "AI-Powered Shopping",
+      description: "Experience personalized product recommendations and intelligent search powered by advanced AI technology.",
+      icon: <Bot className="h-12 w-12 text-primary" />,
+      href: "/products",
+      cta: "Explore Products"
     },
     {
-      title: 'AI Shopping Assistant',
-      description: 'Let our AI help you find the perfect product.',
-      href: '/ai-assistant',
-      icon: <Bot className="h-8 w-8 text-primary" />,
-      cta: 'Ask AI',
+      title: "Merchant Tools",
+      description: "Comprehensive suite of tools for merchants to manage inventory, process orders, and grow their business.",
+      icon: <Store className="h-12 w-12 text-primary" />,
+      href: "/merchant/register",
+      cta: "Start Selling"
     },
     {
-      title: 'Generate Product Ideas',
-      description: 'Unleash creativity with our AI Product Idea Generator.',
-      href: '/ai-product-ideas',
-      icon: <Lightbulb className="h-8 w-8 text-primary" />,
-      cta: 'Invent Now',
-    },
+      title: "Crypto Rewards",
+      description: "Earn TAIC Coin rewards on every purchase and transaction. Real crypto value for real shopping.",
+      icon: <Coins className="h-12 w-12 text-primary" />,
+      href: "/tokenomics",
+      cta: "Learn More"
+    }
   ];
 
   return (
@@ -79,310 +91,300 @@ export default function HomePage() {
         </div>
       </section>
 
-      {/* Crypto & Rewards Highlights Section */}
-      <section className="w-full py-12 md:py-16 bg-muted">
+      {/* Features Section */}
+      <section className="w-full py-12 md:py-24 lg:py-32 bg-muted/50">
         <div className="container px-4 md:px-6">
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-8 text-center">
-            {/* TAIC Coin Utility */}
-            <div className="flex flex-col items-center">
-              <Coins className="h-10 w-10 text-primary mb-3" />
-              <h3 className="text-xl font-semibold mb-2">TAIC Coin: Powering Your Experience</h3>
-              <p className="text-sm text-muted-foreground">
-                Use TAIC Coin for seamless transactions, access exclusive features, and participate in platform governance.
+          <div className="flex flex-col items-center justify-center space-y-4 text-center">
+            <div className="space-y-2">
+              <h2 className="text-3xl font-headline font-bold tracking-tighter sm:text-5xl">
+                Discover Our Features
+              </h2>
+              <p className="max-w-[900px] text-muted-foreground md:text-xl/relaxed lg:text-base/relaxed xl:text-xl/relaxed">
+                Experience the future of commerce with our comprehensive platform designed for modern digital transactions.
               </p>
-              {/* Optional CTA: <Button variant="link" asChild className="mt-2"><Link href="/tokenomics">Learn More</Link></Button> */}
-            </div>
-
-            {/* Earn Crypto Rewards */}
-            <div className="flex flex-col items-center">
-              <Gift className="h-10 w-10 text-primary mb-3" />
-              <h3 className="text-xl font-semibold mb-2">Shop & Earn Cashback</h3>
-              <p className="text-sm text-muted-foreground">
-                Get rewarded with TAIC Coin cashback on your purchases. The more you shop, the more you earn!
-              </p>
-              {/* Optional CTA: <Button variant="link" asChild className="mt-2"><Link href="/rewards">Discover Rewards</Link></Button> */}
-            </div>
-
-            {/* Flexible Access */}
-            <div className="flex flex-col items-center">
-              <LogIn className="h-10 w-10 text-primary mb-3" />
-              <h3 className="text-xl font-semibold mb-2">Connect Your Way</h3>
-              <p className="text-sm text-muted-foreground">
-                Sign up or log in easily with your crypto wallet or traditional email and password.
-              </p>
-              {/* Visual cues could be added here later e.g. mini-buttons or icons for WalletConnect/Email */}
             </div>
           </div>
-        </div>
-      </section>
-
-      <section className="w-full py-12 md:py-24 bg-secondary">
-        <div className="container px-4 md:px-6">
-          <h2 className="text-3xl font-headline font-bold tracking-tighter sm:text-4xl md:text-5xl text-center mb-12">
-            Discover Our Features
-          </h2>
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
-            {features.map((feature) => (
-              <Card key={feature.title} className="flex flex-col shadow-lg hover:shadow-xl transition-shadow duration-300">
-                <CardHeader className="items-center text-center">
-                  {feature.icon}
-                  <CardTitle className="mt-4 font-headline text-2xl">{feature.title}</CardTitle>
+          <div className="mx-auto grid max-w-5xl items-center gap-6 py-12 lg:grid-cols-3 lg:gap-12">
+            {features.map((feature, index) => (
+              <Card key={index} className="flex flex-col items-center text-center p-6 hover:shadow-lg transition-shadow">
+                <CardHeader>
+                  <div className="flex justify-center mb-4">
+                    {feature.icon}
+                  </div>
+                  <CardTitle className="text-xl font-semibold">{feature.title}</CardTitle>
                 </CardHeader>
-                <CardContent className="flex-grow text-center">
-                  <CardDescription>{feature.description}</CardDescription>
-                </CardContent>
-                <div className="p-6 pt-0 text-center">
-                  <Button asChild className="w-full max-w-xs mx-auto" variant="outline">
+                <CardContent className="flex-1">
+                  <CardDescription className="text-base mb-4">
+                    {feature.description}
+                  </CardDescription>
+                  <Button
+                    asChild
+                    variant="outline"
+                    className="w-full"
+                    onClick={() => trackEvent('feature_cta_click', { feature_title: feature.title, link_url: feature.href })}
+                  >
                     <Link href={feature.href}>
                       {feature.cta} <ArrowRight className="ml-2 h-4 w-4" />
                     </Link>
                   </Button>
-                </div>
+                </CardContent>
               </Card>
             ))}
           </div>
         </div>
       </section>
 
-      <section className="w-full py-12 md:py-24">
-        <div className="container px-4 md:px-6 text-center">
-          <h2 className="text-3xl font-headline font-bold tracking-tighter sm:text-4xl md:text-5xl text-center mb-8">
-            Ask Our AI About TAIC Coin
-          </h2>
-          <p className="mx-auto max-w-[700px] text-muted-foreground md:text-xl/relaxed text-center mb-8">
-            Have questions about TAIC Coin, our platform, or the Pioneer Program? Get instant answers from our interactive AI assistant! Experience our cutting-edge voice and avatar technology.
-          </p>
-          <Button
-            size="lg"
-            className="font-semibold"
-            onClick={() => {
-              setIsAmaDialogOpen(true);
-              trackEvent('cta_click', { section: 'ama_ai_promo', button_text: 'Launch Interactive AI AMA' });
-            }}
-          >
-            Launch Interactive AI AMA <Bot className="ml-2 h-5 w-5" />
-          </Button>
-        </div>
-      </section>
-
-      <InteractiveAIMADialog
-        open={isAmaDialogOpen}
-        onOpenChange={setIsAmaDialogOpen}
-      />
-
-      {/* Influencer & Community Engagement Section */}
-      <section className="w-full py-12 md:py-24">
+      {/* Crypto & Rewards Highlights */}
+      <section className="w-full py-12 md:py-24 lg:py-32">
         <div className="container px-4 md:px-6">
-          <h2 className="text-3xl font-headline font-bold tracking-tighter sm:text-4xl md:text-5xl text-center mb-12">
-            Join Our Community & Partner With Us
-          </h2>
-          <div className="grid md:grid-cols-2 gap-12 items-start">
-            {/* Left Column: Community Channels */}
-            <div className="space-y-6">
-              <div>
-                <h3 className="text-2xl font-semibold mb-3">Connect on Socials</h3>
-                <p className="text-muted-foreground mb-4">
-                  Stay updated with the latest news, announcements, and discussions by joining our official community channels.
+          <div className="grid gap-6 lg:grid-cols-[1fr_400px] lg:gap-12 xl:grid-cols-[1fr_600px]">
+            <div className="flex flex-col justify-center space-y-4">
+              <div className="space-y-2">
+                <h2 className="text-3xl font-headline font-bold tracking-tighter sm:text-5xl">
+                  Earn Real Crypto Rewards
+                </h2>
+                <p className="max-w-[600px] text-muted-foreground md:text-xl">
+                  Every purchase earns you TAIC Coin - real cryptocurrency with real value.
+                  Build your crypto portfolio while shopping for the products you love.
                 </p>
-                <div className="flex flex-col sm:flex-row gap-4">
-                  <Button asChild variant="outline" className="w-full sm:w-auto">
-                    <Link href="#telegram-link">
-                      <Send className="mr-2 h-5 w-5" /> Join our Telegram
-                    </Link>
-                  </Button>
-                  <Button asChild variant="outline" className="w-full sm:w-auto">
-                    <Link href="#discord-link">
-                      <MessageSquare className="mr-2 h-5 w-5" /> Join our Discord
-                    </Link>
-                  </Button>
-                </div>
               </div>
-            </div>
-
-            {/* Right Column: Influencer & Contributor */}
-            <div className="space-y-6">
-              <div>
-                <h3 className="text-2xl font-semibold mb-3">Partner & Contribute</h3>
-                <p className="text-muted-foreground mb-2">
-                  Are you an influencer, content creator, or potential partner? We're looking for passionate individuals and organizations to collaborate with.
-                </p>
-                <div className="h-20 bg-muted rounded-md flex items-center justify-center text-sm text-muted-foreground my-4 p-4 text-center">
-                  Future Influencer/Partner Showcase Area
-                </div>
-                <p className="text-muted-foreground mb-4">
-                  Learn how you can contribute to the TAIC ecosystem, apply for the Pioneer Program, or explore partnership opportunities.
-                </p>
-                <Button asChild>
-                  <Link href="#pioneer-program-landing-page">
-                    Learn More About Contributing <ArrowRight className="ml-2 h-5 w-5" />
+              <div className="flex flex-col gap-2 min-[400px]:flex-row">
+                <Button
+                  asChild
+                  size="lg"
+                  onClick={() => trackEvent('cta_click', { section: 'crypto_rewards', button_text: 'Learn About TAIC Coin', link_url: '/tokenomics' })}
+                >
+                  <Link href="/tokenomics">
+                    Learn About TAIC Coin <Coins className="ml-2 h-5 w-5" />
+                  </Link>
+                </Button>
+                <Button
+                  asChild
+                  size="lg"
+                  variant="outline"
+                  onClick={() => trackEvent('cta_click', { section: 'crypto_rewards', button_text: 'Start Shopping', link_url: '/products' })}
+                >
+                  <Link href="/products">
+                    Start Shopping <ShoppingBag className="ml-2 h-5 w-5" />
                   </Link>
                 </Button>
               </div>
             </div>
+            <div className="flex items-center justify-center">
+              <Card className="w-full max-w-sm">
+                <CardHeader>
+                  <CardTitle className="flex items-center gap-2">
+                    <Gift className="h-6 w-6 text-primary" />
+                    Reward Example
+                  </CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <div className="space-y-2">
+                    <div className="flex justify-between">
+                      <span>Purchase Amount:</span>
+                      <span className="font-semibold">$100.00</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span>Cashback Rate:</span>
+                      <span className="font-semibold">5%</span>
+                    </div>
+                    <div className="border-t pt-2 flex justify-between">
+                      <span>TAIC Coin Earned:</span>
+                      <span className="font-bold text-primary">5.00 TAIC</span>
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+            </div>
           </div>
         </div>
       </section>
 
-      <section className="w-full py-12 md:py-24 bg-secondary">
+      {/* Pioneer Program Section */}
+      <section className="w-full py-12 md:py-24 lg:py-32 bg-muted/50">
         <div className="container px-4 md:px-6">
-          <h2 className="text-3xl font-headline font-bold tracking-tighter sm:text-4xl md:text-5xl text-center mb-12">
-            Join the TAIC Revolution: Pre-Sale & Pioneer Program
-          </h2>
-          <p className="mx-auto max-w-[800px] text-muted-foreground md:text-xl/relaxed text-center mb-10">
-            Be part of the TAIC ecosystem from the ground up! Our TAIC Coin pre-sale is coming soon, offering early access to the utility token that powers our platform. Alongside, we're launching the TAIC Pioneer Program for dedicated individuals and businesses looking to shape the future of AI-driven crypto commerce.
-          </p>
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-12">
-            {/* Tier 1: Founding Merchants */}
-            <Card className="flex flex-col shadow-lg hover:shadow-xl transition-shadow duration-300">
+          <div className="flex flex-col items-center justify-center space-y-4 text-center">
+            <div className="space-y-2">
+              <h2 className="text-3xl font-headline font-bold tracking-tighter sm:text-5xl">
+                Join the Pioneer Program
+              </h2>
+              <p className="max-w-[900px] text-muted-foreground md:text-xl/relaxed lg:text-base/relaxed xl:text-xl/relaxed">
+                Be among the first to shape the future of AI-powered commerce. Exclusive benefits await early adopters.
+              </p>
+            </div>
+          </div>
+          <div className="mx-auto grid max-w-5xl items-center gap-6 py-12 lg:grid-cols-2 lg:gap-12">
+            <Card className="p-6 hover:shadow-lg transition-shadow">
               <CardHeader>
-                <CardTitle className="font-headline text-xl">Tier 1: Founding Merchants</CardTitle>
-                <CardDescription>For innovative businesses ready to establish their presence on TAIC. Early onboarding, premium support, and exclusive benefits.</CardDescription>
+                <CardTitle className="flex items-center gap-2 text-xl">
+                  <Star className="h-6 w-6 text-yellow-500" />
+                  Founding Merchants
+                </CardTitle>
               </CardHeader>
-              <CardContent className="flex-grow">
-                <ul className="list-disc pl-5 space-y-1 text-sm text-muted-foreground">
-                  <li>Priority product placement</li>
-                  <li>Reduced transaction fees for 1 year</li>
-                  <li>Significant TAIC Coin allocation</li>
+              <CardContent>
+                <CardDescription className="text-base mb-4">
+                  Established businesses ready to lead the AI commerce revolution with significant token allocations and reduced fees.
+                </CardDescription>
+                <ul className="space-y-2 text-sm text-muted-foreground mb-4">
+                  <li>• 10,000-50,000 TAIC token allocation</li>
+                  <li>• 0.5% transaction fees</li>
+                  <li>• Priority customer support</li>
+                  <li>• Co-marketing opportunities</li>
                 </ul>
+                <Button
+                  asChild
+                  className="w-full"
+                  onClick={() => trackEvent('pioneer_cta_click', { tier: 'founding_merchants' })}
+                >
+                  <Link href="/pioneer/apply">
+                    Apply Now <ArrowRight className="ml-2 h-4 w-4" />
+                  </Link>
+                </Button>
               </CardContent>
             </Card>
 
-            {/* Tier 2: Strategic Influencers */}
-            <Card className="flex flex-col shadow-lg hover:shadow-xl transition-shadow duration-300">
+            <Card className="p-6 hover:shadow-lg transition-shadow">
               <CardHeader>
-                <CardTitle className="font-headline text-xl">Tier 2: Strategic Influencers</CardTitle>
-                <CardDescription>For content creators and community leaders passionate about AI and crypto. Amplify TAIC's message and grow with us.</CardDescription>
+                <CardTitle className="flex items-center gap-2 text-xl">
+                  <Star className="h-6 w-6 text-blue-500" />
+                  Strategic Influencers
+                </CardTitle>
               </CardHeader>
-              <CardContent className="flex-grow">
-                <ul className="list-disc pl-5 space-y-1 text-sm text-muted-foreground">
-                  <li>Co-marketing opportunities</li>
-                  <li>Token rewards for content creation</li>
-                  <li>Early access to new features</li>
+              <CardContent>
+                <CardDescription className="text-base mb-4">
+                  Content creators and influencers who will help spread awareness and drive adoption of the TAIC platform.
+                </CardDescription>
+                <ul className="space-y-2 text-sm text-muted-foreground mb-4">
+                  <li>• 5,000-25,000 TAIC token allocation</li>
+                  <li>• Revenue sharing opportunities</li>
+                  <li>• Exclusive content creation tools</li>
+                  <li>• Early access to features</li>
                 </ul>
-              </CardContent>
-            </Card>
-
-            {/* Tier 3: Early Champions */}
-            <Card className="flex flex-col shadow-lg hover:shadow-xl transition-shadow duration-300">
-              <CardHeader>
-                <CardTitle className="font-headline text-xl">Tier 3: Early Champions</CardTitle>
-                <CardDescription>For enthusiastic early adopters who believe in TAIC's vision. Help us build a vibrant community.</CardDescription>
-              </CardHeader>
-              <CardContent className="flex-grow">
-                <ul className="list-disc pl-5 space-y-1 text-sm text-muted-foreground">
-                  <li>Exclusive community badges</li>
-                  <li>Bonus TAIC Coin rewards</li>
-                  <li>Direct feedback channels</li>
-                </ul>
-              </CardContent>
-            </Card>
-
-            {/* Tier 4: Whitelist Members */}
-            <Card className="flex flex-col shadow-lg hover:shadow-xl transition-shadow duration-300">
-              <CardHeader>
-                <CardTitle className="font-headline text-xl">Tier 4: Whitelist Members</CardTitle>
-                <CardDescription>For individuals interested in future TAIC Coin offerings and platform updates. Secure your spot for upcoming announcements.</CardDescription>
-              </CardHeader>
-              <CardContent className="flex-grow">
-                <ul className="list-disc pl-5 space-y-1 text-sm text-muted-foreground">
-                  <li>Priority notification for public sale</li>
-                  <li>Access to community updates</li>
-                  <li>Potential for future airdrops</li>
-                </ul>
+                <Button
+                  asChild
+                  variant="outline"
+                  className="w-full"
+                  onClick={() => trackEvent('pioneer_cta_click', { tier: 'strategic_influencers' })}
+                >
+                  <Link href="/pioneer/apply">
+                    Learn More <ArrowRight className="ml-2 h-4 w-4" />
+                  </Link>
+                </Button>
               </CardContent>
             </Card>
           </div>
-          <div className="text-center">
+        </div>
+      </section>
+
+      {/* Interactive AI AMA Section */}
+      <section className="w-full py-12 md:py-24 lg:py-32">
+        <div className="container px-4 md:px-6">
+          <div className="flex flex-col items-center justify-center space-y-4 text-center">
+            <div className="space-y-2">
+              <h2 className="text-3xl font-headline font-bold tracking-tighter sm:text-5xl">
+                Ask Our AI Anything
+              </h2>
+              <p className="max-w-[900px] text-muted-foreground md:text-xl/relaxed lg:text-base/relaxed xl:text-xl/relaxed">
+                Have questions about TAIC? Our AI assistant is here to help with instant, personalized answers.
+              </p>
+            </div>
             <Button
-              asChild
               size="lg"
+              onClick={() => {
+                setIsAmaDialogOpen(true);
+                trackEvent('ama_dialog_open', { source: 'homepage_section' });
+              }}
               className="font-semibold"
-              onClick={() => trackEvent('cta_click', { section: 'pioneer_program_promo', button_text: 'Learn More & Apply to Pioneer Program', link_url: '#pioneer-program-landing-page' })}
             >
-              <Link href="#pioneer-program-landing-page">
-                Learn More & Apply to Pioneer Program <ArrowRight className="ml-2 h-5 w-5" />
-              </Link>
+              <MessageSquare className="mr-2 h-5 w-5" />
+              Start AI Conversation
             </Button>
           </div>
         </div>
       </section>
 
-      <section className="w-full py-12 md:py-24">
+      {/* Community Engagement Section */}
+      <section className="w-full py-12 md:py-24 lg:py-32 bg-muted/50">
         <div className="container px-4 md:px-6">
-          <h2 className="text-3xl font-headline font-bold tracking-tighter sm:text-4xl md:text-5xl text-center mb-12">
-            What's Next?
-          </h2>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-            {/* CTA 1: Join the Pioneer Program */}
-            <Card className="flex flex-col items-center text-center p-6 shadow-lg hover:shadow-xl transition-shadow duration-300">
-              <Star className="h-12 w-12 text-primary mb-4" />
-              <h3 className="text-2xl font-headline font-semibold mb-2">Become a TAIC Pioneer</h3>
-              <p className="text-muted-foreground mb-4 text-sm">
-                Help shape our ecosystem. Apply for exclusive benefits and token allocations.
+          <div className="flex flex-col items-center justify-center space-y-4 text-center">
+            <div className="space-y-2">
+              <h2 className="text-3xl font-headline font-bold tracking-tighter sm:text-5xl">
+                Join Our Community
+              </h2>
+              <p className="max-w-[900px] text-muted-foreground md:text-xl/relaxed lg:text-base/relaxed xl:text-xl/relaxed">
+                Connect with fellow innovators, merchants, and crypto enthusiasts building the future of commerce.
               </p>
-              <Button asChild className="mt-auto">
-                <Link href="#pioneer-program-landing-page">Apply Now <ArrowRight className="ml-2 h-4 w-4" /></Link>
-              </Button>
-            </Card>
-
-            {/* CTA 2: Become a Merchant */}
-            <Card className="flex flex-col items-center text-center p-6 shadow-lg hover:shadow-xl transition-shadow duration-300">
-              <Store className="h-12 w-12 text-primary mb-4" />
-              <h3 className="text-2xl font-headline font-semibold mb-2">Sell on TAIC</h3>
-              <p className="text-muted-foreground mb-4 text-sm">
-                Set up your store on our AI-powered marketplace and reach a global audience.
-              </p>
+            </div>
+            <div className="flex flex-col gap-2 min-[400px]:flex-row">
               <Button
                 asChild
-                className="mt-auto"
-                onClick={() => trackEvent('cta_click', { section: 'main_ctas', button_text: 'Start Selling', link_url: '/merchant/register' })}
+                size="lg"
+                onClick={() => trackEvent('community_cta_click', { platform: 'discord' })}
               >
-                <Link href="/merchant/register">Start Selling <ArrowRight className="ml-2 h-4 w-4" /></Link>
+                <Link href="https://discord.gg/taic" target="_blank" rel="noopener noreferrer">
+                  Join Discord <Send className="ml-2 h-5 w-5" />
+                </Link>
               </Button>
-            </Card>
-
-            {/* CTA 3: Shop the Marketplace */}
-            <Card className="flex flex-col items-center text-center p-6 shadow-lg hover:shadow-xl transition-shadow duration-300">
-              <ShoppingBag className="h-12 w-12 text-primary mb-4" />
-              <h3 className="text-2xl font-headline font-semibold mb-2">Explore & Shop</h3>
-              <p className="text-muted-foreground mb-4 text-sm">
-                Discover unique products, experience AI-driven shopping, and earn crypto rewards.
-              </p>
-              <Button asChild className="mt-auto">
-                <Link href="/products">Go Shopping <ArrowRight className="ml-2 h-4 w-4" /></Link>
+              <Button
+                asChild
+                size="lg"
+                variant="outline"
+                onClick={() => trackEvent('community_cta_click', { platform: 'newsletter' })}
+              >
+                <Link href="/newsletter">
+                  Subscribe to Newsletter
+                </Link>
               </Button>
-            </Card>
-
-            {/* CTA 4: Learn About TAIC Coin */}
-            <Card className="flex flex-col items-center text-center p-6 shadow-lg hover:shadow-xl transition-shadow duration-300">
-              <Info className="h-12 w-12 text-primary mb-4" /> {/* Using Info icon as a placeholder for Coin icon */}
-              <h3 className="text-2xl font-headline font-semibold mb-2">Discover TAIC Coin</h3>
-              <p className="text-muted-foreground mb-4 text-sm">
-                Learn about the utility, tokenomics, and staking benefits of our native cryptocurrency.
-              </p>
-              <Button asChild className="mt-auto">
-                <Link href="/tokenomics">Learn More <ArrowRight className="ml-2 h-4 w-4" /></Link>
-              </Button>
-            </Card>
+            </div>
           </div>
         </div>
       </section>
 
-      <section className="w-full py-12 md:py-24">
-        <div className="container text-center">
-          <h2 className="text-3xl font-headline font-bold tracking-tighter sm:text-4xl md:text-5xl">
-            Ready to Dive In?
-          </h2>
-          <p className="mx-auto max-w-[700px] text-muted-foreground md:text-xl/relaxed lg:text-base/relaxed xl:text-xl/relaxed mt-4 mb-8">
-            Create a demo account to start exploring with your initial Demo TAIC balance, or browse our offerings as a guest.
-          </p>
-          <Button asChild size="lg" className="font-semibold">
-            <Link href="/register">
-              Join TAIC <ArrowRight className="ml-2 h-5 w-5" />
-            </Link>
-          </Button>
+      {/* Final Call to Action */}
+      <section className="w-full py-12 md:py-24 lg:py-32">
+        <div className="container px-4 md:px-6">
+          <div className="flex flex-col items-center justify-center space-y-4 text-center">
+            <div className="space-y-2">
+              <h2 className="text-3xl font-headline font-bold tracking-tighter sm:text-5xl">
+                Ready to Get Started?
+              </h2>
+              <p className="max-w-[600px] text-muted-foreground md:text-xl">
+                Join thousands of users already experiencing the future of AI-powered commerce.
+              </p>
+            </div>
+            <div className="flex flex-col gap-2 min-[400px]:flex-row">
+              <Button
+                asChild
+                size="lg"
+                className="font-semibold"
+                onClick={() => trackEvent('final_cta_click', { button_text: 'Create Account', link_url: '/register' })}
+              >
+                <Link href="/register">
+                  Create Account <LogIn className="ml-2 h-5 w-5" />
+                </Link>
+              </Button>
+              <Button
+                asChild
+                size="lg"
+                variant="outline"
+                onClick={() => trackEvent('final_cta_click', { button_text: 'Learn More', link_url: '/about' })}
+              >
+                <Link href="/about">
+                  Learn More <Info className="ml-2 h-5 w-5" />
+                </Link>
+              </Button>
+            </div>
+          </div>
         </div>
       </section>
+
+      {/* Interactive AI AMA Dialog */}
+      <InteractiveAIMADialog
+        open={isAmaDialogOpen}
+        onOpenChange={setIsAmaDialogOpen}
+      />
     </div>
   );
 }
+
+

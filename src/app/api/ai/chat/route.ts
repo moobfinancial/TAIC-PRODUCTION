@@ -106,6 +106,11 @@ export async function POST(req: Request) {
       const existingHistory = await ConversationStorage.getConversationHistory(threadId);
       if (existingHistory && existingHistory.messages) {
         conversationHistory = ConversationStorage.messagesToOpenAIFormat(existingHistory.messages);
+      } else {
+        // Thread ID provided but doesn't exist in database - create it
+        console.log(`[AI Chat API] Thread ${threadId} not found, creating new thread`);
+        const guestId = guest_session_id || ConversationStorage.generateGuestSessionId();
+        await ConversationStorage.createThread(threadId, user_id, user_id ? undefined : guestId, 'pioneer_ama');
       }
     } else {
       threadId = ConversationStorage.generateThreadId();

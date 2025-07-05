@@ -42,19 +42,15 @@ class PioneerApplicationBase(BaseModel):
 
     applying_for_tier: str = Field(..., description="The Pioneer Program tier the applicant is applying for.")
 
-    primary_social_profile_link: Optional[HttpUrl] = Field(default=None, description="URL to the applicant's primary social media profile or content platform (optional).")
-    follower_subscriber_count: Optional[str] = Field(default=None, max_length=100, description="Estimated number of followers/subscribers (e.g., '10k-50k', '1M+').")
-    secondary_social_profile_links: Optional[str] = Field(default=None, description="Other relevant social media links, separated by newlines or commas (optional).")
+    # Main application content (matches database schema)
+    application_text: str = Field(..., min_length=50, description="Combined application text including interest reason and contribution proposal.")
+    reason_for_interest: Optional[str] = Field(default=None, description="Detailed explanation of why the applicant is interested in the TAIC Pioneer Program.")
+    relevant_experience: Optional[str] = Field(default=None, description="Description of relevant experience including previous programs.")
 
-    audience_demographics_description: Optional[str] = Field(default=None, description="Description of the applicant's typical audience demographics (optional).")
-    engagement_statistics_overview: Optional[str] = Field(default=None, description="Overview of typical engagement statistics (e.g., likes, comments, views per post) (optional).")
+    # Social media information stored as JSONB
+    social_media_links: Optional[dict] = Field(default=None, description="Social media profile information stored as JSON object.")
 
-    interest_reason: str = Field(..., min_length=50, description="Detailed explanation of why the applicant is interested in the TAIC Pioneer Program (min 50 characters).")
-    contribution_proposal: Optional[str] = Field(default=None, description="Applicant's proposal on how they plan to contribute to the TAIC ecosystem (optional).")
-    previous_programs_experience: Optional[str] = Field(default=None, description="Description of experience with similar ambassador or pioneer programs (optional).")
-
-    taic_compatible_wallet_address: Optional[str] = Field(default=None, max_length=255, description="Applicant's TAIC-compatible wallet address for potential rewards (optional during application).")
-
+    # Agreement fields (handled by frontend, not stored in database)
     agreed_to_terms: bool = Field(..., description="Confirmation that the applicant has read and agreed to the program terms and conditions.")
     agreed_to_token_vesting: bool = Field(..., description="Confirmation that the applicant understands and agrees to any token vesting schedules, if applicable.")
 
@@ -97,10 +93,20 @@ class PioneerApplicationCreate(PioneerApplicationBase):
     pass
 
 
-class PioneerApplicationResponse(PioneerApplicationBase):
+class PioneerApplicationResponse(BaseModel):
     """Response model after successfully submitting a Pioneer Program application."""
     id: int = Field(..., description="Unique identifier for the submitted application.")
     user_id: Optional[str] = Field(default=None, description="If the applicant was logged in, their user ID. Null otherwise.")
+    full_name: str = Field(..., description="Applicant's full legal name.")
+    email: EmailStr = Field(..., description="Applicant's primary email address.")
+    telegram_handle: Optional[str] = Field(default=None, description="Applicant's Telegram username.")
+    discord_id: Optional[str] = Field(default=None, description="Applicant's Discord ID.")
+    country_of_residence: Optional[str] = Field(default=None, description="Applicant's country of residence.")
+    applying_for_tier: str = Field(..., description="The Pioneer Program tier the applicant is applying for.")
+    application_text: str = Field(..., description="Combined application text including interest reason and contribution proposal.")
+    reason_for_interest: Optional[str] = Field(default=None, description="Detailed explanation of why the applicant is interested in the TAIC Pioneer Program.")
+    relevant_experience: Optional[str] = Field(default=None, description="Description of relevant experience including previous programs.")
+    social_media_links: Optional[dict] = Field(default=None, description="Social media profile information stored as JSON object.")
     application_status: str = Field(..., description="Current status of the application (e.g., 'pending').")
     submitted_at: datetime = Field(..., description="Timestamp of when the application was submitted.")
 

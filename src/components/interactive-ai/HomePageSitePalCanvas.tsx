@@ -3,9 +3,34 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { X, Mic, MicOff, Send, Volume2, VolumeX } from 'lucide-react';
+import {
+  X, Mic, MicOff, Send, Volume2, VolumeX,
+  Store, Megaphone, Users, List, Star, UserPlus,
+  Wallet, HelpCircle, Coins, Percent, UserCheck
+} from 'lucide-react';
 import useWebSpeech from '../../hooks/useWebSpeech';
 import useVAD from '../../hooks/useVAD';
+import { PioneerApplicationModal } from '@/components/pioneer/PioneerApplicationModal';
+
+// Helper function to get the appropriate icon component
+const getActionIcon = (iconName: string) => {
+  const iconMap: { [key: string]: any } = {
+    'store': Store,
+    'megaphone': Megaphone,
+    'users': Users,
+    'list': List,
+    'star': Star,
+    'user-plus': UserPlus,
+    'wallet': Wallet,
+    'help-circle': HelpCircle,
+    'coins': Coins,
+    'percent': Percent,
+    'user-check': UserCheck,
+  };
+
+  const IconComponent = iconMap[iconName] || HelpCircle;
+  return IconComponent;
+};
 
 // Define types for our API responses
 interface Action {
@@ -13,6 +38,8 @@ interface Action {
   command?: string;
   link?: string;
   value?: string;
+  icon?: string;
+  action_type?: 'command' | 'link' | 'signup' | 'connect_wallet';
 }
 
 interface AIResponse {
@@ -45,6 +72,10 @@ const HomePageSitePalCanvas: React.FC<HomePageSitePalCanvasProps> = ({ isOpen, o
   const [networkStatus, setNetworkStatus] = useState<'checking' | 'connected' | 'disconnected' | 'slow'>('checking');
   const [retryCount, setRetryCount] = useState(0);
 
+  // --- Modal State ---
+  const [isModalOpen, setIsModalOpen] = useState(false);
+  const [selectedTierForModal, setSelectedTierForModal] = useState<string>('');
+
   // --- Refs ---
   const processCommandRef = useRef<(command: string) => Promise<void>>();
   const isAvatarSpeaking = useRef(false);
@@ -53,6 +84,7 @@ const HomePageSitePalCanvas: React.FC<HomePageSitePalCanvasProps> = ({ isOpen, o
   const initialized = useRef(false);
   const speechEndTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const speechEndHandlerRef = useRef<(() => void) | null>(null);
+  const speakAndListenRef = useRef<(text: string) => void>();
   const isAvatarStartingSpeechRef = useRef(false);
   const bargeInGracePeriodRef = useRef<NodeJS.Timeout | null>(null);
 
@@ -108,8 +140,8 @@ const HomePageSitePalCanvas: React.FC<HomePageSitePalCanvasProps> = ({ isOpen, o
       setNetworkStatus('checking');
       const startTime = Date.now();
 
-      // Test connectivity to SitePal's CDN
-      const response = await fetch('//vhss-d.oddcast.com/ai_embed_functions_v1.php', {
+      // Test connectivity to SitePal's CDN using HTTPS
+      const response = await fetch('https://vhss-d.oddcast.com/ai_embed_functions_v1.php', {
         method: 'HEAD',
         mode: 'no-cors',
         cache: 'no-cache'
@@ -118,6 +150,7 @@ const HomePageSitePalCanvas: React.FC<HomePageSitePalCanvasProps> = ({ isOpen, o
       const endTime = Date.now();
       const latency = endTime - startTime;
 
+      // With no-cors mode, we can't check response.ok, but if the fetch completes without throwing, it means connectivity is working
       if (latency > 5000) {
         setNetworkStatus('slow');
         setLoadingMessage('Slow network detected - avatar may take longer to load...');
@@ -320,10 +353,21 @@ const HomePageSitePalCanvas: React.FC<HomePageSitePalCanvasProps> = ({ isOpen, o
     // This helps prevent false VAD triggers from the avatar's own speech
 
     try {
+      console.log('[HomePageCanvas] speakAndListen called with text:', text.substring(0, 50) + '...');
+      console.log('[HomePageCanvas] window.sayText type:', typeof window.sayText);
+      console.log('[HomePageCanvas] Available window functions:', Object.keys(window).filter(key => key.includes('say') || key.includes('speak') || key.includes('vh_')));
+
       if (typeof window.sayText === 'function') {
         const elevenLabsEngineID = 14;
         const jessicaVoiceID = "cgSgspJ2msm6clMCkdW9";
         const languageID = 1;
+
+        console.log('[HomePageCanvas] Calling window.sayText with parameters:', {
+          text: text.substring(0, 50) + '...',
+          voiceID: jessicaVoiceID,
+          languageID,
+          engineID: elevenLabsEngineID
+        });
 
         // Set grace period - allow barge-in after 2 seconds of avatar speaking
         bargeInGracePeriodRef.current = setTimeout(() => {
@@ -352,6 +396,7 @@ const HomePageSitePalCanvas: React.FC<HomePageSitePalCanvasProps> = ({ isOpen, o
         }, estimatedSpeechDuration);
       } else {
         console.error('[HomePageCanvas] sayText function not available');
+        console.error('[HomePageCanvas] Available window properties:', Object.keys(window).filter(key => typeof (window as any)[key] === 'function' && (key.includes('say') || key.includes('speak') || key.includes('AI_') || key.includes('vh_'))));
       }
     } catch (error) {
       console.error('[HomePageCanvas] Error in speakAndListen:', error);
@@ -366,6 +411,11 @@ const HomePageSitePalCanvas: React.FC<HomePageSitePalCanvasProps> = ({ isOpen, o
   useEffect(() => {
     speechEndHandlerRef.current = handleSitePalSpeechEnd;
   }, [handleSitePalSpeechEnd]);
+
+  // Keep a stable reference to the speakAndListen function to prevent dependency loops.
+  useEffect(() => {
+    speakAndListenRef.current = speakAndListen;
+  }, [speakAndListen]);
 
   // --- Generate Guest Session ID ---
   useEffect(() => {
@@ -394,35 +444,123 @@ const HomePageSitePalCanvas: React.FC<HomePageSitePalCanvasProps> = ({ isOpen, o
         console.log('[HomePageCanvas] Created new thread ID:', currentThreadId);
       }
 
-      // Call the AI API
+      // Call the AI API with correct payload structure
       const response = await fetch('/api/ai/chat', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          message: command,
-          threadId: currentThreadId,
-          sessionId: guestSessionId,
-          context: 'homepage_presentation'
+          messages: [command],              // ✅ Correct field name (array)
+          thread_id: currentThreadId,       // ✅ Correct field name (snake_case)
+          user_id: null,                   // ✅ Required field for guest users
+          guest_session_id: guestSessionId // ✅ Correct field name (snake_case)
         }),
       });
 
       if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`);
+        const errorData = await response.json().catch(() => ({ details: 'The server returned an unexpected error.' }));
+        console.error('[HomePageCanvas] API Error:', errorData);
+        throw new Error(`Failed to get response: ${errorData.details || response.statusText}`);
       }
 
-      const data: AIResponse = await response.json();
-      console.log('[HomePageCanvas] AI Response:', data);
+      // Handle streaming response
+      const reader = response.body?.getReader();
+      if (!reader) {
+        throw new Error('No response body available');
+      }
+
+      const decoder = new TextDecoder();
+      let fullResponse = '';
+      let threadIdFromResponse = '';
+      let isFirstChunk = true;
+
+      // Read the stream
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        const chunk = decoder.decode(value, { stream: true });
+
+        if (isFirstChunk) {
+          // First chunk contains thread_id as JSON
+          const lines = chunk.split('\n');
+          try {
+            const threadInfo = JSON.parse(lines[0]);
+            threadIdFromResponse = threadInfo.thread_id;
+            // Rest of the chunk is the AI response
+            fullResponse += lines.slice(1).join('\n');
+          } catch (e) {
+            // If first chunk isn't JSON, treat as regular response
+            fullResponse += chunk;
+          }
+          isFirstChunk = false;
+        } else {
+          fullResponse += chunk;
+        }
+      }
+
+      // Update thread ID if we got one
+      if (threadIdFromResponse && threadIdFromResponse !== currentThreadId) {
+        setThreadId(threadIdFromResponse);
+        console.log('[HomePageCanvas] Updated thread ID:', threadIdFromResponse);
+      }
+
+      let textToSpeak = 'I understand. How else can I help you with the Pioneer Program?';
+      let actionsToSet: Action[] = [];
+
+      // Parse the full response for JSON actions vs plain text
+      if (fullResponse.trim()) {
+        // Check if response is JSON format (for actions)
+        if (fullResponse.trim().startsWith('{') || fullResponse.trim().startsWith('[')) {
+          try {
+            const parsedJson = JSON.parse(fullResponse.trim());
+            if (typeof parsedJson === 'object' && parsedJson !== null) {
+              // CRITICAL FIX: Extract ONLY the speech text, never the full JSON
+              textToSpeak = parsedJson.responseText || parsedJson.speak_text || 'I have some options for you.';
+
+              // Ensure textToSpeak is clean text without JSON artifacts
+              if (typeof textToSpeak !== 'string') {
+                textToSpeak = 'I have some options for you.';
+              }
+
+              // Remove any remaining JSON-like content from speech text
+              textToSpeak = textToSpeak.replace(/[\{\}\[\]"]/g, '').trim();
+
+              // Handle actions if present
+              if (Array.isArray(parsedJson.actions)) {
+                actionsToSet = parsedJson.actions.map((action: any) => ({
+                  label: action.label || 'Action',
+                  command: action.command,
+                  link: action.link,
+                  value: action.value || action.command,
+                  icon: action.icon || 'help-circle',
+                  action_type: action.action_type || 'command'
+                }));
+              }
+            } else {
+              textToSpeak = String(parsedJson).replace(/[\{\}\[\]"]/g, '').trim();
+            }
+          } catch (e) {
+            // If JSON parsing fails, use the raw response as speech but clean it
+            console.log('[HomePageCanvas] Response is not valid JSON, using as plain text');
+            textToSpeak = fullResponse.trim().replace(/[\{\}\[\]"]/g, '').trim();
+          }
+        } else {
+          // Plain text response - use directly for speech but clean any JSON artifacts
+          textToSpeak = fullResponse.trim().replace(/[\{\}\[\]"]/g, '').trim();
+        }
+      }
+
+      console.log('[HomePageCanvas] AI Response processed:', { textToSpeak, actionsCount: actionsToSet.length });
 
       // Update UI with response
-      const responseText = data.responseText || data.speak_text || 'I understand. How else can I help you with the Pioneer Program?';
-      setAiResponseText(responseText);
-      setActions(data.actions || []);
+      setAiResponseText(textToSpeak);
+      setActions(actionsToSet);
 
       // Use speakAndListen for proper VAD integration
       if (isAvatarReady) {
-        speakAndListen(responseText);
+        speakAndListen(textToSpeak);
         console.log('[HomePageCanvas] Avatar speaking response with VAD integration');
       }
 
@@ -441,10 +579,44 @@ const HomePageSitePalCanvas: React.FC<HomePageSitePalCanvasProps> = ({ isOpen, o
 
   // --- Handle Action Clicks ---
   const handleActionClick = useCallback((action: Action) => {
-    if (action.command) {
-      processCommand(action.command);
-    } else if (action.link) {
-      window.open(action.link, '_blank');
+    console.log('[HomePageCanvas] Action clicked:', action);
+
+    switch (action.action_type) {
+      case 'signup':
+        // Handle signup action - open Pioneer Application Modal
+        console.log('[HomePageCanvas] Signup action triggered for tier:', action.label);
+        setSelectedTierForModal(action.label);
+        setIsModalOpen(true);
+
+        if (speakAndListenRef.current) {
+          speakAndListenRef.current("Perfect! I'm opening the Pioneer Program application form for you. Please fill in your details to begin your application for the " + action.label + " tier.");
+        }
+        break;
+
+      case 'connect_wallet':
+        // Handle wallet connection action
+        if (speakAndListenRef.current) {
+          speakAndListenRef.current("Excellent! Please follow the prompts from your wallet provider to securely connect your wallet. This is essential for receiving TAIC Coin rewards.");
+        }
+        // TODO: Implement initiateWalletConnection()
+        console.log('[HomePageCanvas] Wallet connection action triggered - Web3Modal implementation needed');
+        break;
+
+      case 'link':
+        // Handle external link
+        if (action.link) {
+          window.open(action.link, '_blank');
+        }
+        break;
+
+      case 'command':
+      default:
+        // Handle command action (default behavior)
+        const command = action.command || action.value || action.label;
+        if (command) {
+          processCommand(command);
+        }
+        break;
     }
   }, [processCommand]);
 
@@ -495,7 +667,7 @@ const HomePageSitePalCanvas: React.FC<HomePageSitePalCanvasProps> = ({ isOpen, o
     // Create and load SitePal script with enhanced error handling
     const script = document.createElement('script');
     script.id = 'sitepal-script-homepage';
-    script.src = '//vhss-d.oddcast.com/ai_embed_functions_v1.php';
+    script.src = 'https://vhss-d.oddcast.com/ai_embed_functions_v1.php';
     script.async = true;
 
     // Network timeout handler
@@ -527,7 +699,9 @@ const HomePageSitePalCanvas: React.FC<HomePageSitePalCanvasProps> = ({ isOpen, o
             const url = args[0]?.toString() || '';
 
             // Monitor SitePal-specific network requests
-            if (url.includes('oddcast.com') && !response.ok) {
+            // Note: With no-cors mode, response.ok is always false and status is always 0
+            // Only log actual errors, not no-cors responses
+            if (url.includes('oddcast.com') && response.type !== 'opaque' && !response.ok && response.status !== 0) {
               console.error(`[HomePageCanvas] SitePal network error: ${response.status} for ${url}`);
               if (response.status >= 500) {
                 setErrorMessage('SitePal service temporarily unavailable. Please try again in a moment.');
@@ -689,45 +863,63 @@ const HomePageSitePalCanvas: React.FC<HomePageSitePalCanvasProps> = ({ isOpen, o
   // --- Initial Greeting Effect ---
   useEffect(() => {
     const fetchAndSpeakGreeting = async () => {
+      console.log('[HomePageCanvas] fetchAndSpeakGreeting called. isAvatarReady:', isAvatarReady, 'isGreetingSpoken:', isGreetingSpoken);
+
       if (isAvatarReady && !isGreetingSpoken) {
         console.log('[HomePageCanvas] Avatar is ready. Delivering Pioneer Program greeting.');
         setLoadingMessage('Preparing assistant...');
         setIsProcessing(true);
 
         // 1. Ensure VAD is initialized before we proceed.
-        await initVAD();
-        console.log('[Greeting] VAD initialized.');
-
+        console.log('[HomePageCanvas] About to initialize VAD...');
         try {
-          // Pioneer Program focused greeting
-          const greetingText = "Welcome to TAIC! I'm here to help you discover our exclusive Pioneer Program. This is your opportunity to join a select group of early adopters who will shape the future of AI-powered commerce. Would you like to learn about the incredible benefits and how to apply?";
-
-          setAiResponseText(greetingText);
-          setActions([
-            { label: "Tell me about Pioneer Program benefits", command: "What are the benefits of the Pioneer Program?" },
-            { label: "How do I apply?", command: "How can I apply for the Pioneer Program?" },
-            { label: "What makes it exclusive?", command: "What makes the Pioneer Program exclusive?" },
-            { label: "Show me success stories", command: "Can you share Pioneer Program success stories?" }
-          ]);
-
-          // Use speakAndListen function for proper VAD integration
-          speakAndListen(greetingText);
-          console.log('[HomePageCanvas] Avatar speaking Pioneer Program greeting with VAD integration');
-
-          setIsGreetingSpoken(true);
-          setLoadingMessage(null);
-
+          await initVAD();
+          console.log('[HomePageCanvas] VAD initialized successfully.');
         } catch (error) {
-          console.error('[HomePageCanvas] Error in greeting:', error);
-          setErrorMessage('Welcome! I\'m ready to help you learn about our Pioneer Program.');
-        } finally {
-          setIsProcessing(false);
+          console.error('[HomePageCanvas] VAD initialization failed:', error);
+          // Continue anyway
         }
+
+        // Pioneer Program focused greeting
+        const greetingText = "Welcome to TAIC! I'm here to help you discover our exclusive Pioneer Program. This is your opportunity to join a select group of early adopters who will shape the future of AI-powered commerce. Would you like to learn about the incredible benefits and how to apply?";
+
+        setAiResponseText(greetingText);
+        const pioneerActions: Action[] = [
+          { label: "Founding Merchants", value: "Tell me about the Founding Merchants tier", icon: "store", action_type: "signup" },
+          { label: "Strategic Influencers", value: "Tell me about the Strategic Influencers tier", icon: "megaphone", action_type: "signup" },
+          { label: "Community Champions", value: "Tell me about the Early Community Champions tier", icon: "users", action_type: "signup" },
+          { label: "General Interest", value: "Tell me about the General Interest Whitelist", icon: "list", action_type: "signup" },
+          { label: "Program Benefits", value: "What are the benefits of the Pioneer Program?", icon: "star", action_type: "command" },
+          { label: "How to Apply", value: "How can I apply for the Pioneer Program?", icon: "user-plus", action_type: "command" }
+        ];
+
+        console.log('[HomePageCanvas] Setting Pioneer Program actions:', pioneerActions);
+        setActions(pioneerActions);
+        console.log('[HomePageCanvas] Actions set successfully');
+
+        // CRITICAL FIX: Set greeting as spoken BEFORE calling speech function (like working implementation)
+        setIsGreetingSpoken(true);
+
+        // Use speakAndListenRef for proper VAD integration (like working implementation)
+        if (speakAndListenRef.current) {
+          console.log('[HomePageCanvas] Attempting to speak greeting...');
+          console.log('[HomePageCanvas] window.sayText available:', typeof window.sayText === 'function');
+          console.log('[HomePageCanvas] speakAndListenRef available:', !!speakAndListenRef.current);
+          speakAndListenRef.current(greetingText);
+          console.log('[HomePageCanvas] Avatar speaking Pioneer Program greeting with VAD integration');
+        } else {
+          console.error('[HomePageCanvas] speakAndListenRef.current is not available');
+        }
+
+        setLoadingMessage(null);
+        setIsProcessing(false);
+      } else {
+        console.log('[HomePageCanvas] Skipping greeting delivery. isAvatarReady:', isAvatarReady, 'isGreetingSpoken:', isGreetingSpoken);
       }
     };
 
     fetchAndSpeakGreeting();
-  }, [isAvatarReady, isGreetingSpoken, initVAD, speakAndListen]);
+  }, [isAvatarReady, isGreetingSpoken, initVAD]);
 
   // --- Cleanup Effect ---
   useEffect(() => {
@@ -767,8 +959,10 @@ const HomePageSitePalCanvas: React.FC<HomePageSitePalCanvasProps> = ({ isOpen, o
   // Don't render anything if modal is not open
   if (!isOpen) return null;
 
+
+
   return (
-    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4" data-testid="sitepal-modal">
       <div className="bg-white dark:bg-gray-900 rounded-lg shadow-xl w-full max-w-6xl h-[90vh] flex flex-col">
         {/* Header */}
         <div className="flex items-center justify-between p-4 border-b bg-muted/50">
@@ -878,7 +1072,7 @@ const HomePageSitePalCanvas: React.FC<HomePageSitePalCanvasProps> = ({ isOpen, o
                   type="text"
                   value={userInput}
                   onChange={(e) => setUserInput(e.target.value)}
-                  onKeyPress={(e) => e.key === 'Enter' && userInput.trim() && processCommand(userInput.trim())}
+                  onKeyDown={(e) => e.key === 'Enter' && userInput.trim() && processCommand(userInput.trim())}
                   placeholder="Type your message..."
                   className="flex-grow p-2 border border-border rounded-md bg-background text-foreground focus:ring-2 focus:ring-primary"
                   disabled={isProcessing || !isAvatarReady}
@@ -912,23 +1106,42 @@ const HomePageSitePalCanvas: React.FC<HomePageSitePalCanvasProps> = ({ isOpen, o
               <div className="flex-grow-0">
                 <h3 className="text-lg font-semibold mb-2 text-foreground">Pioneer Program Actions</h3>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                  {actions.map((action, index) => (
-                    <Button
-                      key={index}
-                      onClick={() => handleActionClick(action)}
-                      disabled={isProcessing}
-                      variant="outline"
-                      className="w-full text-left justify-start"
-                    >
-                      {action.label}
-                    </Button>
-                  ))}
+                  {actions.map((action, index) => {
+                    const IconComponent = getActionIcon(action.icon || 'help-circle');
+                    return (
+                      <Button
+                        key={index}
+                        onClick={() => handleActionClick(action)}
+                        disabled={isProcessing}
+                        variant="outline"
+                        className="w-full text-left justify-start gap-2 h-auto py-3"
+                        data-testid="action-card"
+                      >
+                        <IconComponent size={18} className="flex-shrink-0" />
+                        <span className="text-sm">{action.label}</span>
+                      </Button>
+                    );
+                  })}
                 </div>
               </div>
             </div>
           </div>
         </div>
       </div>
+
+      {/* Pioneer Application Modal */}
+      <PioneerApplicationModal
+        isOpen={isModalOpen}
+        onClose={() => setIsModalOpen(false)}
+        selectedTier={selectedTierForModal}
+        onSuccess={(applicationId) => {
+          console.log('[HomePageCanvas] Application submitted successfully with ID:', applicationId);
+          setIsModalOpen(false);
+          if (speakAndListenRef.current) {
+            speakAndListenRef.current("Congratulations! Your Pioneer Program application has been submitted successfully. We'll review your application and get back to you soon. Thank you for your interest in joining the TAIC Pioneer Program!");
+          }
+        }}
+      />
     </div>
   );
 };

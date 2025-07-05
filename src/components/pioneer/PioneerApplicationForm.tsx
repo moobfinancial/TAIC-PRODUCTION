@@ -211,13 +211,15 @@ const FORM_STEPS = [
 interface PioneerApplicationFormProps {
   onSuccess?: () => void;
   onCancel?: () => void;
+  onError?: (error: string) => void;
   className?: string;
+  initialTier?: string;
 }
 
-export function PioneerApplicationForm({ onSuccess, onCancel, className }: PioneerApplicationFormProps) {
+export function PioneerApplicationForm({ onSuccess, onCancel, onError, className, initialTier }: PioneerApplicationFormProps) {
   const [currentStep, setCurrentStep] = useState(0);
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [selectedTier, setSelectedTier] = useState<string>('');
+  const [selectedTier, setSelectedTier] = useState<string>(initialTier || '');
   
   const { user, isAuthenticated } = useAuth();
   const { toast } = useToast();
@@ -230,7 +232,7 @@ export function PioneerApplicationForm({ onSuccess, onCancel, className }: Pione
       telegram_handle: '',
       discord_id: '',
       country_of_residence: '',
-      applying_for_tier: '',
+      applying_for_tier: initialTier || '',
       interest_reason: '',
       contribution_proposal: '',
       relevant_experience: '',
@@ -342,11 +344,16 @@ export function PioneerApplicationForm({ onSuccess, onCancel, className }: Pione
 
     } catch (error: any) {
       console.error('Application submission error:', error);
+      const errorMessage = error.message || "There was an error submitting your application. Please try again.";
+
       toast({
         title: "Submission Failed",
-        description: error.message || "There was an error submitting your application. Please try again.",
+        description: errorMessage,
         variant: "destructive"
       });
+
+      // Call error callback if provided
+      onError?.(errorMessage);
     } finally {
       setIsSubmitting(false);
     }

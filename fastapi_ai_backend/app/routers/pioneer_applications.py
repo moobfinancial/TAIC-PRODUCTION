@@ -66,37 +66,29 @@ async def submit_pioneer_application(
         query = """
             INSERT INTO pioneer_applications (
                 user_id, full_name, email, telegram_handle, discord_id, country_of_residence,
-                applying_for_tier, primary_social_profile_link, follower_subscriber_count,
-                secondary_social_profile_links, audience_demographics_description,
-                engagement_statistics_overview, interest_reason, contribution_proposal,
-                previous_programs_experience, taic_compatible_wallet_address,
-                agreed_to_terms, agreed_to_token_vesting
+                applying_for_tier, application_text, reason_for_interest, relevant_experience,
+                social_media_links
             ) VALUES (
-                $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18
+                $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11
             )
             RETURNING id, user_id, full_name, email, telegram_handle, discord_id, country_of_residence,
-                      applying_for_tier, primary_social_profile_link, follower_subscriber_count,
-                      secondary_social_profile_links, audience_demographics_description,
-                      engagement_statistics_overview, interest_reason, contribution_proposal,
-                      previous_programs_experience, taic_compatible_wallet_address,
-                      agreed_to_terms, agreed_to_token_vesting,
-                      application_status, submitted_at -- Fetch DB defaults
+                      applying_for_tier, application_text, reason_for_interest, relevant_experience,
+                      social_media_links, application_status, submitted_at
         """
 
-        # Convert HttpUrl to string for DB if necessary, though asyncpg might handle it.
-        # Pydantic v2+ HttpUrl fields are Url type, str(url_obj) gives the string.
-        primary_social_link_str = str(application_data.primary_social_profile_link) if application_data.primary_social_profile_link else None
+        # Convert social_media_links to JSON if provided
+        social_media_json = None
+        if hasattr(application_data, 'social_media_links') and application_data.social_media_links:
+            import json
+            social_media_json = json.dumps(application_data.social_media_links)
 
         created_row = await conn.fetchrow(
             query,
             current_user_id, application_data.full_name, application_data.email,
             application_data.telegram_handle, application_data.discord_id, application_data.country_of_residence,
-            application_data.applying_for_tier, primary_social_link_str,
-            application_data.follower_subscriber_count, application_data.secondary_social_profile_links,
-            application_data.audience_demographics_description, application_data.engagement_statistics_overview,
-            application_data.interest_reason, application_data.contribution_proposal,
-            application_data.previous_programs_experience, application_data.taic_compatible_wallet_address,
-            application_data.agreed_to_terms, application_data.agreed_to_token_vesting
+            application_data.applying_for_tier, application_data.application_text,
+            application_data.reason_for_interest, application_data.relevant_experience,
+            social_media_json
         )
 
         if not created_row:
@@ -108,7 +100,18 @@ async def submit_pioneer_application(
 
         logger.info(f"Pioneer application submitted successfully for email: {created_row['email']}, ID: {created_row['id']}")
 
-        return PioneerApplicationResponse(**dict(created_row))
+        # Convert the row to dict and handle JSON parsing
+        response_data = dict(created_row)
+
+        # Parse social_media_links JSON string back to dict if it exists
+        if response_data.get('social_media_links'):
+            import json
+            try:
+                response_data['social_media_links'] = json.loads(response_data['social_media_links'])
+            except (json.JSONDecodeError, TypeError):
+                response_data['social_media_links'] = None
+
+        return PioneerApplicationResponse(**response_data)
 
     except HTTPException:
         raise # Re-raise HTTPExceptions directly

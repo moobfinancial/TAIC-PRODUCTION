@@ -119,4 +119,91 @@ The TAIC Coin Pioneer Program is designed to engage and reward key individuals a
 
 ---
 
+## Enhanced Pioneer Program Avatar Interaction Flow
+
+### Core Principles for Avatar-Guided Discovery
+
+The TAIC platform features an AI-powered SitePal avatar that guides users through the Pioneer Program with natural conversation and interactive action cards. This system is designed to maximize conversion rates and provide a seamless user experience.
+
+**Key Features:**
+- **Natural Conversation:** Avatar speaks clean, conversational text without JSON artifacts
+- **Guided Discovery:** Interactive action cards lead users through information logically
+- **Visual Cues:** Professional icons and UI elements for clear state indication
+- **Seamless Conversion:** Direct pathways to application and wallet connection
+- **Resilience:** Robust error handling and voice activity detection
+
+### Avatar Interaction Phases
+
+#### Phase 0: Avatar Initialization & Engaging Welcome
+**Objective:** Greet users and set context for Pioneer Program exploration
+
+**Initial Greeting:**
+"Welcome to TAIC! I'm here to help you discover our exclusive Pioneer Program. This is your opportunity to join a select group of early adopters who will shape the future of AI-powered commerce. Would you like to learn about the incredible benefits and how to apply?"
+
+**Initial Action Cards:**
+- **Founding Merchants** (Store icon) - "Tell me about the Founding Merchants tier"
+- **Strategic Influencers** (Megaphone icon) - "Tell me about the Strategic Influencers tier"
+- **Community Champions** (Users icon) - "Tell me about the Early Community Champions tier"
+- **General Interest** (List icon) - "Tell me about the General Interest Whitelist"
+- **Program Benefits** (Star icon) - "What are the benefits of the Pioneer Program?"
+- **How to Apply** (User-plus icon) - "How can I apply for the Pioneer Program?"
+
+#### Phase 1: Tier Exploration & Guided Discovery
+**Objective:** Present tier details as clear choices with natural conversation flow
+
+**Example Response Flow (Founding Merchants):**
+```json
+{
+  "responseText": "For Founding Merchants, key benefits include a significant upfront TAIC Coin allocation, reduced transaction fees, priority support, early access to new merchant features, and featured marketing placement.",
+  "actions": [
+    {"label": "Tell me about the TAIC Coin Allocation", "value": "Explain Founding Merchants TAIC Coin Allocation", "icon": "coins", "action_type": "command"},
+    {"label": "Reduced Fees", "value": "Tell me more about reduced transaction fees", "icon": "percent", "action_type": "command"},
+    {"label": "How to Apply for Merchants", "value": "How do I apply for the Founding Merchants tier?", "icon": "user-check", "action_type": "command"},
+    {"label": "Other Tiers", "value": "Show me other Pioneer Program tiers", "icon": "list", "action_type": "command"}
+  ]
+}
+```
+
+#### Phase 2: Deep Dive & FAQ within Tiers
+**Objective:** Provide detailed information before conversion
+
+Users can explore specific aspects of each tier through granular action cards that maintain engagement while building confidence in the program value.
+
+#### Phase 3: Conversion Pathways (Sign-up / Connect Wallet)
+**Objective:** Seamlessly transition users to application or wallet connection
+
+**Example Conversion Response:**
+```json
+{
+  "responseText": "Excellent! To apply for the Pioneer Program and unlock your exclusive benefits, you'll need to sign up for an account and connect your crypto wallet to our platform. Which step would you like to start with?",
+  "actions": [
+    {"label": "Sign Up Now", "value": "Open signup form", "icon": "user-plus", "action_type": "signup"},
+    {"label": "Connect Wallet", "value": "Initiate wallet connection", "icon": "wallet", "action_type": "connect_wallet"},
+    {"label": "More about the application process", "value": "Tell me more about the application process", "icon": "question", "action_type": "command"}
+  ]
+}
+```
+
+### Technical Implementation Notes
+
+**Action Types:**
+- `command`: Triggers AI conversation (default)
+- `signup`: Opens signup modal/form
+- `connect_wallet`: Initiates Web3Modal wallet connection
+- `link`: Opens external URL
+
+**Speech Optimization:**
+- Responses avoid numbered lists for natural speech synthesis
+- Use conversational transitions like "First, there's..." and "Additionally..."
+- JSON artifacts are automatically cleaned from speech text
+- Avatar speaks only the `responseText` field, never raw JSON
+
+**UI Enhancement:**
+- Action cards display with appropriate Lucide React icons
+- Professional presentation-style central positioning
+- Loading states and error handling for robust user experience
+- Microphone permissions and voice activity detection integration
+
+---
+
 This document will be reviewed and updated periodically as the TAIC Pioneer Program evolves.

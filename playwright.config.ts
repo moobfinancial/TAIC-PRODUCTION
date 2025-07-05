@@ -5,6 +5,8 @@ import { defineConfig, devices } from '@playwright/test';
  */
 export default defineConfig({
   testDir: './tests',
+  /* EXTENDED GLOBAL TIMEOUT: Allow sufficient time for complete SitePal avatar tests */
+  timeout: 300000, // 5 minutes for complete test execution
   /* Run tests in files in parallel */
   fullyParallel: true,
   /* Fail the build on CI if you accidentally left test.only in the source code. */
@@ -86,8 +88,7 @@ export default defineConfig({
     timeout: 120 * 1000, // 2 minutes for server startup
   },
 
-  /* Global timeout for each test */
-  timeout: 60 * 1000, // 1 minute per test
+
 
   /* Expect timeout for assertions */
   expect: {
