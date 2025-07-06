@@ -14,6 +14,19 @@ interface MerchantAuthPayload {
   merchantId: string;
 }
 
+// Valid status transitions for order fulfillment
+function isValidStatusTransition(currentStatus: string, newStatus: string): boolean {
+  const validTransitions: Record<string, string[]> = {
+    'pending': ['processing', 'cancelled'],
+    'processing': ['shipped', 'cancelled'],
+    'shipped': ['delivered', 'cancelled'],
+    'delivered': [], // Final state
+    'cancelled': [] // Final state
+  };
+
+  return validTransitions[currentStatus]?.includes(newStatus) || false;
+}
+
 // Placeholder for verifyMerchantAuth - in a real app, this would be a robust shared utility
 async function verifyMerchantAuth(request: NextRequest): Promise<{ valid: boolean; merchantId?: string; error?: string; status?: number }> {
   const authHeader = request.headers.get('Authorization');
@@ -45,8 +58,9 @@ const UpdateOrderSchema = z.object({
   status: z.enum(['pending', 'processing', 'shipped', 'delivered', 'cancelled']).optional(),
   shippingCarrier: z.string().max(100).optional().nullable(),
   trackingNumber: z.string().max(255).optional().nullable(),
+  fulfillmentNotes: z.string().max(500).optional().nullable(),
 }).refine(data => Object.keys(data).length > 0, {
-    message: "At least one field to update (status, shippingCarrier, or trackingNumber) is required."
+    message: "At least one field to update (status, shippingCarrier, trackingNumber, or fulfillmentNotes) is required."
 });
 
 
@@ -75,24 +89,127 @@ export async function PUT(request: NextRequest, context: { params: Promise<{ ord
     return NextResponse.json({ error: 'Invalid JSON payload' }, { status: 400 });
   }
 
-  const { status, shippingCarrier, trackingNumber } = validatedData;
+  const { status, shippingCarrier, trackingNumber, fulfillmentNotes } = validatedData;
 
   let client: PoolClient | undefined;
   try {
     client = await pool.connect();
     await client.query('BEGIN');
 
-    // Verify Merchant Ownership of at least one item in this order
+    // Verify Merchant Ownership and get order details
     const ownershipCheckQuery = `
-      SELECT 1 FROM order_items oi
+      SELECT
+        o.status as current_status,
+        oi.product_id,
+        oi.quantity,
+        mp.stock_quantity,
+        mp.merchant_commission_rate,
+        oi.price_at_purchase,
+        mp.status as product_status
+      FROM order_items oi
       JOIN merchant_products mp ON oi.product_id = mp.id::TEXT
-      WHERE oi.order_id = $1 AND mp.merchant_id = $2
-      LIMIT 1;
+      JOIN orders o ON oi.order_id = o.id
+      WHERE oi.order_id = $1 AND mp.merchant_id = $2;
     `;
     const ownershipResult = await client.query(ownershipCheckQuery, [platformOrderId, merchantId]);
     if (ownershipResult.rowCount === 0) {
       await client.query('ROLLBACK');
       return NextResponse.json({ error: "Order not found for this merchant or you don't have items in this order." }, { status: 403 });
+    }
+
+    const orderItems = ownershipResult.rows;
+    const currentStatus = orderItems[0].current_status;
+
+    // Validate status transition
+    if (status && !isValidStatusTransition(currentStatus, status)) {
+      await client.query('ROLLBACK');
+      return NextResponse.json({
+        error: `Invalid status transition from '${currentStatus}' to '${status}'`
+      }, { status: 400 });
+    }
+
+    // Check inventory availability if status is being set to 'processing'
+    if (status === 'processing') {
+      for (const item of orderItems) {
+        const stockQuantity = item.stock_quantity || 0;
+        const orderedQuantity = parseInt(item.quantity);
+        if (stockQuantity < orderedQuantity) {
+          await client.query('ROLLBACK');
+          return NextResponse.json({
+            error: `Insufficient stock for product ${item.product_id}. Available: ${stockQuantity}, Required: ${orderedQuantity}`
+          }, { status: 400 });
+        }
+        if (item.product_status !== 'approved') {
+          await client.query('ROLLBACK');
+          return NextResponse.json({
+            error: `Product ${item.product_id} is not approved for sale`
+          }, { status: 400 });
+        }
+      }
+    }
+
+    // Update inventory if status is changing to 'processing' (reserve stock)
+    if (status === 'processing' && currentStatus !== 'processing') {
+      for (const item of orderItems) {
+        await client.query(`
+          UPDATE merchant_products
+          SET stock_quantity = stock_quantity - $1,
+              updated_at = NOW()
+          WHERE id = $2::INTEGER AND merchant_id = $3
+        `, [item.quantity, item.product_id, merchantId]);
+      }
+    }
+
+    // Restore inventory if status is changing to 'cancelled' from 'processing'
+    if (status === 'cancelled' && currentStatus === 'processing') {
+      for (const item of orderItems) {
+        await client.query(`
+          UPDATE merchant_products
+          SET stock_quantity = stock_quantity + $1,
+              updated_at = NOW()
+          WHERE id = $2::INTEGER AND merchant_id = $3
+        `, [item.quantity, item.product_id, merchantId]);
+      }
+    }
+
+    // Create merchant transaction records for commission tracking
+    if (status === 'delivered' && currentStatus !== 'delivered') {
+      // Calculate total commission and sales for this merchant's items in the order
+      let totalSales = 0;
+      let totalCommission = 0;
+
+      for (const item of orderItems) {
+        const itemTotal = parseFloat(item.price_at_purchase) * parseInt(item.quantity);
+        const commissionRate = parseFloat(item.merchant_commission_rate) || 5.0;
+        const itemCommission = itemTotal * (commissionRate / 100);
+
+        totalSales += itemTotal;
+        totalCommission += itemCommission;
+      }
+
+      // Record sale transaction
+      await client.query(`
+        INSERT INTO merchant_transactions (
+          merchant_id, order_id, transaction_type, amount, currency, status, description, created_at
+        ) VALUES ($1, $2, 'SALE', $3, 'TAIC', 'COMPLETED', $4, NOW())
+      `, [
+        merchantId,
+        platformOrderId,
+        totalSales,
+        `Sale from order #${platformOrderId} - ${orderItems.length} items`
+      ]);
+
+      // Record commission transaction
+      await client.query(`
+        INSERT INTO merchant_transactions (
+          merchant_id, order_id, transaction_type, amount, currency, status, description, created_at
+        ) VALUES ($1, $2, 'COMMISSION', $3, 'TAIC', 'COMPLETED', $4, NOW())
+      `, [
+        merchantId,
+        platformOrderId,
+        -totalCommission,
+        `Platform commission for order #${platformOrderId} (${(totalCommission / totalSales * 100).toFixed(1)}%)`
+      ]);
     }
 
     // Construct dynamic UPDATE query
@@ -106,11 +223,15 @@ export async function PUT(request: NextRequest, context: { params: Promise<{ ord
     }
     if (shippingCarrier !== undefined) {
       updateFields.push(`shipping_carrier = $${paramIndex++}`);
-      updateValues.push(shippingCarrier); // Can be null to clear it
+      updateValues.push(shippingCarrier);
     }
     if (trackingNumber !== undefined) {
       updateFields.push(`tracking_number = $${paramIndex++}`);
-      updateValues.push(trackingNumber); // Can be null to clear it
+      updateValues.push(trackingNumber);
+    }
+    if (fulfillmentNotes !== undefined) {
+      updateFields.push(`fulfillment_notes = $${paramIndex++}`);
+      updateValues.push(fulfillmentNotes);
     }
 
     // This check is already covered by Zod .refine, but kept for safety
@@ -132,8 +253,45 @@ export async function PUT(request: NextRequest, context: { params: Promise<{ ord
       return NextResponse.json({ error: 'Order not found or no update occurred.' }, { status: 404 });
     }
 
+    // Log the order update in audit trail
+    const auditDetails = {
+      order_id: platformOrderId,
+      merchant_id: merchantId,
+      old_status: currentStatus,
+      new_status: status || currentStatus,
+      shipping_carrier: shippingCarrier,
+      tracking_number: trackingNumber,
+      fulfillment_notes: fulfillmentNotes,
+      inventory_updated: status === 'processing' || (status === 'cancelled' && currentStatus === 'processing'),
+      commissions_recorded: status === 'delivered' && currentStatus !== 'delivered'
+    };
+
+    await client.query(`
+      INSERT INTO merchant_transactions (
+        merchant_id, order_id, transaction_type, amount, currency, status, description, metadata, created_at
+      ) VALUES ($1, $2, 'ORDER_UPDATE', 0, 'TAIC', 'COMPLETED', $3, $4, NOW())
+    `, [
+      merchantId,
+      platformOrderId,
+      `Order #${platformOrderId} updated: ${currentStatus} → ${status || currentStatus}`,
+      JSON.stringify(auditDetails)
+    ]);
+
     await client.query('COMMIT');
-    return NextResponse.json({ message: "Order updated successfully", updatedOrder: result.rows[0] });
+
+    // Prepare detailed response
+    const updatedOrder = result.rows[0];
+    const response = {
+      message: "Order updated successfully",
+      updatedOrder: updatedOrder,
+      statusTransition: status ? { from: currentStatus, to: status } : null,
+      inventoryUpdated: status === 'processing' || (status === 'cancelled' && currentStatus === 'processing'),
+      commissionsRecorded: status === 'delivered' && currentStatus !== 'delivered',
+      fulfillmentNotes: fulfillmentNotes || null,
+      auditTrail: auditDetails
+    };
+
+    return NextResponse.json(response);
 
   } catch (error: any) {
     if (client) await client.query('ROLLBACK').catch(rbErr => console.error("Rollback error on update:", rbErr));

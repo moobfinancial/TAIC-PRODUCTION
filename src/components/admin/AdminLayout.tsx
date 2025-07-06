@@ -3,7 +3,7 @@
 import React from 'react';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
-import { Home, ListChecks, Settings, PackagePlus, PackageSearch, LayoutDashboard, Boxes, Users, Shield, LogOut } from 'lucide-react';
+import { Home, ListChecks, Settings, PackagePlus, PackageSearch, LayoutDashboard, Boxes, Users, Shield, LogOut, DollarSign, Wallet, Clock } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useAdminAuth } from '@/contexts/AdminAuthContext';
 import { Button } from '@/components/ui/button';
@@ -15,6 +15,10 @@ const adminNavItems = [
   { href: '/admin/categories', label: 'Manage Categories', icon: Boxes },
   { href: '/admin/cj-browse', label: 'Browse CJ Products', icon: PackageSearch },
   { href: '/admin/cj-manage', label: 'Manage Imported CJ Products', icon: ListChecks },
+  // Financial Oversight Section
+  { href: '/admin/merchants/financials', label: 'Merchant Financials', icon: DollarSign },
+  { href: '/admin/treasury/overview', label: 'Treasury Overview', icon: Wallet },
+  { href: '/admin/payouts/pending', label: 'Pending Payouts', icon: Clock },
   // Add more admin links here as needed
   // { href: '/admin/settings', label: 'Settings', icon: Settings },
 ];

@@ -46,6 +46,12 @@ async function verifyMerchantAuth(request: NextRequest): Promise<{ valid: boolea
 
 interface MerchantOrder extends Order {
   userEmail?: string | null; // Customer's email
+  merchantCommissionAmount?: number; // Commission earned by merchant
+  merchantNetAmount?: number; // Net amount after commission
+  orderItemsCount?: number; // Number of items from this merchant in the order
+  canFulfill?: boolean; // Whether merchant can fulfill this order
+  fulfillmentStatus?: 'pending' | 'processing' | 'shipped' | 'delivered' | 'cancelled';
+  lastStatusUpdate?: string; // Last time status was updated
   // Other fields are inherited from Order type
 }
 
@@ -61,15 +67,21 @@ export async function GET(request: NextRequest) {
     client = await pool.connect();
 
     // Step 1: Fetch distinct order IDs that contain products from this merchant
-    // Assuming merchant_products.id is what's stored in order_items.product_id for merchant items
-    // And merchant_products.merchant_id links to the merchant
+    // Include commission calculations and order summary data
     const distinctOrderIdsResult = await client.query(`
-      SELECT DISTINCT o.id
+      SELECT DISTINCT
+        o.id,
+        o.status,
+        o.created_at,
+        COUNT(oi.id) as merchant_items_count,
+        SUM(oi.quantity * oi.price_at_purchase) as merchant_order_total,
+        SUM(oi.quantity * oi.price_at_purchase * COALESCE(mp.merchant_commission_rate, 5.0) / 100) as merchant_commission
       FROM orders o
       JOIN order_items oi ON o.id = oi.order_id
-      JOIN merchant_products mp ON oi.product_id = mp.id::TEXT -- Assuming mp.id is INT and oi.product_id is TEXT
+      JOIN merchant_products mp ON oi.product_id = mp.id::TEXT
       WHERE mp.merchant_id = $1
-      ORDER BY o.id DESC;
+      GROUP BY o.id, o.status, o.created_at
+      ORDER BY o.created_at DESC;
     `, [merchantId]);
 
     if (distinctOrderIdsResult.rowCount === 0) {
@@ -80,6 +92,9 @@ export async function GET(request: NextRequest) {
 
     for (const row of distinctOrderIdsResult.rows) {
       const orderId = row.id;
+      const merchantItemsCount = parseInt(row.merchant_items_count);
+      const merchantOrderTotal = parseFloat(row.merchant_order_total);
+      const merchantCommission = parseFloat(row.merchant_commission);
 
       // Step 2a: Fetch main order details
       const orderResult = await client.query(`
@@ -91,6 +106,7 @@ export async function GET(request: NextRequest) {
           o.shipping_carrier AS "shippingCarrier",
           o.tracking_number AS "trackingNumber",
           o.created_at AS "date",
+          o.updated_at AS "lastStatusUpdate",
           u.email AS "userEmail",
           o.shipping_recipient_name AS "shippingRecipientName",
           o.shipping_address_line1 AS "shippingAddressLine1",
@@ -116,16 +132,35 @@ export async function GET(request: NextRequest) {
           oi.quantity,
           oi.price_at_purchase AS "price",
           oi.image_url_at_purchase AS "imageUrl",
-          mp.cashback_percentage -- Fetch from merchant_products table
+          mp.cashback_percentage,
+          mp.merchant_commission_rate,
+          mp.stock_quantity,
+          mp.status as product_status
         FROM order_items oi
         JOIN merchant_products mp ON oi.product_id = mp.id::TEXT
         WHERE oi.order_id = $1 AND mp.merchant_id = $2;
       `, [orderId, merchantId]);
 
+      // Determine if merchant can fulfill this order
+      const canFulfill = itemsResult.rows.every((item: any) => {
+        const stockQuantity = item.stock_quantity || 0;
+        const orderedQuantity = parseInt(String(item.quantity), 10);
+        return stockQuantity >= orderedQuantity && item.product_status === 'approved';
+      });
+
+      // Calculate net amount after commission
+      const merchantNetAmount = merchantOrderTotal - merchantCommission;
+
       merchantOrders.push({
         ...orderData,
         id: parseInt(orderData.id, 10),
         totalAmount: parseFloat(orderData.amount),
+        merchantCommissionAmount: merchantCommission,
+        merchantNetAmount: merchantNetAmount,
+        orderItemsCount: merchantItemsCount,
+        canFulfill: canFulfill,
+        fulfillmentStatus: orderData.status as any,
+        lastStatusUpdate: orderData.lastStatusUpdate ? new Date(orderData.lastStatusUpdate).toISOString() : null,
         items: itemsResult.rows.map(item => ({
           ...item,
           price: parseFloat(String(item.price)),
