@@ -142,7 +142,7 @@ export async function GET(request: NextRequest) {
       `, [orderId, merchantId]);
 
       // Determine if merchant can fulfill this order
-      const canFulfill = itemsResult.rows.every(item => {
+      const canFulfill = itemsResult.rows.every((item: any) => {
         const stockQuantity = item.stock_quantity || 0;
         const orderedQuantity = parseInt(String(item.quantity), 10);
         return stockQuantity >= orderedQuantity && item.product_status === 'approved';

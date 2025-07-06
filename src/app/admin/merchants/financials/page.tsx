@@ -60,7 +60,7 @@ interface MerchantFinancialsResponse {
 }
 
 export default function AdminMerchantFinancialsPage() {
-  const { isAuthenticated, loading, apiKey } = useAdminAuth();
+  const { isAuthenticated, loading, adminApiKey } = useAdminAuth();
   const router = useRouter();
   const { toast } = useToast();
   
@@ -81,10 +81,10 @@ export default function AdminMerchantFinancialsPage() {
 
   // Load merchant financials data
   useEffect(() => {
-    if (isAuthenticated && apiKey) {
+    if (isAuthenticated && adminApiKey) {
       loadFinancialsData();
     }
-  }, [isAuthenticated, apiKey, currentPage, searchTerm, statusFilter, sortBy, sortOrder]);
+  }, [isAuthenticated, adminApiKey, currentPage, searchTerm, statusFilter, sortBy, sortOrder]);
 
   const loadFinancialsData = async () => {
     setIsLoadingData(true);
@@ -100,7 +100,7 @@ export default function AdminMerchantFinancialsPage() {
 
       const response = await fetch(`/api/admin/merchants/financials?${params}`, {
         headers: {
-          'X-Admin-API-Key': apiKey!
+          'X-Admin-API-Key': adminApiKey!
         }
       });
 

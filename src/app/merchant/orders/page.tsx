@@ -44,7 +44,6 @@ interface MerchantOrder extends Order {
 
 export default function MerchantOrdersPage() {
   const { token, merchant, loading: merchantAuthLoading } = useMerchantAuth();
-  const { toast } = useToast(); // Assuming user object has merchantId
   const { toast } = useToast();
 
   const [orders, setOrders] = useState<MerchantOrder[]>([]);
@@ -440,7 +439,7 @@ export default function MerchantOrdersPage() {
                           {order.status === 'shipped' && <Truck className="h-3 w-3 mr-1" />}
                           {order.status === 'delivered' && <CheckCircle className="h-3 w-3 mr-1" />}
                           {order.status === 'cancelled' && <XCircle className="h-3 w-3 mr-1" />}
-                          {order.status?.charAt(0).toUpperCase() + order.status?.slice(1) || 'N/A'}
+                          {order.status ? order.status.charAt(0).toUpperCase() + order.status.slice(1) : 'N/A'}
                         </Badge>
                         {order.canFulfill === false && (
                           <Badge variant="destructive" className="text-xs">
@@ -562,7 +561,7 @@ export default function MerchantOrdersPage() {
                   id="fulfillmentNotes"
                   name="fulfillmentNotes"
                   value={formData.fulfillmentNotes}
-                  onChange={handleModalFormChange}
+                  onChange={(e) => setFormData(prev => ({ ...prev, fulfillmentNotes: e.target.value }))}
                   placeholder="Add notes about order fulfillment, special instructions, or issues..."
                   rows={3}
                 />

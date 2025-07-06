@@ -71,7 +71,7 @@ interface TreasuryOverviewResponse {
 }
 
 export default function AdminTreasuryOverviewPage() {
-  const { isAuthenticated, loading, apiKey } = useAdminAuth();
+  const { isAuthenticated, loading, adminApiKey } = useAdminAuth();
   const router = useRouter();
   const { toast } = useToast();
   
@@ -88,17 +88,17 @@ export default function AdminTreasuryOverviewPage() {
 
   // Load treasury data
   useEffect(() => {
-    if (isAuthenticated && apiKey) {
+    if (isAuthenticated && adminApiKey) {
       loadTreasuryData();
     }
-  }, [isAuthenticated, apiKey]);
+  }, [isAuthenticated, adminApiKey]);
 
   const loadTreasuryData = async () => {
     setIsLoadingData(true);
     try {
       const response = await fetch('/api/admin/treasury/overview', {
         headers: {
-          'X-Admin-API-Key': apiKey!
+          'X-Admin-API-Key': adminApiKey!
         }
       });
 

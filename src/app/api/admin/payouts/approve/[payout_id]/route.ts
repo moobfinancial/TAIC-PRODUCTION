@@ -19,8 +19,9 @@ interface PayoutApprovalResponse {
 
 export async function POST(
   request: NextRequest,
-  { params }: { params: { payout_id: string } }
+  context: { params: Promise<{ payout_id: string }> }
 ) {
+  const params = await context.params;
   const apiKey = request.headers.get('X-Admin-API-Key');
   const authResult = await validateAdminApiKey(apiKey);
   
@@ -237,8 +238,9 @@ export async function POST(
 // GET endpoint to retrieve payout details for review
 export async function GET(
   request: NextRequest,
-  { params }: { params: { payout_id: string } }
+  context: { params: Promise<{ payout_id: string }> }
 ) {
+  const params = await context.params;
   const apiKey = request.headers.get('X-Admin-API-Key');
   const authResult = await validateAdminApiKey(apiKey);
   

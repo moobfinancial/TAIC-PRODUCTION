@@ -5,6 +5,11 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Separator } from '@/components/ui/separator';
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { Textarea } from '@/components/ui/textarea';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import {
   DollarSign,
   TrendingUp,
@@ -67,6 +72,16 @@ export default function MerchantFinancialsPage() {
   const [payoutRequests, setPayoutRequests] = useState<PayoutRequest[]>([]);
   const [isLoadingData, setIsLoadingData] = useState(true);
   const [isRequestingPayout, setIsRequestingPayout] = useState(false);
+  const [showPayoutForm, setShowPayoutForm] = useState(false);
+  const [merchantWallets, setMerchantWallets] = useState<any[]>([]);
+  const [payoutFormData, setPayoutFormData] = useState({
+    requestedAmount: '',
+    destinationWallet: '',
+    destinationNetwork: 'FANTOM',
+    notes: '',
+    useRegisteredWallet: false,
+    registeredWalletId: ''
+  });
 
   // Redirect if not authenticated
   useEffect(() => {
@@ -79,92 +94,113 @@ export default function MerchantFinancialsPage() {
   useEffect(() => {
     if (isAuthenticated && token) {
       loadFinancialData();
+      loadMerchantWallets();
     }
   }, [isAuthenticated, token]);
+
+  const loadMerchantWallets = async () => {
+    try {
+      const response = await fetch('/api/merchant/wallets', {
+        headers: {
+          'Authorization': `Bearer ${token}`,
+        },
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        setMerchantWallets(data.wallets || []);
+      }
+    } catch (error) {
+      console.error('Error loading merchant wallets:', error);
+    }
+  };
 
   const loadFinancialData = async () => {
     setIsLoadingData(true);
     try {
-      // TODO: Replace with real API calls
-      // For now, using mock data to establish UI patterns
-      
-      // Simulate API delay
-      await new Promise(resolve => setTimeout(resolve, 1000));
-      
-      // Mock financial summary
+      // Load payout settings and financial summary
+      const settingsResponse = await fetch('/api/merchant/payouts/settings', {
+        headers: {
+          'Authorization': `Bearer ${token}`,
+        },
+      });
+
+      if (!settingsResponse.ok) {
+        throw new Error('Failed to fetch payout settings');
+      }
+
+      const settings = await settingsResponse.json();
+
+      // Set financial summary from real data
       setFinancialSummary({
-        totalEarnings: 2847.50,
-        availableForPayout: 1923.75,
-        pendingPayouts: 500.00,
-        totalSales: 3150.00,
-        platformCommission: 157.50, // 5% of sales
-        cashbackCosts: 145.00,
+        totalEarnings: settings.totalEarnings,
+        availableForPayout: settings.availableBalance,
+        pendingPayouts: settings.pendingPayouts,
+        totalSales: settings.totalEarnings + settings.totalPayouts, // Approximate total sales
+        platformCommission: settings.totalEarnings * 0.05, // Approximate commission
+        cashbackCosts: 0, // TODO: Add cashback tracking
         currency: 'TAIC'
       });
 
-      // Mock recent transactions
-      setRecentTransactions([
-        {
-          id: 'txn_001',
-          type: 'SALE',
-          amount: 89.99,
-          currency: 'TAIC',
-          status: 'COMPLETED',
-          date: '2025-01-04T10:30:00Z',
-          description: 'Sale of Premium Wireless Headphones',
-          orderId: 'ORD_12345'
+      // Load recent transactions from order analytics
+      const analyticsResponse = await fetch('/api/merchant/orders/analytics', {
+        headers: {
+          'Authorization': `Bearer ${token}`,
         },
-        {
-          id: 'txn_002',
-          type: 'COMMISSION',
-          amount: -4.50,
-          currency: 'TAIC',
-          status: 'COMPLETED',
-          date: '2025-01-04T10:30:00Z',
-          description: 'Platform commission (5%)',
-          orderId: 'ORD_12345'
-        },
-        {
-          id: 'txn_003',
-          type: 'CASHBACK_COST',
-          amount: -2.70,
-          currency: 'TAIC',
-          status: 'COMPLETED',
-          date: '2025-01-04T10:30:00Z',
-          description: 'Customer cashback (3%)',
-          orderId: 'ORD_12345'
-        },
-        {
-          id: 'txn_004',
-          type: 'PAYOUT',
-          amount: -500.00,
-          currency: 'TAIC',
-          status: 'COMPLETED',
-          date: '2025-01-03T14:15:00Z',
-          description: 'Weekly payout to wallet'
-        }
-      ]);
+      });
 
-      // Mock payout requests
-      setPayoutRequests([
-        {
-          id: 'payout_001',
-          amount: 500.00,
-          currency: 'TAIC',
-          status: 'PENDING',
-          requestedAt: '2025-01-05T09:00:00Z',
-          destinationWallet: '0x1234...5678'
+      if (analyticsResponse.ok) {
+        const analytics = await analyticsResponse.json();
+        // Convert analytics data to transaction format
+        const mockTransactions: Transaction[] = [
+          {
+            id: 'summary_sales',
+            type: 'SALE',
+            amount: analytics.totalRevenue,
+            currency: 'TAIC',
+            status: 'COMPLETED',
+            date: new Date().toISOString(),
+            description: `Total sales revenue (${analytics.totalOrders} orders)`
+          },
+          {
+            id: 'summary_commission',
+            type: 'COMMISSION',
+            amount: -analytics.totalCommissions,
+            currency: 'TAIC',
+            status: 'COMPLETED',
+            date: new Date().toISOString(),
+            description: `Platform commissions`
+          }
+        ];
+        setRecentTransactions(mockTransactions);
+      } else {
+        // Fallback to empty transactions
+        setRecentTransactions([]);
+      }
+
+      // Load real payout requests
+      const payoutsResponse = await fetch('/api/merchant/payouts', {
+        headers: {
+          'Authorization': `Bearer ${token}`,
         },
-        {
-          id: 'payout_002',
-          amount: 750.00,
-          currency: 'TAIC',
-          status: 'COMPLETED',
-          requestedAt: '2024-12-28T16:30:00Z',
-          processedAt: '2024-12-29T10:15:00Z',
-          destinationWallet: '0x1234...5678'
-        }
-      ]);
+      });
+
+      if (payoutsResponse.ok) {
+        const payoutsData = await payoutsResponse.json();
+        setPayoutRequests(payoutsData.payoutRequests.map((payout: any) => ({
+          id: payout.id,
+          amount: payout.requested_amount,
+          currency: payout.currency,
+          status: payout.status,
+          requestedAt: payout.created_at,
+          destinationWallet: payout.destination_wallet,
+          processedAt: payout.processed_at,
+          rejectionReason: payout.rejection_reason,
+          adminNotes: payout.admin_notes
+        })));
+      } else {
+        setPayoutRequests([]);
+      }
 
     } catch (error) {
       console.error('Error loading financial data:', error);
@@ -178,7 +214,7 @@ export default function MerchantFinancialsPage() {
     }
   };
 
-  const handleRequestPayout = async () => {
+  const handleRequestPayout = () => {
     if (!financialSummary || financialSummary.availableForPayout <= 0) {
       toast({
         title: "No Funds Available",
@@ -188,22 +224,74 @@ export default function MerchantFinancialsPage() {
       return;
     }
 
+    // Pre-fill the form with available amount
+    setPayoutFormData({
+      requestedAmount: financialSummary.availableForPayout.toString(),
+      destinationWallet: '',
+      destinationNetwork: 'FANTOM',
+      notes: '',
+      useRegisteredWallet: false,
+      registeredWalletId: ''
+    });
+    setShowPayoutForm(true);
+  };
+
+  const handleSubmitPayout = async () => {
+    if (!payoutFormData.requestedAmount || !payoutFormData.destinationWallet) {
+      toast({
+        title: "Missing Information",
+        description: "Please fill in all required fields.",
+        variant: "destructive"
+      });
+      return;
+    }
+
     setIsRequestingPayout(true);
     try {
-      // TODO: Implement real payout request API
-      await new Promise(resolve => setTimeout(resolve, 2000));
-      
+      const response = await fetch('/api/merchant/payouts', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          requestedAmount: parseFloat(payoutFormData.requestedAmount),
+          currency: 'TAIC',
+          destinationWallet: payoutFormData.destinationWallet,
+          destinationNetwork: payoutFormData.destinationNetwork,
+          notes: payoutFormData.notes,
+          useRegisteredWallet: payoutFormData.useRegisteredWallet,
+          registeredWalletId: payoutFormData.registeredWalletId ? parseInt(payoutFormData.registeredWalletId) : undefined
+        }),
+      });
+
+      const result = await response.json();
+
+      if (!response.ok) {
+        throw new Error(result.error || 'Failed to create payout request');
+      }
+
       toast({
         title: "Payout Requested",
-        description: `Payout request for ${financialSummary.availableForPayout} ${financialSummary.currency} has been submitted.`,
+        description: `Payout request for ${payoutFormData.requestedAmount} TAIC has been submitted successfully.`,
       });
-      
+
+      setShowPayoutForm(false);
+      setPayoutFormData({
+        requestedAmount: '',
+        destinationWallet: '',
+        destinationNetwork: 'FANTOM',
+        notes: '',
+        useRegisteredWallet: false,
+        registeredWalletId: ''
+      });
+
       // Refresh data
       await loadFinancialData();
-    } catch (error) {
+    } catch (error: any) {
       toast({
         title: "Payout Request Failed",
-        description: "Unable to process your payout request. Please try again.",
+        description: error.message || "Unable to process your payout request. Please try again.",
         variant: "destructive"
       });
     } finally {
@@ -522,6 +610,171 @@ export default function MerchantFinancialsPage() {
           <Link href="/merchant/dashboard">Back to Dashboard</Link>
         </Button>
       </div>
+
+      {/* Payout Request Form Dialog */}
+      <Dialog open={showPayoutForm} onOpenChange={setShowPayoutForm}>
+        <DialogContent className="sm:max-w-[500px]">
+          <DialogHeader>
+            <DialogTitle className="flex items-center">
+              <Wallet className="mr-2 h-5 w-5" />
+              Request Payout
+            </DialogTitle>
+            <DialogDescription>
+              Submit a payout request to withdraw your available earnings to your wallet.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-4 py-4">
+            <div className="space-y-2">
+              <Label htmlFor="requestedAmount">Requested Amount (TAIC)</Label>
+              <Input
+                id="requestedAmount"
+                type="number"
+                step="0.01"
+                min="0"
+                max={financialSummary?.availableForPayout || 0}
+                value={payoutFormData.requestedAmount}
+                onChange={(e) => setPayoutFormData(prev => ({ ...prev, requestedAmount: e.target.value }))}
+                placeholder="Enter amount to withdraw"
+              />
+              {financialSummary && (
+                <p className="text-xs text-muted-foreground">
+                  Available: {financialSummary.availableForPayout.toFixed(2)} TAIC
+                </p>
+              )}
+            </div>
+
+            <div className="space-y-2">
+              <Label>Wallet Selection</Label>
+              <div className="space-y-3">
+                <div className="flex items-center space-x-2">
+                  <input
+                    type="radio"
+                    id="useNewWallet"
+                    name="walletSelection"
+                    checked={!payoutFormData.useRegisteredWallet}
+                    onChange={() => setPayoutFormData(prev => ({
+                      ...prev,
+                      useRegisteredWallet: false,
+                      registeredWalletId: ''
+                    }))}
+                  />
+                  <Label htmlFor="useNewWallet">Enter new wallet address</Label>
+                </div>
+
+                {merchantWallets.length > 0 && (
+                  <div className="flex items-center space-x-2">
+                    <input
+                      type="radio"
+                      id="useRegisteredWallet"
+                      name="walletSelection"
+                      checked={payoutFormData.useRegisteredWallet}
+                      onChange={() => setPayoutFormData(prev => ({
+                        ...prev,
+                        useRegisteredWallet: true
+                      }))}
+                    />
+                    <Label htmlFor="useRegisteredWallet">Use registered wallet</Label>
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {payoutFormData.useRegisteredWallet ? (
+              <div className="space-y-2">
+                <Label htmlFor="registeredWallet">Select Registered Wallet</Label>
+                <Select
+                  value={payoutFormData.registeredWalletId}
+                  onValueChange={(value) => setPayoutFormData(prev => ({
+                    ...prev,
+                    registeredWalletId: value,
+                    destinationWallet: merchantWallets.find(w => w.id.toString() === value)?.wallet_address || '',
+                    destinationNetwork: merchantWallets.find(w => w.id.toString() === value)?.network || 'FANTOM'
+                  }))}
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="Select a wallet" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {merchantWallets.filter(w => w.is_active).map((wallet) => (
+                      <SelectItem key={wallet.id} value={wallet.id.toString()}>
+                        <div className="flex items-center space-x-2">
+                          <span className="font-mono text-sm">
+                            {wallet.wallet_address.slice(0, 6)}...{wallet.wallet_address.slice(-4)}
+                          </span>
+                          <Badge variant="outline">{wallet.network}</Badge>
+                        </div>
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            ) : (
+              <div className="space-y-2">
+                <Label htmlFor="destinationWallet">Destination Wallet Address</Label>
+                <Input
+                  id="destinationWallet"
+                  value={payoutFormData.destinationWallet}
+                  onChange={(e) => setPayoutFormData(prev => ({ ...prev, destinationWallet: e.target.value }))}
+                  placeholder="0x..."
+                />
+              </div>
+            )}
+
+            <div className="space-y-2">
+              <Label htmlFor="destinationNetwork">Network</Label>
+              <Select
+                value={payoutFormData.destinationNetwork}
+                onValueChange={(value) => setPayoutFormData(prev => ({ ...prev, destinationNetwork: value }))}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Select network" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="FANTOM">Fantom (FTM)</SelectItem>
+                  <SelectItem value="ETHEREUM">Ethereum (ETH)</SelectItem>
+                  <SelectItem value="BSC">Binance Smart Chain (BSC)</SelectItem>
+                  <SelectItem value="POLYGON">Polygon (MATIC)</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="notes">Notes (Optional)</Label>
+              <Textarea
+                id="notes"
+                value={payoutFormData.notes}
+                onChange={(e) => setPayoutFormData(prev => ({ ...prev, notes: e.target.value }))}
+                placeholder="Add any notes about this payout request..."
+                rows={3}
+              />
+            </div>
+          </div>
+
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => setShowPayoutForm(false)}
+              disabled={isRequestingPayout}
+            >
+              Cancel
+            </Button>
+            <Button
+              onClick={handleSubmitPayout}
+              disabled={isRequestingPayout || !payoutFormData.requestedAmount || !payoutFormData.destinationWallet}
+            >
+              {isRequestingPayout ? (
+                <>
+                  <div className="animate-spin rounded-full h-4 w-4 border-t-2 border-b-2 border-white mr-2"></div>
+                  Processing...
+                </>
+              ) : (
+                'Submit Request'
+              )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

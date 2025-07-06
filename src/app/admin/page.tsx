@@ -47,40 +47,40 @@ interface DashboardStats {
 }
 
 export default function AdminDashboardPage() {
-  const { apiKey } = useAdminAuth();
+  const { adminApiKey } = useAdminAuth();
   const { toast } = useToast();
   const [stats, setStats] = useState<DashboardStats | null>(null);
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
-    if (apiKey) {
+    if (adminApiKey) {
       loadDashboardStats();
     }
-  }, [apiKey]);
+  }, [adminApiKey]);
 
   const loadDashboardStats = async () => {
     try {
       // Load basic user stats
       const usersResponse = await fetch('/api/admin/users?limit=1', {
-        headers: { 'X-Admin-API-Key': apiKey! }
+        headers: { 'X-Admin-API-Key': adminApiKey! }
       });
       const usersData = await usersResponse.json();
 
       // Load merchant financial stats
       const financialsResponse = await fetch('/api/admin/merchants/financials?limit=1', {
-        headers: { 'X-Admin-API-Key': apiKey! }
+        headers: { 'X-Admin-API-Key': adminApiKey! }
       });
       const financialsData = await financialsResponse.json();
 
       // Load treasury stats
       const treasuryResponse = await fetch('/api/admin/treasury/overview', {
-        headers: { 'X-Admin-API-Key': apiKey! }
+        headers: { 'X-Admin-API-Key': adminApiKey! }
       });
       const treasuryData = await treasuryResponse.json();
 
       // Load pending payouts stats
       const payoutsResponse = await fetch('/api/admin/payouts/pending?limit=1', {
-        headers: { 'X-Admin-API-Key': apiKey! }
+        headers: { 'X-Admin-API-Key': adminApiKey! }
       });
       const payoutsData = await payoutsResponse.json();
 

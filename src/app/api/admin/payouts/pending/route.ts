@@ -1,5 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { pool } from '@/lib/db';
+import { Pool, PoolClient } from 'pg';
+
+const pool = new Pool({
+  connectionString: process.env.DATABASE_URL ||
+    `postgresql://${process.env.PGUSER}:${process.env.PGPASSWORD}@${process.env.PGHOST}:${process.env.PGPORT}/${process.env.PGDATABASE}`,
+});
 
 // Admin API Key Validation
 function validateAdminApiKey(apiKey: string | null): boolean {

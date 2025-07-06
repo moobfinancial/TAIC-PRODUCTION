@@ -63,7 +63,7 @@ interface PendingPayoutsResponse {
 }
 
 export default function AdminPendingPayoutsPage() {
-  const { isAuthenticated, loading, apiKey } = useAdminAuth();
+  const { isAuthenticated, loading, adminApiKey } = useAdminAuth();
   const router = useRouter();
   const { toast } = useToast();
   
@@ -92,10 +92,10 @@ export default function AdminPendingPayoutsPage() {
 
   // Load pending payouts data
   useEffect(() => {
-    if (isAuthenticated && apiKey) {
+    if (isAuthenticated && adminApiKey) {
       loadPayoutsData();
     }
-  }, [isAuthenticated, apiKey, currentPage, riskFilter, verificationFilter, sortBy, sortOrder]);
+  }, [isAuthenticated, adminApiKey, currentPage, riskFilter, verificationFilter, sortBy, sortOrder]);
 
   const loadPayoutsData = async () => {
     setIsLoadingData(true);
@@ -111,7 +111,7 @@ export default function AdminPendingPayoutsPage() {
 
       const response = await fetch(`/api/admin/payouts/pending?${params}`, {
         headers: {
-          'X-Admin-API-Key': apiKey!
+          'X-Admin-API-Key': adminApiKey!
         }
       });
 
@@ -152,7 +152,7 @@ export default function AdminPendingPayoutsPage() {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'X-Admin-API-Key': apiKey!
+          'X-Admin-API-Key': adminApiKey!
         },
         body: JSON.stringify({
           action: approvalAction,
