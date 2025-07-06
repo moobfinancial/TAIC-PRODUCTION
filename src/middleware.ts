@@ -1,23 +1,38 @@
 import { NextResponse, type NextRequest } from 'next/server';
+// Note: Cannot import securityMiddleware in Edge runtime due to Node.js dependencies
+// Security monitoring will be handled at the API route level
 
 // Middleware will now use the default Edge runtime.
 
-// Run on all routes under /admin except /admin/login
+// Apply to all routes for comprehensive monitoring
 export const config = {
   matcher: [
-    '/admin',
-    '/admin/((?!login|api).*)', // Match all /admin routes except /admin/login and /admin/api/...
-    '/api/admin/:path*', // API routes
+    // Apply to all routes except static files
+    '/((?!_next/static|_next/image|favicon.ico).*)',
   ],
 };
 
 export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
-  
-  // Skip middleware for login page and API routes that don't require auth
-  if (pathname.startsWith('/admin/login') || 
+
+  // Basic security checks that can run in Edge runtime
+  const ipAddress = getClientIP(request);
+  const userAgent = request.headers.get('user-agent') || 'Unknown';
+
+  // Block known malicious patterns
+  if (isBlockedRequest(request, ipAddress, userAgent)) {
+    return new NextResponse('Access Denied', { status: 403 });
+  }
+
+  // Skip admin auth for login page and API routes that don't require auth
+  if (pathname.startsWith('/admin/login') ||
       pathname.startsWith('/api/admin/auth') ||
       pathname.startsWith('/api/validate-api-key')) {
+    return NextResponse.next();
+  }
+
+  // Skip admin auth for non-admin routes
+  if (!pathname.startsWith('/admin') && !pathname.startsWith('/api/admin')) {
     return NextResponse.next();
   }
 
@@ -98,4 +113,66 @@ export async function middleware(request: NextRequest) {
     loginUrl.searchParams.set('error', 'server_error');
     return NextResponse.redirect(loginUrl);
   }
+}
+
+// Helper functions for Edge runtime compatibility
+function getClientIP(request: NextRequest): string {
+  const forwarded = request.headers.get('x-forwarded-for');
+  const realIP = request.headers.get('x-real-ip');
+
+  if (forwarded) {
+    return forwarded.split(',')[0].trim();
+  }
+  if (realIP) {
+    return realIP;
+  }
+  return '127.0.0.1';
+}
+
+function isBlockedRequest(request: NextRequest, ipAddress: string, userAgent: string): boolean {
+  const url = request.url;
+
+  // Block obvious SQL injection attempts
+  const sqlPatterns = [
+    /(\%27)|(\')|(\-\-)|(\%23)|(#)/i,
+    /((\%3D)|(=))[^\n]*((\%27)|(\')|(\-\-)|(\%3B)|(;))/i,
+  ];
+
+  for (const pattern of sqlPatterns) {
+    if (pattern.test(url)) {
+      console.warn(`Blocked SQL injection attempt from ${ipAddress}: ${url}`);
+      return true;
+    }
+  }
+
+  // Block obvious XSS attempts
+  const xssPatterns = [
+    /<script[^>]*>.*?<\/script>/gi,
+    /javascript:/gi,
+  ];
+
+  for (const pattern of xssPatterns) {
+    if (pattern.test(url)) {
+      console.warn(`Blocked XSS attempt from ${ipAddress}: ${url}`);
+      return true;
+    }
+  }
+
+  // Block suspicious user agents
+  const maliciousAgents = [
+    /sqlmap/i,
+    /nikto/i,
+    /nessus/i,
+    /masscan/i,
+    /nmap/i,
+  ];
+
+  for (const pattern of maliciousAgents) {
+    if (pattern.test(userAgent)) {
+      console.warn(`Blocked malicious user agent from ${ipAddress}: ${userAgent}`);
+      return true;
+    }
+  }
+
+  return false;
 }
